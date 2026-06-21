@@ -185,4 +185,14 @@ def get_stats(db: Session = Depends(get_db)):
         "timeseries_records": total_timeseries,
         "data_earliest": date_range.earliest,
         "data_latest": date_range.latest,
+    from pipelines.fred_fetcher import run_fred_fetch
+
+@router.post("/fetch/fred")
+def trigger_fred_fetch(db: Session = Depends(get_db)):
+    """Manually trigger a FRED data fetch"""
+    try:
+        result = run_fred_fetch(db)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     }
