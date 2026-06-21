@@ -1,3 +1,4 @@
+from pipelines.tic_fetcher import run_tic_fetch, compute_stress_scores
 from pipelines.fred_fetcher import run_fred_fetch
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -174,3 +175,176 @@ def trigger_fred_fetch(db: Session = Depends(get_db)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    # Add these routes to api/routes.py
+# Also add to imports at top: from pipelines.tic_fetcher import run_tic_fetch, compute_stress_scores
+
+@router.post("/fetch/tic")
+def trigger_tic_fetch(db: Session = Depends(get_db)):
+    """Manually trigger a TIC holdings data fetch"""
+    try:
+        from pipelines.tic_fetcher import run_tic_fetch
+        result = run_tic_fetch(db)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/holdings/stress")
+def get_stress_leaderboard(
+    min_score: float = Query(0, description="Minimum stress score to include"),
+    alerts_only: bool = Query(False, description="Only return countries with active alerts"),
+    db: Session = Depends(get_db)
+):
+    """
+    Sovereign stress leaderboard — countries showing signs of forced selling.
+
+    Stress score components:
+    - MoM decline magnitude (0-40 pts)
+    - Consecutive declining months (0-30 pts)
+    - Acceleration of decline (0-20 pts)
+
+    Alert threshold: score >= 25 OR 3+ consecutive declining months.
+    """
+    from pipelines.tic_fetcher import compute_stress_scores
+    from database.models import Metric
+    
+    metric = db.query(Metric).filter_by(code="TIC_HOLDINGS").first()
+    if not metric:
+        raise HTTPException(status_code=404, detail="TIC holdings data not yet loaded. Run /fetch/tic first.")
+    
+    scores = compute_stress_scores(db, metric)
+    
+    if alerts_only:
+        scores = [s for s in scores if s["alert"]]
+    if min_score > 0:
+        scores = [s for s in scores if s["stress_score"] >= min_score]
+    
+    return {
+        "as_of": scores[0]["as_of"] if scores else None,
+        "total_countries_under_stress": len(scores),
+        "alerts": [s for s in scores if s["alert"]],
+        "watch_list": [s for s in scores if not s["alert"]],
+    }
+
+
+@router.get("/holdings/country/{iso_code}")
+def get_country_holdings(
+    iso_code: str,
+    months: int = Query(24, description="Number of months of history"),
+    db: Session = Depends(get_db)
+):
+    """
+    Full holdings history for a single country with MoM changes.
+    """
+    from database.models import Metric, Country, TimeSeries
+    
+    metric = db.query(Metric).filter_by(code="TIC_HOLDINGS").first()
+    if not metric:
+        raise HTTPException(status_code=404, detail="TIC data not loaded")
+    
+    country = db.query(Country).filter_by(iso_code=iso_code.upper()).first()
+    if not country:
+        raise HTTPException(status_code=404, detail=f"Country {iso_code} not found")
+    
+    cutoff = datetime.utcnow() - timedelta(days=months * 31)
+    history = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == country.id,
+        TimeSeries.date >= cutoff,
+    ).order_by(TimeSeries.date.asc()).all()
+    
+    result = []
+    for i, row in enumerate(history):
+        mom_pct = None
+        if i > 0:
+            prev_val = float(history[i-1].value)
+            if prev_val != 0:
+                mom_pct = round((float(row.value) - prev_val) / prev_val * 100, 2)
+        
+        result.append({
+            "date": row.date.strftime("%Y-%m"),
+            "holdings_bn": round(float(row.value), 2),
+            "mom_change_pct": mom_pct,
+            "declining": mom_pct is not None and mom_pct < 0,
+        })
+    
+    # Summary stats
+    declining_months = sum(1 for r in result if r["declining"])
+    
+    return {
+        "country": {"iso": country.iso_code, "name": country.name, "region": country.region},
+        "summary": {
+            "latest_holdings_bn": result[-1]["holdings_bn"] if result else None,
+            "peak_holdings_bn": max((r["holdings_bn"] for r in result), default=None),
+            "declining_months_in_period": declining_months,
+            "pct_of_months_declining": round(declining_months / len(result) * 100, 1) if result else None,
+        },
+        "history": result,
+    }
+
+
+@router.get("/holdings/summary")
+def get_holdings_summary(db: Session = Depends(get_db)):
+    """
+    Top and bottom movers in treasury holdings this month.
+    """
+    from pipelines.tic_fetcher import compute_stress_scores
+    from database.models import Metric, TimeSeries, Country
+    from sqlalchemy import func
+    
+    metric = db.query(Metric).filter_by(code="TIC_HOLDINGS").first()
+    if not metric:
+        raise HTTPException(status_code=404, detail="TIC data not loaded")
+    
+    # Get latest date
+    latest_date = db.query(func.max(TimeSeries.date)).filter(
+        TimeSeries.metric_id == metric.id
+    ).scalar()
+    
+    if not latest_date:
+        return {"error": "No data available"}
+    
+    # Get all latest values
+    latest_rows = db.query(TimeSeries, Country).join(
+        Country, TimeSeries.country_id == Country.id
+    ).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.date == latest_date,
+    ).order_by(TimeSeries.value.desc()).all()
+    
+    total = sum(float(r.TimeSeries.value) for r in latest_rows)
+    
+    stress_scores = compute_stress_scores(db, metric)
+    stress_map = {s["country_iso"]: s for s in stress_scores}
+    
+    countries = []
+    for row in latest_rows:
+        iso = row.Country.iso_code
+        stress = stress_map.get(iso, {})
+        countries.append({
+            "iso": iso,
+            "name": row.Country.name,
+            "region": row.Country.region,
+            "holdings_bn": round(float(row.TimeSeries.value), 2),
+            "share_pct": round(float(row.TimeSeries.value) / total * 100, 2) if total else 0,
+            "mom_change_pct": stress.get("mom_change_pct"),
+            "consecutive_declining": stress.get("consecutive_declining_months", 0),
+            "stress_score": stress.get("stress_score", 0),
+            "alert": stress.get("alert", False),
+        })
+    
+    return {
+        "as_of": latest_date.strftime("%Y-%m"),
+        "total_foreign_holdings_bn": round(total, 2),
+        "countries_reporting": len(countries),
+        "top_holders": countries[:10],
+        "most_stressed": sorted(countries, key=lambda x: x["stress_score"], reverse=True)[:10],
+        "biggest_buyers": sorted(
+            [c for c in countries if c["mom_change_pct"] is not None and c["mom_change_pct"] > 0],
+            key=lambda x: x["mom_change_pct"], reverse=True
+        )[:5],
+        "biggest_sellers": sorted(
+            [c for c in countries if c["mom_change_pct"] is not None and c["mom_change_pct"] < 0],
+            key=lambda x: x["mom_change_pct"]
+        )[:5],
+    }
