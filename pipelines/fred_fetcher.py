@@ -32,6 +32,31 @@ FRED_SERIES = {
         "category": "oil",
         "unit": "usd_per_barrel",
     },
+    "FEDFUNDS": {
+        "name": "Federal Funds Effective Rate",
+        "category": "rates",
+        "unit": "percent",
+    },
+    "CPIAUCSL": {
+        "name": "Consumer Price Index (All Urban Consumers)",
+        "category": "inflation",
+        "unit": "index",
+    },
+    "M2SL": {
+        "name": "M2 Money Supply",
+        "category": "money_supply",
+        "unit": "billions_usd",
+    },
+    "DTWEXBGS": {
+        "name": "US Dollar Index (Broad)",
+        "category": "fx",
+        "unit": "index",
+    },
+    "DFII10": {
+        "name": "10-Year Real Yield (TIPS)",
+        "category": "treasury",
+        "unit": "percent",
+    },
 }
 
 
@@ -61,7 +86,7 @@ def fetch_series(code: str, start_date: datetime = None) -> list:
     """
     if start_date is None:
         # Default to 2 years back
-        start_date = datetime.utcnow() - timedelta(days=730)
+        start_date = datetime.utcnow() - timedelta(days=1825)
     
     params = {
         "series_id": code,
