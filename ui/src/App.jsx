@@ -13,6 +13,7 @@ const METRICS = [
   { code: "DTWEXBGS",   label: "Dollar Index",  color: "#7EC4A0", unit: "" },
   { code: "CPIAUCSL",   label: "CPI",           color: "#C47EB8", unit: "" },
   { code: "M2SL",       label: "M2 Money",      color: "#6A8FC4", unit: "B$" },
+  { code: "GOLDAMGBD228NLBM", label: "Gold Price", color: "#C8A96E", unit: "$/troy oz" },
 ];
 
 const RANGES = [

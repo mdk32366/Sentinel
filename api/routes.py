@@ -348,3 +348,114 @@ def get_holdings_summary(db: Session = Depends(get_db)):
             key=lambda x: x["mom_change_pct"]
         )[:5],
     }
+# Add these to api/routes.py
+# Add to imports: from pipelines.gold_fetcher import run_gold_fetch, compute_cross_asset_stress
+
+
+@router.post("/fetch/gold-price")
+def trigger_gold_price_import(db: Session = Depends(get_db)):
+    """Import historical spot gold price from WGC CSV."""
+    try:
+        from pipelines.gold_price_import import run_gold_price_import
+        result = run_gold_price_import(db)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    
+@router.get("/holdings/cross-asset-stress")
+def get_cross_asset_stress(db: Session = Depends(get_db)):
+    """
+    Cross-asset stress leaderboard — countries selling BOTH treasuries AND gold.
+
+    This is the highest-priority distress signal. A country reducing treasury
+    holdings is repositioning. A country reducing BOTH treasuries AND gold
+    is a forced seller under acute financial stress.
+
+    Score receives a 1.5x multiplier when both assets are declining.
+    Alert threshold: cross_asset=true OR score >= 30.
+    """
+    from pipelines.gold_fetcher import compute_cross_asset_stress
+    results = compute_cross_asset_stress(db)
+
+    cross_asset = [r for r in results if r["cross_asset_stress"]]
+    treasury_only = [r for r in results if r["selling_treasuries"] and not r["cross_asset_stress"]]
+    gold_only = [r for r in results if r["selling_gold"] and not r["cross_asset_stress"]]
+
+    return {
+        "summary": {
+            "cross_asset_stressed": len(cross_asset),
+            "treasury_only": len(treasury_only),
+            "gold_only": len(gold_only),
+            "highest_risk": cross_asset[0] if cross_asset else None,
+        },
+        "cross_asset_stress": cross_asset,
+        "treasury_only_stress": treasury_only,
+        "gold_only_stress": gold_only,
+    }
+
+
+@router.get("/holdings/gold/{iso_code}")
+def get_country_gold(
+    iso_code: str,
+    months: int = Query(36, description="Months of history"),
+    db: Session = Depends(get_db)
+):
+    """Gold reserve history for a single country with MoM changes."""
+    from database.models import Metric, Country, TimeSeries
+
+    metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
+    if not metric:
+        raise HTTPException(status_code=404, detail="Gold data not loaded. Run /fetch/gold first.")
+
+    country = db.query(Country).filter_by(iso_code=iso_code.upper()).first()
+    if not country:
+        raise HTTPException(status_code=404, detail=f"Country {iso_code} not found")
+
+    cutoff = datetime.utcnow() - timedelta(days=months * 31)
+    history = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == country.id,
+        TimeSeries.date >= cutoff,
+    ).order_by(TimeSeries.date.asc()).all()
+
+    result = []
+    for i, row in enumerate(history):
+        mom_pct = None
+        if i > 0:
+            prev = float(history[i-1].value)
+            if prev != 0:
+                mom_pct = round((float(row.value) - prev) / prev * 100, 3)
+        result.append({
+            "date": row.date.strftime("%Y-%m"),
+            "tonnes": round(float(row.value), 2),
+            "mom_change_pct": mom_pct,
+            "declining": mom_pct is not None and mom_pct < 0,
+        })
+
+    peak = max((r["tonnes"] for r in result), default=None)
+    drawdown = None
+    if result and peak:
+        latest = result[-1]["tonnes"]
+        drawdown = round((latest - peak) / peak * 100, 2)
+
+    return {
+        "country": {"iso": country.iso_code, "name": country.name, "region": country.region},
+        "summary": {
+            "latest_tonnes": result[-1]["tonnes"] if result else None,
+            "peak_tonnes": peak,
+            "drawdown_from_peak_pct": drawdown,
+            "declining_months": sum(1 for r in result if r["declining"]),
+        },
+        "history": result,
+    }
+
+ 
+@router.post("/fetch/gold") 
+def trigger_gold_fetch(db: Session = Depends(get_db)): 
+    """Import WGC gold reserves snapshot CSV.""" 
+    try: 
+        from pipelines.gold_fetcher import run_gold_fetch 
+        result = run_gold_fetch(db) 
+        return result 
+    except Exception as e: 
+        raise HTTPException(status_code=500, detail=str(e)) 
