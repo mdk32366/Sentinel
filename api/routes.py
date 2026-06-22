@@ -474,13 +474,11 @@ def trigger_money_supply_fetch(db: Session = Depends(get_db)):
 def get_composite_stress(db: Session = Depends(get_db)):
     try:
         from pipelines.composite_stress import compute_composite_stress
-        results = compute_composite_stress(db)
-        crisis = [r for r in results if r["tier"] == "CRISIS"]
-        stressed = [r for r in results if r["tier"] == "STRESSED"]
-        elevated = [r for r in results if r["tier"] == "ELEVATED"]
-        watch = [r for r in results if r["tier"] == "WATCH"]
-        return {"as_of": results[0]["as_of"] if results else None, "spot_gold_rising": results[0]["spot_gold_rising"] if results else None, "summary": {"crisis": len(crisis), "stressed": len(stressed), "elevated": len(elevated), "watch": len(watch), "highest_risk": results[0] if results else None}, "crisis": crisis, "stressed": stressed, "elevated": elevated, "watch": watch}
+        result = compute_composite_stress(db)
+        return result
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 @router.post("/analyze/country")
 async def analyze_country(request: dict, db: Session = Depends(get_db)):

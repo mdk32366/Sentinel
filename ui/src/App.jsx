@@ -1500,7 +1500,7 @@ function CompositeTab({ onCountrySelect }) {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Country", "Tier", "T-Bill MoM", "Consec", "Gold t", "M2 YoY", "T", "G", "M", "Mult", "Score", "Active Signals"].map(h => (
+                  {["Country", "Tier", "T-Bill MoM", "Consec", "Gold t", "M2 YoY", "T", "G", "M", "Spread","Mult", "Score", "Active Signals"].map(h => (
                     <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 8px", textAlign: h === "Country" || h === "Active Signals" ? "left" : "right", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>{h}</th>
                   ))}
                 </tr>
@@ -1535,6 +1535,10 @@ function CompositeTab({ onCountrySelect }) {
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#C8A96E" }}>{c.tic_score}</td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#E8C547" }}>{c.gold_score}</td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#9B8EC4" }}>{c.monetary_score}</td>
+                      <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#9B8EC4" }}>{c.monetary_score}</td>
+                      <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: c.spread_score > 0 ? "#7EB8C9" : "#3A4D5C" }}>
+                          {c.spread_bps != null ? `${c.spread_bps > 0 ? "+" : ""}${c.spread_bps.toFixed(0)}` : "—"}
+</td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: c.multiplier > 1 ? "#FF4444" : "#3A4D5C" }}>
                         {c.multiplier > 1 ? `${c.multiplier}×` : "—"}
                       </td>
