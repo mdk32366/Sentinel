@@ -70,7 +70,7 @@ function StatCard({ label, value, unit, change, color }) {
       </div>
       {change != null && (
         <div style={{ marginTop: 6, fontSize: 12, color: up ? "#5DB87A" : "#E07B5A", fontFamily: "monospace" }}>
-          {up ? "▲" : "▼"} {Math.abs(change).toFixed(2)}{unit === "%" ? "pp" : "%"} vs 30d
+          {up ? "▲" : "▼"} {unit === "%" ? `${Math.round(Math.abs(change) * 100)}bps` : `${Math.abs(change).toFixed(2)}%`} vs 30d
         </div>
       )}
     </div>
@@ -1135,10 +1135,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    const allCodes = METRICS.map(m => m.code).join(",");
+    const allCodes = [...METRICS.map(m => m.code), "IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N","IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N"].join(",");
     const end = new Date();
     const start = new Date();
-    start.setDate(start.getDate() - 120);
+    start.setDate(start.getDate() - 400);
     fetch(`${API}/timeseries?metric_codes=${allCodes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then(r => r.json())
       .then(raw => {
@@ -1149,12 +1149,16 @@ export default function App() {
           byDate[d][metric_code] = value;
         });
         const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-        const latest = {}, month30 = {};
-        METRICS.forEach(({ code }) => {
-          const withVal = rows.filter(r => r[code] != null);
-          if (withVal.length) latest[code] = withVal[withVal.length - 1][code];
-          if (withVal.length > 1) month30[code] = withVal[Math.max(0, withVal.length - 2)][code];
-        });
+const latest = {}, month30 = {};
+const allTrackedCodes = [...METRICS.map(m => m.code),
+  "IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N",
+  "IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N"
+];
+allTrackedCodes.forEach((code) => {
+  const withVal = rows.filter(r => r[code] != null);
+  if (withVal.length) latest[code] = withVal[withVal.length - 1][code];
+  if (withVal.length > 1) month30[code] = withVal[Math.max(0, withVal.length - 2)][code];
+});
         setLatestAll({ latest, month30 });
       }).catch(() => {});
   }, []);
@@ -1298,7 +1302,40 @@ export default function App() {
             </div>
           </>
         )}
-
+{/* Sovereign Yield Spreads vs US 10Y */}
+{!normalized && latest["DGS10"] != null && (
+  <div style={{ marginTop: 12, background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "14px 28px" }}>
+    <div style={{ display: "flex", gap: 32, alignItems: "center", flexWrap: "wrap" }}>
+      <span style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C", letterSpacing: "0.1em" }}>SOVEREIGN SPREADS vs US 10Y</span>
+      {[
+        { label: "JPN", code: "IRLTLT01JPM156N" },
+        { label: "DEU", code: "IRLTLT01DEM156N" },
+        { label: "ITA", code: "IRLTLT01ITM156N" },
+        { label: "FRA", code: "IRLTLT01FRM156N" },
+        { label: "ESP", code: "IRLTLT01ESM156N" },
+        { label: "GBR", code: "IRLTLT01GBM156N" },
+        { label: "AUS", code: "IRLTLT01AUM156N" },
+        { label: "CAN", code: "IRLTLT01CAM156N" },
+      ].map(s => {
+        const val = latest[s.code];
+        const spread = val != null && latest["DGS10"] != null ? val - latest["DGS10"] : null;
+        if (spread == null) return null;
+        const color = spread > 1.5 ? "#E07B5A" : spread > 0.5 ? "#E8C547" : spread < -0.5 ? "#7EB8C9" : "#5A6878";
+        return (
+          <div key={s.label} style={{ fontFamily: "monospace" }}>
+            <span style={{ fontSize: 11, color: "#3A4D5C", marginRight: 6 }}>{s.label}</span>
+            <span style={{ fontSize: 14, color, fontWeight: 600 }}>
+              {spread > 0 ? "+" : ""}{spread.toFixed(2)}pp
+            </span>
+          </div>
+        );
+      }).filter(Boolean)}
+    </div>
+    <div style={{ fontFamily: "monospace", fontSize: 10, color: "#1E2D3D", marginTop: 8 }}>
+      Positive spread = higher yield than US (credit premium) · &gt;150bps = elevated stress · Source: OECD/FRED monthly
+    </div>
+  </div>
+)}
         {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} />}
         {tab === "CROSS-ASSET" && <CrossAssetTab />}
         {tab === "COMPOSITE" && <CompositeTab onCountrySelect={handleCountrySelect} />}

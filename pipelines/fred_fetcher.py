@@ -27,6 +27,14 @@ FRED_METRICS = [
     {"code": "DTWEXBGS",          "name": "US Dollar Index",                "category": "fx",         "unit": "index",      "description": "Nominal broad US dollar index"},
     {"code": "CPIAUCSL",          "name": "Consumer Price Index (CPI)",     "category": "inflation",  "unit": "index",      "description": "Consumer price index for all urban consumers: all items"},
     {"code": "M2SL",              "name": "M2 Money Supply",                "category": "monetary",   "unit": "billions",   "description": "M2 money stock"},
+    {"code": "IRLTLT01JPM156N", "name": "Japan 10Y Gov Bond Yield",    "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Japan 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01DEM156N", "name": "Germany 10Y Gov Bond Yield",  "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Germany 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01ITM156N", "name": "Italy 10Y Gov Bond Yield",    "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Italy 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01FRM156N", "name": "France 10Y Gov Bond Yield",   "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "France 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01ESM156N", "name": "Spain 10Y Gov Bond Yield",    "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Spain 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01GBM156N", "name": "UK 10Y Gov Bond Yield",       "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "UK 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01AUM156N", "name": "Australia 10Y Gov Bond Yield","category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Australia 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01CAM156N", "name": "Canada 10Y Gov Bond Yield",   "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Canada 10-year government bond yield, monthly (OECD)"},
 ]
 
 
