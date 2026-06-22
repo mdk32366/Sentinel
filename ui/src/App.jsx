@@ -149,23 +149,29 @@ async function generateCountryNarrative(countryData) {
     ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)}bps vs US 10Y (${spreadTrend})`
     : "not available";
 
-  const prompt = `You are a senior sovereign credit analyst for Project Sentinel. Generate a concise analyst brief (250-350 words) for ${name} (${iso}).
+  const prompt = `You are a financial journalist writing for a sophisticated but non-specialist audience — think Bloomberg Businessweek, not the IMF. Generate a 250-350 word analyst brief for ${name} (${iso}) that makes the situation feel real and urgent, not academic.
 
-DATA:
-TREASURY: Current $${ticData?.summary?.latest_holdings_bn?.toFixed(1)}B, Peak $${ticData?.summary?.peak_holdings_bn?.toFixed(1)}B, MoM ${latestTic?.mom_change_pct != null ? (latestTic.mom_change_pct > 0 ? "+" : "") + latestTic.mom_change_pct.toFixed(2) + "%" : "unknown"}, Consecutive declining months: ${compositeData?.tic_consecutive_months ?? 0}, YoY: ${prevYearTic && latestTic ? (((latestTic.holdings_bn - prevYearTic.holdings_bn) / prevYearTic.holdings_bn) * 100).toFixed(1) + "%" : "n/a"}
-GOLD: ${goldData?.summary?.latest_tonnes?.toFixed(0) ?? "no data"}t current, ${goldData?.summary?.peak_tonnes?.toFixed(0) ?? "n/a"}t peak, ${goldData?.summary?.drawdown_from_peak_pct?.toFixed(1) ?? "0"}% drawdown
-M2 GROWTH: ${moneyData.length > 0 ? moneyData[moneyData.length-1].pct.toFixed(1) + "% YoY (" + moneyData[moneyData.length-1].date + ")" : "no data"}
-SOVEREIGN SPREAD: ${spreadStr}
-COMPOSITE SCORE: ${compositeData?.composite_score?.toFixed(1) ?? "n/a"} (${compositeData?.tier ?? "WATCH"})
+DATA AS OF ${latestTic?.date ?? "recent"}:
+TREASURY HOLDINGS: $${ticData?.summary?.latest_holdings_bn?.toFixed(1)}B current (peak was $${ticData?.summary?.peak_holdings_bn?.toFixed(1)}B), MoM ${latestTic?.mom_change_pct != null ? (latestTic.mom_change_pct > 0 ? "+" : "") + latestTic.mom_change_pct.toFixed(2) + "%" : "unknown"}, ${compositeData?.tic_consecutive_months ?? 0} consecutive months of selling, YoY: ${prevYearTic && latestTic ? (((latestTic.holdings_bn - prevYearTic.holdings_bn) / prevYearTic.holdings_bn) * 100).toFixed(1) + "%" : "n/a"}
+GOLD RESERVES: ${goldData?.summary?.latest_tonnes?.toFixed(0) ?? "no data"}t (peak ${goldData?.summary?.peak_tonnes?.toFixed(0) ?? "n/a"}t, ${goldData?.summary?.drawdown_from_peak_pct?.toFixed(1) ?? "0"}% below peak)
+BROAD MONEY GROWTH: ${moneyData.length > 0 ? moneyData[moneyData.length-1].pct.toFixed(1) + "% per year (" + moneyData[moneyData.length-1].date + ")" : "no data"}
+SOVEREIGN BOND SPREAD: ${spreadStr}
+STRESS TIER: ${compositeData?.tier ?? "WATCH"} (score ${compositeData?.composite_score?.toFixed(1) ?? "n/a"})
 ACTIVE SIGNALS: ${compositeData?.active_signals?.join("; ") || "none"}
 
-Structure your response:
-SITUATION: What the data shows right now (2-3 sentences)
-INTERPRETATION: What this means — distinguish strategic repositioning vs forced selling, explain the spread context (2-3 sentences)
-RISK FACTORS: What would escalate this to a higher stress tier (2-3 sentences)
-WATCH FOR: 2-3 specific metrics or thresholds to monitor next month
+Write four short sections with these exact headers. Use plain English. Explain what the numbers mean in human terms — what is actually happening, why it matters, what the risk is. Use analogies if helpful. Avoid jargon like "MoM", "basis points", "liquidity", "repositioning" without explaining them first.
 
-Be direct. Use actual numbers. No hedging.`;
+SITUATION
+What is this country actually doing right now with its dollar reserves and gold? Give the reader a clear picture in 2-3 sentences. Use the real numbers but explain what they mean — e.g. "has sold X% of its peak holdings" not just the raw figure.
+
+WHAT THIS MEANS
+Is this country in trouble, or just making a strategic choice? Explain the difference between a country that is choosing to sell versus one that is forced to sell. What does the bond spread (if available) tell us about what markets think? 2-3 sentences in plain language.
+
+THE RISK
+What could go wrong from here, and what would it look like? Be specific about what threshold or event would signal things are getting worse. 2-3 sentences.
+
+WATCH FOR
+Name 2-3 specific things to check next month. Write them as plain sentences, not bullet points with jargon.  Be direct, no hedging.  Do not use markdown formatting like ##, #, ---, or ** in your response. Use plain text only.`;
 
 const response = await fetch(`${API}/analyze/country`, {
     method: "POST",
@@ -241,10 +247,14 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
 
   const container = standalone ? { background: "#080E14", minHeight: "100%" } : { background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: 24, marginTop: 12 };
 
-  const formatNarrative = (text) => text.split("\n").map((line, i) => {
-    const isHeader = /^(SITUATION|INTERPRETATION|RISK FACTORS|WATCH FOR)/i.test(line.trim());
-    return <div key={i} style={{ fontFamily: "monospace", fontSize: isHeader ? 10 : 12, color: isHeader ? "#C8A96E" : "#8A9BAC", letterSpacing: isHeader ? "0.1em" : 0, textTransform: isHeader ? "uppercase" : "none", marginBottom: isHeader ? 4 : 2, marginTop: isHeader && i > 0 ? 12 : 0, lineHeight: 1.7 }}>{line}</div>;
-  });
+const formatNarrative = (text) => text.split("\n").map((line, i) => {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed === "---") return <div key={i} style={{ height: 4 }} />;
+  if (trimmed.startsWith("#")) return <div key={i} style={{ fontFamily:"monospace", fontSize:11, color:"#5A6878", marginBottom:8 }}>{trimmed.replace(/^#+\s*/,"")}</div>;
+  const isHeader = /^(SITUATION|WHAT THIS MEANS|THE RISK|WATCH FOR)/i.test(trimmed);
+  if (isHeader) return <div key={i} style={{ fontFamily:"monospace", fontSize:10, color:"#C8A96E", letterSpacing:"0.1em", textTransform:"uppercase", marginBottom:4, marginTop: i > 0 ? 14 : 0 }}>{trimmed}</div>;
+  return <div key={i} style={{ fontFamily:"monospace", fontSize:12, color:"#8A9BAC", lineHeight:1.8, marginBottom:2 }}>{trimmed}</div>;
+}).filter(Boolean);
 
   return (
     <div style={container}>
