@@ -13,6 +13,7 @@ const METRICS = [
   { code: "DTWEXBGS",   label: "Dollar Index",  color: "#7EC4A0", unit: "" },
   { code: "CPIAUCSL",   label: "CPI",           color: "#C47EB8", unit: "" },
   { code: "M2SL",       label: "M2 Money",      color: "#6A8FC4", unit: "B$" },
+
 ];
 
 const RANGES = [
@@ -139,6 +140,8 @@ const SOVEREIGN_YIELD_CODES = {
   JPN: "IRLTLT01JPM156N", DEU: "IRLTLT01DEM156N", ITA: "IRLTLT01ITM156N",
   FRA: "IRLTLT01FRM156N", ESP: "IRLTLT01ESM156N", GBR: "IRLTLT01GBM156N",
   AUS: "IRLTLT01AUM156N", CAN: "IRLTLT01CAM156N",
+  NLD: "IRLTLT01NLM156N", NOR: "IRLTLT01NOM156N", SWE: "IRLTLT01SEM156N",
+  CHE: "IRLTLT01CHM156N", BEL: "IRLTLT01BEM156N", KOR: "IRLTLT01KRM156N",
 };
 
 async function generateCountryNarrative(countryData) {
@@ -1216,7 +1219,7 @@ export default function App() {
   };
 
   useEffect(() => {
-    const allCodes = [...METRICS.map(m => m.code),"IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N","IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N"].join(",");
+    const allCodes = [...METRICS.map(m => m.code),"IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N","IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N","IRLTLT01NLM156N","IRLTLT01NOM156N","IRLTLT01SEM156N","IRLTLT01CHM156N","IRLTLT01BEM156N","IRLTLT01KRM156N"].join(",");
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 120);
@@ -1233,7 +1236,9 @@ const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
 const latest = {}, month30 = {};
 const allTrackedCodes = [...METRICS.map(m => m.code),
   "IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N",
-  "IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N"
+  "IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N",
+  "IRLTLT01NLM156N","IRLTLT01NOM156N","IRLTLT01SEM156N","IRLTLT01CHM156N",
+  "IRLTLT01BEM156N","IRLTLT01KRM156N"
 ];
 allTrackedCodes.forEach((code) => {
   const withVal = rows.filter(r => r[code] != null);
@@ -1500,9 +1505,9 @@ function CompositeTab({ onCountrySelect }) {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Country", "Tier", "T-Bill MoM", "Consec", "Gold t", "M2 YoY", "T", "G", "M", "Spread","Mult", "Score", "Active Signals"].map(h => (
-                    <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 8px", textAlign: h === "Country" || h === "Active Signals" ? "left" : "right", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>{h}</th>
-                  ))}
+                  {["Country", "Tier", "T-Bill MoM", "Consec", "Gold t", "M2 YoY", "T", "G", "M", "Spread", "Mult", "Score", "Active Signals"].map(h => (
+  <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 8px", textAlign: h === "Country" || h === "Active Signals" || h === "Tier" ? "left" : "right", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>{h}</th>
+))}
                 </tr>
               </thead>
               <tbody>
@@ -1534,7 +1539,6 @@ function CompositeTab({ onCountrySelect }) {
                       </td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#C8A96E" }}>{c.tic_score}</td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#E8C547" }}>{c.gold_score}</td>
-                      <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#9B8EC4" }}>{c.monetary_score}</td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#9B8EC4" }}>{c.monetary_score}</td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: c.spread_score > 0 ? "#7EB8C9" : "#3A4D5C" }}>
                           {c.spread_bps != null ? `${c.spread_bps > 0 ? "+" : ""}${c.spread_bps.toFixed(0)}` : "—"}

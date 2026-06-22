@@ -35,6 +35,12 @@ FRED_METRICS = [
     {"code": "IRLTLT01GBM156N", "name": "UK 10Y Gov Bond Yield",       "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "UK 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01AUM156N", "name": "Australia 10Y Gov Bond Yield","category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Australia 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01CAM156N", "name": "Canada 10Y Gov Bond Yield",   "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Canada 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01NLM156N", "name": "Netherlands 10Y Gov Bond Yield", "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Netherlands 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01NOM156N", "name": "Norway 10Y Gov Bond Yield",      "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Norway 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01SEM156N", "name": "Sweden 10Y Gov Bond Yield",      "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Sweden 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01CHM156N", "name": "Switzerland 10Y Gov Bond Yield", "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Switzerland 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01BEM156N", "name": "Belgium 10Y Gov Bond Yield",     "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Belgium 10-year government bond yield, monthly (OECD)"},
+    {"code": "IRLTLT01KRM156N", "name": "South Korea 10Y Gov Bond Yield", "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "South Korea 10-year government bond yield, monthly (OECD)"},
 ]
 
 
