@@ -22,7 +22,7 @@ const RANGES = [
   { label: "5Y",  days: 1825 },
 ];
 
-const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET"];
+const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "COMPOSITE", "COUNTRY", "ADMIN", "ABOUT"];
 
 function formatDate(d) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
@@ -57,6 +57,8 @@ function tierLabel(tier) {
   if (tier === "GOLD_ONLY")     return "Au ONLY";
   return tier;
 }
+
+// ── Shared UI ─────────────────────────────────────────────────────────────────
 
 function StatCard({ label, value, unit, change, color }) {
   const up = change >= 0;
@@ -108,8 +110,6 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-// ── Shared Components ─────────────────────────────────────────────────────────
-
 function AlertBanner({ message, color = "#E07B5A" }) {
   return (
     <div style={{ background: `${color}15`, border: `1px solid ${color}44`, borderLeft: `3px solid ${color}`, borderRadius: 2, padding: "10px 16px", marginBottom: 12, fontFamily: "monospace", fontSize: 12, color }}>
@@ -131,11 +131,195 @@ function StressBar({ score, max = 100 }) {
   );
 }
 
+// ── Country Detail (shared between HOLDINGS and COUNTRY tabs) ─────────────────
+
+function CountryDetail({ iso, onClose, standalone = false }) {
+  const [ticData, setTicData] = useState(null);
+  const [goldData, setGoldData] = useState(null);
+  const [moneyData, setMoneyData] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [histRange, setHistRange] = useState(120);
+
+  useEffect(() => {
+    setLoading(true);
+    const start = new Date();
+    start.setFullYear(start.getFullYear() - 30);
+    Promise.all([
+      fetch(`${API}/holdings/country/${iso}?months=${histRange}`).then(r => r.json()).catch(() => null),
+      fetch(`${API}/holdings/gold/${iso}?months=120`).then(r => r.json()).catch(() => null),
+      fetch(`${API}/timeseries?metric_codes=BROAD_MONEY_GROWTH&country_iso=${iso}&start_date=${start.toISOString()}`).then(r => r.json()).catch(() => []),
+    ]).then(([tic, gold, money]) => {
+      setTicData(tic);
+      setGoldData(gold);
+      const moneyRows = Array.isArray(money)
+        ? money.map(r => ({ date: r.date.split("T")[0].slice(0, 4), pct: parseFloat(r.value) }))
+            .filter(r => !isNaN(r.pct))
+            .sort((a, b) => a.date.localeCompare(b.date))
+        : [];
+      setMoneyData(moneyRows);
+      setLoading(false);
+    });
+  }, [iso, histRange]);
+
+  if (loading) return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
+  if (!ticData) return null;
+
+  const ticChart = ticData.history?.map(h => ({ date: h.date, holdings: h.holdings_bn, mom: h.mom_change_pct })) || [];
+  const goldChart = goldData?.history?.map(h => ({ date: h.date, tonnes: h.tonnes, mom: h.mom_change_pct })) || [];
+  const latestMoney = moneyData.length > 0 ? moneyData[moneyData.length - 1] : null;
+
+  const container = standalone
+    ? { background: "#080E14", minHeight: "100%" }
+    : { background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: 24, marginTop: 12 };
+
+  return (
+    <div style={container}>
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, padding: standalone ? "0 0 0 0" : 0 }}>
+        <div>
+          <div style={{ fontFamily: "monospace", fontSize: standalone ? 20 : 16, color: "#E8E0D0", fontWeight: 700 }}>
+            {ticData.country?.name}
+            <span style={{ marginLeft: 10, fontSize: 11, color: "#3A4D5C" }}>{ticData.country?.iso} · {ticData.country?.region}</span>
+          </div>
+          <div style={{ display: "flex", gap: 28, marginTop: 12, flexWrap: "wrap" }}>
+            {[
+              { label: "Treasury Holdings", val: ticData.summary?.latest_holdings_bn != null ? `$${ticData.summary.latest_holdings_bn.toFixed(1)}B` : "—", color: "#C8A96E" },
+              { label: "Peak Holdings", val: ticData.summary?.peak_holdings_bn != null ? `$${ticData.summary.peak_holdings_bn.toFixed(1)}B` : "—", color: "#5A6878" },
+              { label: "Declining Months", val: `${ticData.summary?.declining_months_in_period ?? 0} / ${ticData.history?.length ?? 0}`, color: "#E07B5A" },
+              { label: "Gold Reserves", val: goldData?.summary?.latest_tonnes != null ? `${goldData.summary.latest_tonnes.toFixed(0)}t` : "—", color: "#C8A96E" },
+              { label: "Gold Peak", val: goldData?.summary?.peak_tonnes != null ? `${goldData.summary.peak_tonnes.toFixed(0)}t` : "—", color: "#5A6878" },
+              { label: "M2 Growth", val: latestMoney ? `${latestMoney.pct.toFixed(1)}% (${latestMoney.date})` : "—", color: latestMoney?.pct > 30 ? "#E07B5A" : latestMoney?.pct > 15 ? "#E8C547" : "#5DB87A" },
+            ].map(s => (
+              <div key={s.label}>
+                <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", textTransform: "uppercase" }}>{s.label}</div>
+                <div style={{ fontFamily: "monospace", fontSize: 15, color: s.color, marginTop: 2 }}>{s.val}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {/* History range selector */}
+          <div style={{ display: "flex", gap: 4 }}>
+            {[[24,"2Y"],[60,"5Y"],[120,"10Y"]].map(([m, l]) => (
+              <button key={l} onClick={() => setHistRange(m)} style={{ background: histRange === m ? "#1A2530" : "transparent", border: `1px solid ${histRange === m ? "#5A6878" : "#1E2D3D"}`, color: histRange === m ? "#C8A96E" : "#3A4D5C", borderRadius: 2, padding: "3px 8px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>{l}</button>
+            ))}
+          </div>
+          {!standalone && onClose && (
+            <button onClick={onClose} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#5A6878", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>✕</button>
+          )}
+        </div>
+      </div>
+
+      {/* Treasury Holdings Chart */}
+      <div style={{ marginBottom: 8 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", marginBottom: 8 }}>TREASURY HOLDINGS (USD billions) — red = declining month</div>
+        <ResponsiveContainer width="100%" height={200}>
+          <BarChart data={ticChart} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+            <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
+            <XAxis dataKey="date" tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={40} />
+            <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={52} tickFormatter={v => `$${v}B`} />
+            <Tooltip formatter={(val) => [`$${val?.toFixed(1)}B`, "Holdings"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }} labelStyle={{ color: "#5A6878" }} />
+            <Bar dataKey="holdings" radius={[2, 2, 0, 0]}>
+              {ticChart.map((entry, i) => <Cell key={i} fill={entry.mom != null && entry.mom < 0 ? "#E07B5A" : "#5DB87A"} fillOpacity={0.75} />)}
+            </Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      {/* Gold Reserves Chart (if data exists) */}
+      {goldChart.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", marginBottom: 8 }}>GOLD RESERVES (tonnes) — quarterly</div>
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={goldChart} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={40} />
+              <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={52} tickFormatter={v => `${v}t`} />
+              <Tooltip formatter={(val) => [`${val?.toFixed(1)}t`, "Gold"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }} labelStyle={{ color: "#5A6878" }} />
+              <Line type="monotone" dataKey="tonnes" stroke="#C8A96E" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} connectNulls />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+
+      {/* Money Supply Growth Chart */}
+      {moneyData.length > 0 && (
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em" }}>BROAD MONEY GROWTH (% YoY, annual)</div>
+            {latestMoney && (
+              <span style={{
+                fontFamily: "monospace", fontSize: 10,
+                color: latestMoney.pct > 30 ? "#E07B5A" : latestMoney.pct > 15 ? "#E8C547" : "#5DB87A",
+                background: latestMoney.pct > 30 ? "#E07B5A18" : latestMoney.pct > 15 ? "#E8C54718" : "#5DB87A18",
+                border: `1px solid ${latestMoney.pct > 30 ? "#E07B5A44" : latestMoney.pct > 15 ? "#E8C54744" : "#5DB87A44"}`,
+                borderRadius: 2, padding: "1px 6px",
+              }}>
+                {latestMoney.pct.toFixed(1)}% in {latestMoney.date}
+                {latestMoney.pct > 50 ? " ⚠ CRISIS LEVEL" : latestMoney.pct > 30 ? " ⚠ HIGH" : latestMoney.pct > 15 ? " ELEVATED" : " NORMAL"}
+              </span>
+            )}
+          </div>
+          <ResponsiveContainer width="100%" height={160}>
+            <LineChart data={moneyData} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+              <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={30} />
+              <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={44} tickFormatter={v => `${v}%`} />
+              <ReferenceLine y={20} stroke="#E07B5A" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "20%", fill: "#E07B5A88", fontFamily: "monospace", fontSize: 9, position: "right" }} />
+              <Tooltip
+                formatter={(v) => [`${v?.toFixed(1)}%`, "M2 Growth"]}
+                contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }}
+                labelStyle={{ color: "#5A6878" }}
+              />
+              <Line
+                type="monotone" dataKey="pct" stroke="#9B8EC4" strokeWidth={1.5}
+                dot={(props) => {
+                  const { cx, cy, payload } = props;
+                  const color = payload.pct > 30 ? "#E07B5A" : payload.pct > 15 ? "#E8C547" : "#9B8EC4";
+                  return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={3} fill={color} />;
+                }}
+                connectNulls
+              />
+            </LineChart>
+          </ResponsiveContainer>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#1E2D3D", marginTop: 4 }}>
+            Dashed line = 20% threshold · Dots: purple = normal · yellow = elevated (&gt;15%) · red = high (&gt;30%) · Source: World Bank / IMF IFS
+          </div>
+        </div>
+      )}
+
+      {/* History Table */}
+      <div style={{ overflowX: "auto", maxHeight: 360, overflowY: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead style={{ position: "sticky", top: 0, background: "#0A1520" }}>
+            <tr>{["Date", "Holdings $B", "MoM %", "Trend"].map(h => (
+              <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 10px", textAlign: h === "Date" ? "left" : "right", borderBottom: "1px solid #1A2530" }}>{h}</th>
+            ))}</tr>
+          </thead>
+          <tbody>
+            {[...(ticData.history || [])].reverse().map((row, i) => (
+              <tr key={i} style={{ borderBottom: "1px solid #080E14" }}>
+                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{row.date}</td>
+                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, color: "#E8E0D0", textAlign: "right" }}>${row.holdings_bn.toFixed(1)}B</td>
+                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: row.mom_change_pct == null ? "#3A4D5C" : row.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
+                  {row.mom_change_pct != null ? `${row.mom_change_pct > 0 ? "+" : ""}${row.mom_change_pct.toFixed(2)}%` : "—"}
+                </td>
+                <td style={{ padding: "6px 10px", textAlign: "right" }}>
+                  {row.mom_change_pct != null && <span style={{ fontFamily: "monospace", fontSize: 14, color: row.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>{row.mom_change_pct < 0 ? "▼" : "▲"}</span>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
 // ── Holdings Tab ──────────────────────────────────────────────────────────────
 
 function StressTable({ countries, onSelect, selected }) {
   const [sort, setSort] = useState("stress_score");
-
   const sorted = [...countries].sort((a, b) => {
     if (sort === "stress_score") return b.stress_score - a.stress_score;
     if (sort === "mom") return (a.mom_change_pct ?? 0) - (b.mom_change_pct ?? 0);
@@ -143,16 +327,11 @@ function StressTable({ countries, onSelect, selected }) {
     if (sort === "holdings") return b.latest_holdings_bn - a.latest_holdings_bn;
     return 0;
   });
-
   const col = (label, key) => (
-    <th onClick={() => setSort(key)} style={{
-      fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em",
-      color: sort === key ? "#C8A96E" : "#3A4D5C",
-      textTransform: "uppercase", padding: "8px 12px", textAlign: "right",
-      cursor: "pointer", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap",
-    }}>{label} {sort === key ? "↓" : ""}</th>
+    <th onClick={() => setSort(key)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", color: sort === key ? "#C8A96E" : "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "right", cursor: "pointer", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>
+      {label} {sort === key ? "↓" : ""}
+    </th>
   );
-
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -174,26 +353,20 @@ function StressTable({ countries, onSelect, selected }) {
               <tr key={c.country_iso} onClick={() => onSelect(isSelected ? null : c)}
                 style={{ cursor: "pointer", background: isSelected ? "#0F1923" : "transparent", borderBottom: "1px solid #0F1923" }}
                 onMouseEnter={e => e.currentTarget.style.background = "#0D1820"}
-                onMouseLeave={e => e.currentTarget.style.background = isSelected ? "#0F1923" : "transparent"}
-              >
+                onMouseLeave={e => e.currentTarget.style.background = isSelected ? "#0F1923" : "transparent"}>
                 <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0" }}>
                   {c.alert && <span style={{ color: alertColor, marginRight: 6 }}>●</span>}
-                  {c.country_name}
-                  <span style={{ marginLeft: 6, fontSize: 10, color: "#3A4D5C" }}>{c.country_iso}</span>
+                  {c.country_name}<span style={{ marginLeft: 6, fontSize: 10, color: "#3A4D5C" }}>{c.country_iso}</span>
                 </td>
                 <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#5A6878" }}>{c.region}</td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: "#8A9BAC", textAlign: "right" }}>
-                  {c.latest_holdings_bn != null ? `$${c.latest_holdings_bn.toFixed(1)}B` : "—"}
-                </td>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: "#8A9BAC", textAlign: "right" }}>{c.latest_holdings_bn != null ? `$${c.latest_holdings_bn.toFixed(1)}B` : "—"}</td>
                 <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: c.mom_change_pct == null ? "#3A4D5C" : c.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
                   {c.mom_change_pct != null ? `${c.mom_change_pct > 0 ? "+" : ""}${c.mom_change_pct.toFixed(2)}%` : "—"}
                 </td>
                 <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: c.consecutive_declining_months >= 3 ? "#E07B5A" : "#8A9BAC" }}>
                   {c.consecutive_declining_months > 0 ? `${c.consecutive_declining_months}mo` : "—"}
                 </td>
-                <td style={{ padding: "10px 12px", minWidth: 140 }}>
-                  <StressBar score={c.stress_score} />
-                </td>
+                <td style={{ padding: "10px 12px", minWidth: 140 }}><StressBar score={c.stress_score} /></td>
               </tr>
             );
           })}
@@ -203,86 +376,7 @@ function StressTable({ countries, onSelect, selected }) {
   );
 }
 
-function CountryDetail({ iso, onClose }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    setLoading(true);
-    fetch(`${API}/holdings/country/${iso}`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [iso]);
-
-  if (loading) return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading...</div>;
-  if (!data) return null;
-
-  const chartData = data.history.map(h => ({ date: h.date, holdings: h.holdings_bn, mom: h.mom_change_pct }));
-
-  return (
-    <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: 24, marginTop: 12 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
-        <div>
-          <div style={{ fontFamily: "monospace", fontSize: 16, color: "#E8E0D0", fontWeight: 700 }}>
-            {data.country.name}
-            <span style={{ marginLeft: 10, fontSize: 11, color: "#3A4D5C" }}>{data.country.iso} · {data.country.region}</span>
-          </div>
-          <div style={{ display: "flex", gap: 24, marginTop: 12 }}>
-            {[
-              { label: "Latest", val: data.summary.latest_holdings_bn != null ? `$${data.summary.latest_holdings_bn.toFixed(1)}B` : "—" },
-              { label: "Peak", val: data.summary.peak_holdings_bn != null ? `$${data.summary.peak_holdings_bn.toFixed(1)}B` : "—" },
-              { label: "Declining months", val: `${data.summary.declining_months_in_period} / ${data.history.length}` },
-              { label: "% of months", val: data.summary.pct_of_months_declining != null ? `${data.summary.pct_of_months_declining}%` : "—" },
-            ].map(s => (
-              <div key={s.label}>
-                <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", textTransform: "uppercase" }}>{s.label}</div>
-                <div style={{ fontFamily: "monospace", fontSize: 15, color: "#E8E0D0", marginTop: 2 }}>{s.val}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <button onClick={onClose} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#5A6878", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>✕ close</button>
-      </div>
-      <ResponsiveContainer width="100%" height={200}>
-        <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
-          <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
-          <XAxis dataKey="date" tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={40} />
-          <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={48} tickFormatter={v => `$${v}B`} />
-          <Tooltip formatter={(val) => [`$${val?.toFixed(1)}B`, "Holdings"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }} labelStyle={{ color: "#5A6878" }} />
-          <Bar dataKey="holdings" radius={[2, 2, 0, 0]}>
-            {chartData.map((entry, i) => <Cell key={i} fill={entry.mom != null && entry.mom < 0 ? "#E07B5A" : "#5DB87A"} fillOpacity={0.7} />)}
-          </Bar>
-        </BarChart>
-      </ResponsiveContainer>
-      <div style={{ marginTop: 16, overflowX: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead>
-            <tr>{["Date", "Holdings $B", "MoM Change", "Trend"].map(h => (
-              <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 10px", textAlign: h === "Date" ? "left" : "right", borderBottom: "1px solid #1A2530" }}>{h}</th>
-            ))}</tr>
-          </thead>
-          <tbody>
-            {[...data.history].reverse().slice(0, 120).map((row, i) => (
-              <tr key={i} style={{ borderBottom: "1px solid #080E14" }}>
-                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{row.date}</td>
-                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, color: "#E8E0D0", textAlign: "right" }}>${row.holdings_bn.toFixed(1)}B</td>
-                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: row.mom_change_pct == null ? "#3A4D5C" : row.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
-                  {row.mom_change_pct != null ? `${row.mom_change_pct > 0 ? "+" : ""}${row.mom_change_pct.toFixed(2)}%` : "—"}
-                </td>
-                <td style={{ padding: "6px 10px", textAlign: "right" }}>
-                  {row.mom_change_pct != null && <span style={{ fontFamily: "monospace", fontSize: 14, color: row.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>{row.mom_change_pct < 0 ? "▼" : "▲"}</span>}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
-function HoldingsTab() {
+function HoldingsTab({ onCountrySelect }) {
   const [summary, setSummary] = useState(null);
   const [stress, setStress] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -293,12 +387,11 @@ function HoldingsTab() {
     Promise.all([
       fetch(`${API}/holdings/summary`).then(r => r.json()),
       fetch(`${API}/holdings/stress`).then(r => r.json()),
-    ]).then(([s, st]) => { setSummary(s); setStress(st); setLoading(false); })
-      .catch(() => setLoading(false));
+    ]).then(([s, st]) => { setSummary(s); setStress(st); setLoading(false); }).catch(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading holdings data...</div>;
-  if (!summary || summary.error) return <div style={{ fontFamily: "monospace", fontSize: 13, color: "#E07B5A", padding: 24 }}>No TIC data loaded. Run POST /api/fetch/tic first.</div>;
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading...</div>;
+  if (!summary || summary.error) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>No TIC data. Run POST /api/fetch/tic</div>;
 
   const stressCountries = stress ? [...(stress.alerts || []), ...(stress.watch_list || [])] : [];
   const allCountries = summary.top_holders ? [
@@ -309,6 +402,10 @@ function HoldingsTab() {
   const displayCountries = view === "stress" ? stressCountries : allCountries;
   const noBuyers = summary.biggest_buyers?.length === 0;
   const alertCount = stress?.alerts?.length ?? 0;
+
+  const handleSelect = (c) => {
+    setSelected(c?.country_iso === selected?.country_iso ? null : c);
+  };
 
   return (
     <div>
@@ -327,12 +424,14 @@ function HoldingsTab() {
         ))}
       </div>
 
-      {noBuyers && <AlertBanner message={`No net buyers in ${summary.as_of} — all tracked countries reducing or flat. Broad-based demand weakness.`} color="#E07B5A" />}
-      {alertCount >= 5 && <AlertBanner message={`${alertCount} countries on active stress alert — elevated systemic risk signal.`} color="#E8C547" />}
+      {noBuyers && <AlertBanner message={`No net buyers in ${summary.as_of} — all tracked countries reducing or flat.`} color="#E07B5A" />}
+      {alertCount >= 5 && <AlertBanner message={`${alertCount} countries on active stress alert.`} color="#E8C547" />}
 
+      {/* Top holders quick cards */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {(summary.top_holders || []).slice(0, 8).map(c => (
-          <div key={c.iso} onClick={() => setSelected(selected?.country_iso === c.iso ? null : { country_iso: c.iso, ...c })}
+          <div key={c.iso}
+            onClick={() => onCountrySelect(c.iso)}
             style={{ background: "#0A1520", border: `1px solid ${c.alert ? "#E07B5A44" : "#1A2530"}`, borderRadius: 2, padding: "8px 14px", cursor: "pointer", flex: "1 1 110px", maxWidth: 160 }}>
             <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878" }}>{c.iso}</div>
             <div style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", marginTop: 2 }}>${c.holdings_bn?.toFixed(0)}B</div>
@@ -343,13 +442,17 @@ function HoldingsTab() {
         ))}
       </div>
 
-      {selected && <CountryDetail iso={selected.country_iso ?? selected.iso} onClose={() => setSelected(null)} />}
+      {/* Inline country detail */}
+      {selected && (
+        <CountryDetail iso={selected.country_iso ?? selected.iso} onClose={() => setSelected(null)} />
+      )}
 
+      {/* Stress leaderboard */}
       <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
           <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
             SOVEREIGN STRESS LEADERBOARD
-            <span style={{ marginLeft: 10, fontSize: 10, color: "#3A4D5C" }}>click row to expand history</span>
+            <span style={{ marginLeft: 10, fontSize: 10, color: "#3A4D5C" }}>click row · click ISO card for full view</span>
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             {[["stress", "STRESSED"], ["all", "ALL"]].map(([v, l]) => (
@@ -359,9 +462,102 @@ function HoldingsTab() {
         </div>
         {displayCountries.length === 0
           ? <div style={{ padding: "40px 20px", fontFamily: "monospace", fontSize: 13, color: "#3A4D5C", textAlign: "center" }}>no countries in this view</div>
-          : <StressTable countries={displayCountries} onSelect={setSelected} selected={selected} />}
+          : <StressTable countries={displayCountries} onSelect={handleSelect} selected={selected} />}
       </div>
-      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Source: US Treasury TIC data · Data as of {summary.as_of}</div>
+      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Source: US Treasury TIC · Data as of {summary.as_of}</div>
+    </div>
+  );
+}
+
+// ── Country Search Tab ────────────────────────────────────────────────────────
+
+function CountryTab({ initialIso, onIsoChange }) {
+  const [countries, setCountries] = useState([]);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState(initialIso || null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    fetch(`${API}/countries`)
+      .then(r => r.json())
+      .then(d => { setCountries(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const filtered = countries.filter(c =>
+    c.name.toLowerCase().includes(search.toLowerCase()) ||
+    c.iso_code.toLowerCase().includes(search.toLowerCase())
+  );
+
+  // Group by region
+  const byRegion = filtered.reduce((acc, c) => {
+    const r = c.region || "Other";
+    if (!acc[r]) acc[r] = [];
+    acc[r].push(c);
+    return acc;
+  }, {});
+
+  if (selected) {
+    return (
+      <div>
+        <button onClick={() => { setSelected(null); if (onIsoChange) onIsoChange(null); }} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#5A6878", borderRadius: 2, padding: "6px 14px", cursor: "pointer", fontFamily: "monospace", fontSize: 12, marginBottom: 20 }}>
+          ← all countries
+        </button>
+        <CountryDetail iso={selected} onClose={() => setSelected(null)} standalone />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Search */}
+      <div style={{ marginBottom: 24 }}>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search country name or ISO code (e.g. Turkey, TUR, India, IND)..."
+          style={{
+            width: "100%", boxSizing: "border-box",
+            background: "#0A1520", border: "1px solid #1A2530",
+            borderRadius: 2, padding: "12px 16px",
+            fontFamily: "monospace", fontSize: 13, color: "#E8E0D0",
+            outline: "none",
+          }}
+          onFocus={e => e.target.style.borderColor = "#C8A96E"}
+          onBlur={e => e.target.style.borderColor = "#1A2530"}
+        />
+        {search && <div style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C", marginTop: 6 }}>{filtered.length} countries found</div>}
+      </div>
+
+      {loading ? (
+        <div style={{ fontFamily: "monospace", color: "#3A4D5C" }}>loading countries...</div>
+      ) : (
+        <div>
+          {Object.entries(byRegion).sort().map(([region, regionCountries]) => (
+            <div key={region} style={{ marginBottom: 28 }}>
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 10, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>
+                {region} <span style={{ color: "#1E2D3D" }}>({regionCountries.length})</span>
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {regionCountries.map(c => (
+                  <button key={c.iso_code} onClick={() => setSelected(c.iso_code)}
+                    style={{
+                      background: "#0A1520", border: "1px solid #1A2530",
+                      borderRadius: 2, padding: "8px 14px", cursor: "pointer",
+                      fontFamily: "monospace", fontSize: 12, color: "#8A9BAC",
+                      textAlign: "left", transition: "all 0.15s",
+                    }}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = "#C8A96E"; e.currentTarget.style.color = "#E8E0D0"; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = "#1A2530"; e.currentTarget.style.color = "#8A9BAC"; }}>
+                    <span style={{ color: "#5A6878", fontSize: 10, display: "block", marginBottom: 2 }}>{c.iso_code}</span>
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -378,12 +574,15 @@ function SpotGoldChart() {
     start.setDate(start.getDate() - range);
     fetch(`${API}/timeseries?metric_codes=GOLD_SPOT_USD&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then(r => r.json())
-      .then(rows => {
-        setChartData(rows.map(r => ({ date: r.date.split("T")[0], price: parseFloat(r.value) })));
-      }).catch(() => {});
+      .then(rows => setChartData(rows.map(r => ({ date: r.date.split("T")[0], price: parseFloat(r.value) }))))
+      .catch(() => {});
   }, [range]);
 
-  if (!chartData.length) return <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", fontSize: 12, color: "#3A4D5C" }}>no gold price data — run POST /api/fetch/gold-price</div>;
+  if (!chartData.length) return (
+    <div style={{ height: 100, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", fontSize: 12, color: "#3A4D5C", background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, marginBottom: 20 }}>
+      no gold price data — run POST /api/fetch/gold-price
+    </div>
+  );
 
   const latest = chartData[chartData.length - 1]?.price;
   const start = chartData[0]?.price;
@@ -396,11 +595,7 @@ function SpotGoldChart() {
         <div style={{ display: "flex", alignItems: "baseline", gap: 16 }}>
           <span style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>SPOT GOLD</span>
           {latest && <span style={{ fontFamily: "monospace", fontSize: 22, color: "#C8A96E", fontWeight: 700 }}>${latest.toLocaleString()}</span>}
-          {changePct && (
-            <span style={{ fontFamily: "monospace", fontSize: 13, color: rising ? "#5DB87A" : "#E07B5A" }}>
-              {rising ? "▲" : "▼"} {Math.abs(changePct)}% ({range === 365 ? "1Y" : range === 180 ? "6M" : range === 90 ? "3M" : "5Y"})
-            </span>
-          )}
+          {changePct && <span style={{ fontFamily: "monospace", fontSize: 13, color: rising ? "#5DB87A" : "#E07B5A" }}>{rising ? "▲" : "▼"} {Math.abs(changePct)}%</span>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
           {[["3M", 90], ["6M", 180], ["1Y", 365], ["5Y", 1825]].map(([l, d]) => (
@@ -414,7 +609,7 @@ function SpotGoldChart() {
           <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} />
           <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={56} tickFormatter={v => `$${v.toLocaleString()}`} />
           <Tooltip formatter={(v) => [`$${v.toLocaleString()}`, "Gold"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }} labelStyle={{ color: "#5A6878" }} labelFormatter={formatDate} />
-          <Line type="monotone" dataKey="price" stroke="#C8A96E" strokeWidth={1.5} dot={false} activeDot={{ r: 3, strokeWidth: 0 }} connectNulls />
+          <Line type="monotone" dataKey="price" stroke="#C8A96E" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} connectNulls />
         </LineChart>
       </ResponsiveContainer>
     </div>
@@ -423,7 +618,6 @@ function SpotGoldChart() {
 
 function CrossAssetTable({ data }) {
   const [sort, setSort] = useState("stress_score");
-
   const sorted = [...data].sort((a, b) => {
     if (sort === "stress_score") return b.stress_score - a.stress_score;
     if (sort === "tic") return a.tic_mom_pct - b.tic_mom_pct;
@@ -431,13 +625,11 @@ function CrossAssetTable({ data }) {
     if (sort === "consec") return b.tic_consecutive_months - a.tic_consecutive_months;
     return 0;
   });
-
   const col = (label, key) => (
     <th onClick={() => setSort(key)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", color: sort === key ? "#C8A96E" : "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "right", cursor: "pointer", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>
       {label} {sort === key ? "↓" : ""}
     </th>
   );
-
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -447,7 +639,7 @@ function CrossAssetTable({ data }) {
             <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Signal</th>
             {col("T-Bills MoM", "tic")}
             {col("Consec ↓", "consec")}
-            {col("Gold Reserves", "gold")}
+            {col("Gold t", "gold")}
             {col("Gold MoM", "gold")}
             <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", borderBottom: "1px solid #1A2530", minWidth: 120 }}>Score</th>
           </tr>
@@ -460,29 +652,18 @@ function CrossAssetTable({ data }) {
                 onMouseEnter={e => e.currentTarget.style.background = "#0D1820"}
                 onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
                 <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0" }}>
-                  {c.country_name}
-                  <span style={{ marginLeft: 6, fontSize: 10, color: "#3A4D5C" }}>{c.country_iso}</span>
+                  {c.country_name}<span style={{ marginLeft: 6, fontSize: 10, color: "#3A4D5C" }}>{c.country_iso}</span>
                 </td>
                 <td style={{ padding: "10px 12px" }}>
-                  <span style={{ fontFamily: "monospace", fontSize: 10, color: tc, background: `${tc}18`, border: `1px solid ${tc}44`, borderRadius: 2, padding: "2px 6px", whiteSpace: "nowrap" }}>
-                    {tierLabel(c.signal_tier)}
-                  </span>
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: tc, background: `${tc}18`, border: `1px solid ${tc}44`, borderRadius: 2, padding: "2px 6px", whiteSpace: "nowrap" }}>{tierLabel(c.signal_tier)}</span>
                 </td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.tic_mom_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
-                  {c.tic_mom_pct > 0 ? "+" : ""}{c.tic_mom_pct.toFixed(2)}%
-                </td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.tic_consecutive_months >= 3 ? "#E07B5A" : "#8A9BAC" }}>
-                  {c.tic_consecutive_months > 0 ? `${c.tic_consecutive_months}mo` : "—"}
-                </td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: "#8A9BAC" }}>
-                  {c.gold_tonnes != null ? `${c.gold_tonnes.toLocaleString()}t` : "—"}
-                </td>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.tic_mom_pct < 0 ? "#E07B5A" : "#5DB87A" }}>{c.tic_mom_pct > 0 ? "+" : ""}{c.tic_mom_pct.toFixed(2)}%</td>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.tic_consecutive_months >= 3 ? "#E07B5A" : "#8A9BAC" }}>{c.tic_consecutive_months > 0 ? `${c.tic_consecutive_months}mo` : "—"}</td>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: "#8A9BAC" }}>{c.gold_tonnes != null ? `${c.gold_tonnes.toLocaleString()}t` : "—"}</td>
                 <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.gold_mom_pct == null ? "#3A4D5C" : c.gold_mom_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
                   {c.gold_mom_pct != null ? `${c.gold_mom_pct > 0 ? "+" : ""}${c.gold_mom_pct.toFixed(2)}%` : "—"}
                 </td>
-                <td style={{ padding: "10px 12px", minWidth: 140 }}>
-                  <StressBar score={c.stress_score} max={150} />
-                </td>
+                <td style={{ padding: "10px 12px", minWidth: 140 }}><StressBar score={c.stress_score} max={150} /></td>
               </tr>
             );
           })}
@@ -504,39 +685,34 @@ function CrossAssetTab() {
       .catch(() => setLoading(false));
   }, []);
 
-  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading cross-asset data...</div>;
-  if (!data) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>Failed to load cross-asset stress data.</div>;
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading...</div>;
+  if (!data) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>Failed to load cross-asset data.</div>;
 
   const { summary } = data;
   const allStressed = [...(data.cross_asset_stress || []), ...(data.treasury_only_stress || []), ...(data.gold_only_stress || [])];
   const displayData = view === "cross" ? data.cross_asset_stress : view === "treasury" ? data.treasury_only_stress : allStressed;
-
   const spotRising = allStressed[0]?.spot_gold_rising;
   const spotPrice = allStressed[0]?.spot_gold_price;
   const spot3m = allStressed[0]?.spot_gold_3m_pct;
 
   return (
     <div>
-      {/* Spot gold chart */}
       <SpotGoldChart />
-
-      {/* Signal context banner */}
       {spotRising === false && summary.cross_asset_stressed === 0 && (
-        <AlertBanner message="Spot gold declining — divergence signal inactive. Cross-asset stress scoring at base multipliers." color="#5A6878" />
+        <AlertBanner message="Spot gold declining — divergence signal inactive. Scoring at base multipliers." color="#5A6878" />
       )}
       {spotRising === true && summary.cross_asset_stressed > 0 && (
-        <AlertBanner message={`⚡ DIVERGENCE SIGNAL ACTIVE — ${summary.cross_asset_stressed} countr${summary.cross_asset_stressed === 1 ? "y" : "ies"} selling gold reserves INTO rising spot price. Maximum distress indicator.`} color="#FF4444" />
+        <AlertBanner message={`⚡ DIVERGENCE ACTIVE — ${summary.cross_asset_stressed} countr${summary.cross_asset_stressed === 1 ? "y" : "ies"} selling gold INTO rising spot price. Maximum distress.`} color="#FF4444" />
       )}
       {spotRising === true && summary.cross_asset_stressed === 0 && (
-        <AlertBanner message="Spot gold rising — divergence multiplier (2x) would activate if any country begins selling reserves." color="#C8A96E" />
+        <AlertBanner message="Spot gold rising — 2x divergence multiplier activates if any country begins selling reserves." color="#C8A96E" />
       )}
 
-      {/* Summary cards */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
-          { label: "Divergence Signal", val: summary.cross_asset_stressed, alert: summary.cross_asset_stressed > 0, color: "#FF4444" },
           { label: "Cross-Asset Stress", val: summary.cross_asset_stressed, alert: summary.cross_asset_stressed > 0, color: "#E07B5A" },
           { label: "Treasury-Only Stress", val: summary.treasury_only, alert: summary.treasury_only > 5, color: "#E8C547" },
+          { label: "Gold-Only Stress", val: summary.gold_only, alert: false, color: "#C8A96E" },
           { label: "Spot Gold 3M", val: spot3m != null ? `${spot3m > 0 ? "+" : ""}${spot3m}%` : "—", alert: spotRising, color: spotRising ? "#5DB87A" : "#E07B5A" },
           { label: "Gold Price", val: spotPrice != null ? `$${spotPrice.toLocaleString()}` : "—", color: "#C8A96E" },
         ].map(s => (
@@ -547,13 +723,12 @@ function CrossAssetTab() {
         ))}
       </div>
 
-      {/* Signal explanation */}
       <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "16px 20px", marginBottom: 20, display: "flex", gap: 32, flexWrap: "wrap" }}>
         {[
-          { tier: "DIVERGENCE", label: "⚡ Divergence", desc: "Selling gold INTO rising spot price. Forced seller. 2x score.", color: "#FF4444" },
-          { tier: "CROSS_ASSET", label: "⚠ Cross-Asset", desc: "Selling both treasuries AND gold reserves. 1.5x score.", color: "#E07B5A" },
-          { tier: "TREASURY_ONLY", label: "T-Bills Only", desc: "Reducing treasury holdings. Base score.", color: "#E8C547" },
-          { tier: "GOLD_ONLY", label: "Au Only", desc: "Reducing gold reserves only. Base score.", color: "#C8A96E" },
+          { tier: "DIVERGENCE", label: "⚡ Divergence", desc: "Selling gold INTO rising spot. 2x score.", color: "#FF4444" },
+          { tier: "CROSS_ASSET", label: "⚠ Cross-Asset", desc: "Selling both treasuries AND gold. 1.5x score.", color: "#E07B5A" },
+          { tier: "TREASURY_ONLY", label: "T-Bills Only", desc: "Reducing treasury holdings. 1x.", color: "#E8C547" },
+          { tier: "GOLD_ONLY", label: "Au Only", desc: "Reducing gold reserves only. 1x.", color: "#C8A96E" },
         ].map(s => (
           <div key={s.tier} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
             <span style={{ fontFamily: "monospace", fontSize: 10, color: s.color, background: `${s.color}18`, border: `1px solid ${s.color}44`, borderRadius: 2, padding: "2px 6px", whiteSpace: "nowrap", marginTop: 2 }}>{s.label}</span>
@@ -562,13 +737,9 @@ function CrossAssetTab() {
         ))}
       </div>
 
-      {/* Table */}
       <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
-          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
-            CROSS-ASSET STRESS LEADERBOARD
-            <span style={{ marginLeft: 10, fontSize: 10, color: "#3A4D5C" }}>gold MoM activates after 2nd monthly CSV import</span>
-          </div>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>CROSS-ASSET STRESS LEADERBOARD</div>
           <div style={{ display: "flex", gap: 6 }}>
             {[["all", "ALL"], ["cross", "CROSS-ASSET"], ["treasury", "T-ONLY"]].map(([v, l]) => (
               <button key={v} onClick={() => setView(v)} style={{ background: view === v ? "#1A2530" : "transparent", border: `1px solid ${view === v ? "#5A6878" : "#1E2D3D"}`, color: view === v ? "#C8A96E" : "#3A4D5C", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>{l}</button>
@@ -579,10 +750,7 @@ function CrossAssetTab() {
           ? <div style={{ padding: "40px 20px", fontFamily: "monospace", fontSize: 13, color: "#3A4D5C", textAlign: "center" }}>no countries in this view</div>
           : <CrossAssetTable data={displayData} />}
       </div>
-
-      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>
-        Sources: US Treasury TIC · World Gold Council · WGC/ICE spot gold price
-      </div>
+      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Sources: US Treasury TIC · World Gold Council · WGC/ICE spot gold</div>
     </div>
   );
 }
@@ -591,6 +759,7 @@ function CrossAssetTab() {
 
 export default function App() {
   const [tab, setTab] = useState("MARKETS");
+  const [countryIso, setCountryIso] = useState(null); // for cross-tab navigation
   const [activeMetrics, setActiveMetrics] = useState(["DGS10", "DGS2", "FEDFUNDS", "DCOILWTICO"]);
   const [range, setRange] = useState(RANGES[1]);
   const [chartData, setChartData] = useState([]);
@@ -599,6 +768,12 @@ export default function App() {
   const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(false);
   const [normalized, setNormalized] = useState(false);
+
+  // Navigate to country tab with a specific country
+  const handleCountrySelect = (iso) => {
+    setCountryIso(iso);
+    setTab("COUNTRY");
+  };
 
   useEffect(() => {
     const allCodes = METRICS.map(m => m.code).join(",");
@@ -656,7 +831,6 @@ export default function App() {
   }, [activeMetrics, range, normalized]);
 
   useEffect(() => { fetchChartData(); }, [fetchChartData]);
-
   useEffect(() => {
     fetch(`${API}/stats`).then(r => r.json()).then(setStats).catch(() => {});
     fetch(`${API}/health`).then(r => r.json()).then(setHealth).catch(() => {});
@@ -672,6 +846,7 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#060D14", color: "#E8E0D0", fontFamily: "'Inter', system-ui, sans-serif" }}>
+      {/* Header */}
       <div style={{ borderBottom: "1px solid #1A2530", padding: "0 32px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 52 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#C8A96E", boxShadow: "0 0 8px #C8A96E" }} />
@@ -687,9 +862,10 @@ export default function App() {
 
       <Ticker data={tickerData} />
 
+      {/* Tabs */}
       <div style={{ borderBottom: "1px solid #1A2530", padding: "0 32px", display: "flex", gap: 0 }}>
         {TABS.map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
+          <button key={t} onClick={() => { setTab(t); if (t !== "COUNTRY") setCountryIso(null); }} style={{
             background: "transparent", border: "none",
             borderBottom: `2px solid ${tab === t ? "#C8A96E" : "transparent"}`,
             color: tab === t ? "#C8A96E" : "#3A4D5C",
@@ -711,17 +887,13 @@ export default function App() {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {METRICS.map(m => {
                     const on = activeMetrics.includes(m.code);
-                    return (
-                      <button key={m.code} onClick={() => setActiveMetrics(prev => prev.includes(m.code) ? prev.filter(c => c !== m.code) : [...prev, m.code])} style={{ background: on ? `${m.color}18` : "transparent", border: `1px solid ${on ? m.color : "#1E2D3D"}`, color: on ? m.color : "#3A4D5C", borderRadius: 2, padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12, letterSpacing: "0.05em", transition: "all 0.15s" }}>{m.label}</button>
-                    );
+                    return <button key={m.code} onClick={() => setActiveMetrics(prev => prev.includes(m.code) ? prev.filter(c => c !== m.code) : [...prev, m.code])} style={{ background: on ? `${m.color}18` : "transparent", border: `1px solid ${on ? m.color : "#1E2D3D"}`, color: on ? m.color : "#3A4D5C", borderRadius: 2, padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12, transition: "all 0.15s" }}>{m.label}</button>;
                   })}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <button onClick={() => setNormalized(p => !p)} style={{ background: normalized ? "#1A2530" : "transparent", border: `1px solid ${normalized ? "#5A6878" : "#1E2D3D"}`, color: normalized ? "#8A9BAC" : "#3A4D5C", borderRadius: 2, padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>% CHANGE</button>
                   <div style={{ display: "flex", border: "1px solid #1E2D3D", borderRadius: 2, overflow: "hidden" }}>
-                    {RANGES.map(r => (
-                      <button key={r.label} onClick={() => setRange(r)} style={{ background: range.label === r.label ? "#1A2530" : "transparent", border: "none", borderLeft: "1px solid #1E2D3D", color: range.label === r.label ? "#C8A96E" : "#3A4D5C", padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>{r.label}</button>
-                    ))}
+                    {RANGES.map(r => <button key={r.label} onClick={() => setRange(r)} style={{ background: range.label === r.label ? "#1A2530" : "transparent", border: "none", borderLeft: "1px solid #1E2D3D", color: range.label === r.label ? "#C8A96E" : "#3A4D5C", padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>{r.label}</button>)}
                   </div>
                 </div>
               </div>
@@ -750,7 +922,7 @@ export default function App() {
                 {[
                   { label: "10Y–2Y", val: latest["DGS10"] - latest["DGS2"] },
                   { label: "10Y–5Y", val: latest["DGS5"] != null ? latest["DGS10"] - latest["DGS5"] : null },
-                  { label: "5Y–2Y",  val: latest["DGS5"] != null ? latest["DGS5"] - latest["DGS2"] : null },
+                  { label: "5Y–2Y", val: latest["DGS5"] != null ? latest["DGS5"] - latest["DGS2"] : null },
                   { label: "10Y–FF", val: latest["FEDFUNDS"] != null ? latest["DGS10"] - latest["FEDFUNDS"] : null },
                 ].filter(s => s.val != null).map(s => (
                   <div key={s.label} style={{ fontFamily: "monospace" }}>
@@ -768,9 +940,524 @@ export default function App() {
           </>
         )}
 
-        {tab === "HOLDINGS" && <HoldingsTab />}
+        {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} />}
         {tab === "CROSS-ASSET" && <CrossAssetTab />}
+        {tab === "COMPOSITE" && <CompositeTab onCountrySelect={handleCountrySelect} />}
+        {tab === "COUNTRY" && (
+          <CountryTab
+            initialIso={countryIso}
+            onIsoChange={setCountryIso}
+          />
+        )}
+        {tab === "ADMIN" && <AdminTab />}
+        {tab === "ABOUT" && <AboutTab />}
 
+      </div>
+    </div>
+  );
+}
+
+function CompositeTab({ onCountrySelect }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("all");
+
+  useEffect(() => {
+    fetch(`${API}/stress/composite`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>computing composite stress...</div>;
+  if (!data) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>Failed to load composite stress data.</div>;
+
+  const { summary } = data;
+  const allResults = [...(data.crisis||[]), ...(data.stressed||[]), ...(data.elevated||[]), ...(data.watch||[])];
+  const displayData = view === "crisis" ? data.crisis
+    : view === "stressed" ? [...(data.crisis||[]), ...(data.stressed||[])]
+    : view === "elevated" ? [...(data.crisis||[]), ...(data.stressed||[]), ...(data.elevated||[])]
+    : allResults;
+
+  const TIER_COLORS = { CRISIS: "#FF4444", STRESSED: "#E07B5A", ELEVATED: "#E8C547", WATCH: "#5A6878" };
+
+  return (
+    <div>
+      {/* Context banner */}
+      {summary.crisis === 0 && summary.stressed === 0 && (
+        <div style={{ background: "#5DB87A15", border: "1px solid #5DB87A44", borderLeft: "3px solid #5DB87A", borderRadius: 2, padding: "10px 16px", marginBottom: 20, fontFamily: "monospace", fontSize: 12, color: "#5DB87A" }}>
+          ✓ No CRISIS or STRESSED signals active as of {data.as_of} — system is calibrated and monitoring. Broad-based low-grade stress across {allResults.length} countries.
+        </div>
+      )}
+      {summary.crisis > 0 && (
+        <AlertBanner message={`⚡ ${summary.crisis} CRISIS-tier countr${summary.crisis === 1 ? "y" : "ies"} — all three stress dimensions firing with multipliers active.`} color="#FF4444" />
+      )}
+
+      {/* Score methodology explainer */}
+      <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "14px 20px", marginBottom: 20, display: "flex", gap: 28, flexWrap: "wrap" }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", alignSelf: "center" }}>SCORE =</div>
+        {[
+          { label: "Treasury", desc: "MoM decline + consecutive months", max: "0–50 pts", color: "#C8A96E" },
+          { label: "Gold Reserves", desc: "QoQ decline + consecutive quarters", max: "0–40 pts", color: "#E8C547" },
+          { label: "M2 Growth", desc: ">15%=10, >30%=20, >50%=35 pts", max: "0–35 pts", color: "#9B8EC4" },
+        ].map(s => (
+          <div key={s.label} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ width: 8, height: 8, borderRadius: "50%", background: s.color, flexShrink: 0 }} />
+            <div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#E8E0D0" }}>{s.label} <span style={{ color: "#3A4D5C" }}>{s.max}</span></div>
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878" }}>{s.desc}</div>
+            </div>
+          </div>
+        ))}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, borderLeft: "1px solid #1A2530", paddingLeft: 20 }}>
+          <div>
+            <div style={{ fontFamily: "monospace", fontSize: 11, color: "#E07B5A" }}>× 1.5 all three firing</div>
+            <div style={{ fontFamily: "monospace", fontSize: 11, color: "#FF4444" }}>× 2.0 gold sold into rising price</div>
+          </div>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+        {[
+          { label: "CRISIS", val: summary.crisis, color: "#FF4444", desc: "All 3 signals + multiplier" },
+          { label: "STRESSED", val: summary.stressed, color: "#E07B5A", desc: "Score 50–75" },
+          { label: "ELEVATED", val: summary.elevated, color: "#E8C547", desc: "Score 25–50" },
+          { label: "WATCH", val: summary.watch, color: "#5A6878", desc: "Score < 25" },
+          { label: "Top Risk", val: summary.highest_risk?.country_name ?? "—", color: "#C8A96E", desc: `Score: ${summary.highest_risk?.composite_score ?? "—"}` },
+        ].map(s => (
+          <div key={s.label} style={{ background: "#0F1923", border: `1px solid ${s.val > 0 && s.label !== "Top Risk" ? `${s.color}33` : "#1A2530"}`, borderTop: `2px solid ${s.val > 0 || s.label === "Top Risk" ? s.color : "#1A2530"}`, borderRadius: 2, padding: "14px 20px", flex: "1 1 140px" }}>
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: s.val > 0 || s.label === "Top Risk" ? s.color : "#3A4D5C" }}>{s.val}</div>
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", marginTop: 3 }}>{s.desc}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Leaderboard */}
+      <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
+            COMPOSITE SOVEREIGN STRESS LEADERBOARD
+            <span style={{ marginLeft: 10, fontSize: 10, color: "#3A4D5C" }}>click country to open full detail view</span>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["all","ALL"],["elevated","ELEVATED+"],["stressed","STRESSED+"],["crisis","CRISIS"]].map(([v,l]) => (
+              <button key={v} onClick={() => setView(v)} style={{ background: view === v ? "#1A2530" : "transparent", border: `1px solid ${view === v ? "#5A6878" : "#1E2D3D"}`, color: view === v ? "#C8A96E" : "#3A4D5C", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>{l}</button>
+            ))}
+          </div>
+        </div>
+
+        {displayData.length === 0 ? (
+          <div style={{ padding: "40px 20px", fontFamily: "monospace", fontSize: 13, color: "#3A4D5C", textAlign: "center" }}>no countries in this tier</div>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr>
+                  {["Country", "Tier", "Treasury", "Consec", "Gold", "M2 Growth", "T Score", "G Score", "M Score", "Multiplier", "COMPOSITE", "Active Signals"].map(h => (
+                    <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: h === "Country" || h === "Active Signals" ? "left" : "right", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {displayData.map(c => {
+                  const tc = TIER_COLORS[c.tier] || "#5A6878";
+                  return (
+                    <tr key={c.country_iso}
+                      onClick={() => onCountrySelect(c.country_iso)}
+                      style={{ borderBottom: "1px solid #0F1923", cursor: "pointer" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "#0D1820"}
+                      onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", whiteSpace: "nowrap" }}>
+                        {c.country_name}<span style={{ marginLeft: 6, fontSize: 10, color: "#3A4D5C" }}>{c.country_iso}</span>
+                      </td>
+                      <td style={{ padding: "10px 12px" }}>
+                        <span style={{ fontFamily: "monospace", fontSize: 10, color: tc, background: `${tc}18`, border: `1px solid ${tc}44`, borderRadius: 2, padding: "2px 6px" }}>{c.tier}</span>
+                      </td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.tic_mom_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
+                        {c.tic_mom_pct > 0 ? "+" : ""}{c.tic_mom_pct.toFixed(1)}%
+                      </td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.tic_consecutive_months >= 3 ? "#E07B5A" : "#8A9BAC" }}>
+                        {c.tic_consecutive_months > 0 ? `${c.tic_consecutive_months}mo` : "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.selling_gold ? "#E07B5A" : "#5A6878" }}>
+                        {c.gold_tonnes != null ? `${c.gold_tonnes.toLocaleString()}t` : "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.m2_growth_pct == null ? "#3A4D5C" : c.m2_growth_pct > 30 ? "#E07B5A" : c.m2_growth_pct > 15 ? "#E8C547" : "#5DB87A" }}>
+                        {c.m2_growth_pct != null ? `${c.m2_growth_pct.toFixed(1)}% (${c.m2_year})` : "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#C8A96E" }}>{c.tic_score}</td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#E8C547" }}>{c.gold_score}</td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#9B8EC4" }}>{c.monetary_score}</td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: c.multiplier > 1 ? "#FF4444" : "#3A4D5C" }}>
+                        {c.multiplier > 1 ? `${c.multiplier}×` : "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px", minWidth: 160 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ flex: 1, background: "#0F1923", borderRadius: 2, height: 6, overflow: "hidden" }}>
+                            <div style={{ width: `${Math.min(100, c.composite_score)}%`, background: tc, height: "100%", borderRadius: 2 }} />
+                          </div>
+                          <span style={{ fontFamily: "monospace", fontSize: 12, color: tc, minWidth: 36, textAlign: "right", fontWeight: 700 }}>{c.composite_score.toFixed(0)}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#5A6878", maxWidth: 280 }}>
+                        {c.active_signals.join(" · ") || "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>
+        Data as of {data.as_of} · Sources: US Treasury TIC · World Gold Council · World Bank/IMF IFS
+      </div>
+    </div>
+  );
+}
+
+
+function AdminTab() {
+  const [logs, setLogs] = useState([]);
+  const [running, setRunning] = useState({});
+  const [results, setResults] = useState({});
+  const [stats, setStats] = useState(null);
+
+  const loadLogs = () => {
+    fetch(`${API}/pipeline-logs?limit=20`)
+      .then(r => r.json())
+      .then(setLogs)
+      .catch(() => {});
+    fetch(`${API}/stats`).then(r => r.json()).then(setStats).catch(() => {});
+  };
+
+  useEffect(() => { loadLogs(); }, []);
+
+  const runPipeline = async (name, endpoint, method = "POST") => {
+    setRunning(p => ({ ...p, [name]: true }));
+    setResults(p => ({ ...p, [name]: null }));
+    try {
+      const r = await fetch(`${API}${endpoint}`, { method });
+      const data = await r.json();
+      setResults(p => ({ ...p, [name]: { ok: r.ok, data } }));
+    } catch (e) {
+      setResults(p => ({ ...p, [name]: { ok: false, data: { error: e.message } } }));
+    } finally {
+      setRunning(p => ({ ...p, [name]: false }));
+      setTimeout(loadLogs, 1000);
+    }
+  };
+
+  const PIPELINES = [
+    {
+      group: "Automatic (runs on schedule)",
+      items: [
+        { name: "FRED Data", endpoint: "/fetch/fred", desc: "Fetch 9 FRED metrics (yields, oil, dollar, CPI, M2). Runs daily at 2am.", schedule: "Daily 2:00am" },
+        { name: "TIC Holdings", endpoint: "/fetch/tic", desc: "Fetch Treasury holdings from ticdata.treasury.gov. 48 countries, monthly.", schedule: "15th of month, 3:00am" },
+        { name: "Gold Reserves", endpoint: "/fetch/gold", desc: "Import WGC gold reserves CSV from C:\\projects\\sentinel\\data\\gold_reserves.csv.", schedule: "Manual — re-download CSV monthly" },
+      ]
+    },
+    {
+      group: "Manual (CSV import)",
+      items: [
+        { name: "Spot Gold Price", endpoint: "/fetch/gold-price", desc: "Import WGC spot gold history from C:\\projects\\sentinel\\data\\gold_prices.csv.", schedule: "Manual — re-download CSV quarterly" },
+        { name: "Broad Money Growth", endpoint: "/fetch/money-supply", desc: "Import World Bank broad money growth JSON from C:\\projects\\sentinel\\data\\money_supply.json.", schedule: "Manual — re-download JSON annually" },
+      ]
+    },
+  ];
+
+  return (
+    <div>
+      {/* Stats bar */}
+      {stats && (
+        <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+          {[
+            { label: "Total Records", val: stats.timeseries_records?.toLocaleString() },
+            { label: "Metrics Tracked", val: stats.metrics },
+            { label: "Countries", val: stats.countries },
+            { label: "Data From", val: stats.data_earliest ? new Date(stats.data_earliest).getFullYear() : "—" },
+            { label: "Latest Data", val: stats.data_latest ? new Date(stats.data_latest).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—" },
+          ].map(s => (
+            <div key={s.label} style={{ background: "#0F1923", border: "1px solid #1A2530", borderRadius: 2, padding: "12px 18px", flex: "1 1 140px" }}>
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>{s.label}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: "#E8E0D0" }}>{s.val}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Pipeline triggers */}
+      {PIPELINES.map(group => (
+        <div key={group.group} style={{ marginBottom: 28 }}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 12, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>{group.group}</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {group.items.map(p => {
+              const res = results[p.name];
+              const busy = running[p.name];
+              return (
+                <div key={p.name} style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "16px 20px" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", fontWeight: 600, marginBottom: 4 }}>{p.name}</div>
+                      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 4 }}>{p.desc}</div>
+                      <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>⏱ {p.schedule}</div>
+                    </div>
+                    <button
+                      onClick={() => runPipeline(p.name, p.endpoint)}
+                      disabled={busy}
+                      style={{
+                        background: busy ? "#1A2530" : "#0F1923",
+                        border: `1px solid ${busy ? "#3A4D5C" : "#C8A96E"}`,
+                        color: busy ? "#3A4D5C" : "#C8A96E",
+                        borderRadius: 2, padding: "8px 20px",
+                        cursor: busy ? "not-allowed" : "pointer",
+                        fontFamily: "monospace", fontSize: 12,
+                        whiteSpace: "nowrap",
+                      }}>
+                      {busy ? "running..." : "▶ Run Now"}
+                    </button>
+                  </div>
+                  {res && (
+                    <div style={{ marginTop: 12, background: res.ok ? "#0D2010" : "#200D0D", border: `1px solid ${res.ok ? "#2A4A30" : "#4A2A2A"}`, borderRadius: 2, padding: "10px 14px" }}>
+                      <div style={{ fontFamily: "monospace", fontSize: 11, color: res.ok ? "#5DB87A" : "#E07B5A", marginBottom: 4 }}>
+                        {res.ok ? "✓ Success" : "✗ Failed"}
+                      </div>
+                      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878" }}>
+                        {res.ok
+                          ? `Inserted: ${res.data.inserted ?? "—"} · Updated: ${res.data.updated ?? "—"} · Countries: ${res.data.countries_tracked ?? res.data.skipped !== undefined ? `${res.data.inserted + res.data.updated} records` : ""}`
+                          : res.data.detail || JSON.stringify(res.data).slice(0, 120)
+                        }
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ))}
+
+      {/* Pipeline logs */}
+      <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0", marginTop: 8 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>PIPELINE LOG</div>
+          <button onClick={loadLogs} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#3A4D5C", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>↻ refresh</button>
+        </div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                {["Pipeline", "Status", "Inserted", "Updated", "Completed", "Error"].map(h => (
+                  <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 16px", textAlign: "left", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #080E14" }}>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#E8E0D0" }}>{log.pipeline_name}</td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: log.status === "success" ? "#5DB87A" : log.status === "partial" ? "#E8C547" : "#E07B5A" }}>{log.status}</td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{log.records_inserted?.toLocaleString()}</td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{log.records_updated?.toLocaleString()}</td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#5A6878", whiteSpace: "nowrap" }}>
+                    {log.completed_at ? new Date(log.completed_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                  </td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 11, color: "#E07B5A", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.error_message || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AboutTab() {
+  const SOURCES = [
+    {
+      name: "FRED — Federal Reserve Economic Data",
+      url: "https://fred.stlouisfed.org",
+      update: "Daily (auto)",
+      lag: "1 day",
+      coverage: "US only",
+      metrics: ["10Y/5Y/2Y Treasury yields", "Fed Funds Rate", "Real Yield (TIPS)", "WTI Crude Oil", "Dollar Index (DXY)", "CPI", "M2 Money Supply"],
+      notes: "Free API, no auth required. Key stored in .env as FRED_API_KEY. Runs automatically at 2am daily.",
+      manual: false,
+    },
+    {
+      name: "TIC — Treasury International Capital",
+      url: "https://ticdata.treasury.gov",
+      update: "Monthly (auto)",
+      lag: "~45 days after month-end",
+      coverage: "48 countries",
+      metrics: ["Foreign holdings of US Treasury securities by country (monthly, in $B)"],
+      notes: "Free, no auth. Parsed from mfhhis01.txt — tab-delimited historical file. Runs automatically on 15th of each month. Data as far back as 2016 for most countries.",
+      manual: false,
+    },
+    {
+      name: "World Gold Council — Gold Reserves",
+      url: "https://www.gold.org/goldhub/data/gold-reserves-by-country",
+      update: "Monthly (MANUAL)",
+      lag: "~2 months after quarter-end",
+      coverage: "120+ countries",
+      metrics: ["Central bank gold reserves in tonnes (quarterly, back to Q4 2000)"],
+      notes: "Requires free WGC account login. Download the historical CSV monthly and replace C:\\projects\\sentinel\\data\\gold_reserves.csv, then run POST /api/fetch/gold.",
+      manual: true,
+    },
+    {
+      name: "World Bank — Broad Money Growth",
+      url: "https://api.worldbank.org/v2/country/all/indicator/FM.LBL.BMNY.ZG",
+      update: "Annual (MANUAL)",
+      lag: "~1 year",
+      coverage: "48 countries",
+      metrics: ["Annual % growth in broad money supply (M2/M3), back to 1961"],
+      notes: "Free API, no auth. Download via curl and save to C:\\projects\\sentinel\\data\\money_supply.json, then run POST /api/fetch/money-supply. Re-download annually. Thresholds: >15% elevated, >30% significant debasement, >50% crisis-level.",
+      manual: true,
+    },
+    {
+      name: "World Gold Council — Spot Gold Price",
+      url: "https://www.gold.org/goldhub/data/gold-prices",
+      update: "Monthly (MANUAL)",
+      lag: "1 month",
+      coverage: "Global",
+      metrics: ["Gold spot price USD/troy oz (monthly, back to January 1978)"],
+      notes: "Download from WGC when logged in. Replace C:\\projects\\sentinel\\data\\gold_prices.csv and run POST /api/fetch/gold-price. Update quarterly is sufficient.",
+      manual: true,
+    },
+  ];
+
+  const SIGNALS = [
+    {
+      name: "Sovereign Stress Score",
+      tier: 1,
+      color: "#E8C547",
+      formula: "MoM decline magnitude (0–40pts) + consecutive declining months (0–30pts) + acceleration (0–20pts)",
+      threshold: "Alert: score ≥ 25 OR 3+ consecutive declining months",
+      interpretation: "A country reducing treasury holdings. Could be strategic repositioning or liquidity need. Watch for persistence.",
+    },
+    {
+      name: "Cross-Asset Stress (1.5×)",
+      tier: 2,
+      color: "#E07B5A",
+      formula: "Treasury stress score × 1.5 when country is ALSO reducing gold reserves",
+      threshold: "Fires when selling_treasuries AND selling_gold simultaneously",
+      interpretation: "Selling both assets = more than repositioning. Reduced optionality. Country is drawing down its strategic reserve base.",
+    },
+    {
+      name: "Divergence Signal (2×)",
+      tier: 3,
+      color: "#FF4444",
+      formula: "Cross-asset score × 2 when spot gold is rising (>2% over 3 months)",
+      threshold: "Fires when cross-asset AND spot_gold_rising",
+      interpretation: "Selling gold INTO a rising gold price. This is the forced seller signal. A country only does this if it desperately needs USD liquidity. Maximum distress indicator.",
+    },
+  ];
+
+  const FUTURE = [
+    { name: "Country M2 / Broad Money Growth", why: "Sharp M2 expansion signals monetary debasement. When a country is selling reserves AND printing money, currency crisis typically follows. Best source: World Bank API (annual data free, monthly requires subscription)." },
+    { name: "Currency Exchange Rates", why: "USD/local currency depreciation confirms reserve selling thesis. FRED has some pairs; full coverage needs a forex API." },
+    { name: "CDS Spreads", why: "Sovereign credit default swap spreads are the market's own stress signal. Spikes often precede reserve selling. Requires Bloomberg or Markit data." },
+    { name: "IMF Reserve Adequacy", why: "Ratio of reserves to short-term external debt. When this falls below 1.0, the country is vulnerable. IMF publishes annually." },
+  ];
+
+  return (
+    <div>
+      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 28, lineHeight: 1.8, maxWidth: 800 }}>
+        Project Sentinel monitors sovereign stress signals in global treasury markets. The core thesis: countries that are
+        <span style={{ color: "#C8A96E" }}> forced sellers</span> of US Treasuries reveal themselves through the data before it becomes news.
+        The highest-conviction signal is simultaneous selling of both treasuries and gold — especially into a rising gold price.
+      </div>
+
+      {/* Data Sources */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>DATA SOURCES</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {SOURCES.map(s => (
+            <div key={s.name} style={{ background: "#0A1520", border: `1px solid ${s.manual ? "#E8C54733" : "#1A2530"}`, borderLeft: `3px solid ${s.manual ? "#E8C547" : "#1A2530"}`, borderRadius: 2, padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", fontWeight: 600 }}>{s.name}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 10, color: s.manual ? "#E8C547" : "#5DB87A", background: s.manual ? "#E8C54718" : "#5DB87A18", border: `1px solid ${s.manual ? "#E8C54744" : "#5DB87A44"}`, borderRadius: 2, padding: "1px 6px" }}>
+                      {s.manual ? "⚠ MANUAL UPDATE" : "● AUTO"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 24, marginBottom: 8, flexWrap: "wrap" }}>
+                    {[["Update", s.update], ["Lag", s.lag], ["Coverage", s.coverage]].map(([l, v]) => (
+                      <div key={l}>
+                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>{l}: </span>
+                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#8A9BAC" }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 8 }}>
+                    {s.metrics.map((m, i) => <div key={i}>· {m}</div>)}
+                  </div>
+                  <div style={{ fontFamily: "monospace", fontSize: 11, color: s.manual ? "#E8C547" : "#3A4D5C", lineHeight: 1.6 }}>{s.notes}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Manual Update Checklist */}
+      <div style={{ background: "#0A1520", border: "1px solid #E8C54744", borderLeft: "3px solid #E8C547", borderRadius: 2, padding: "16px 20px", marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginBottom: 12, letterSpacing: "0.1em" }}>⚠ MONTHLY MANUAL UPDATE CHECKLIST</div>
+        {[
+          { task: "Download WGC gold reserves CSV", url: "https://www.gold.org/goldhub/data/gold-reserves-by-country", action: "Save as C:\\projects\\sentinel\\data\\gold_reserves.csv → run POST /api/fetch/gold" },
+          { task: "Trigger TIC data refresh (if not on scheduler)", url: null, action: "POST /api/fetch/tic  — or wait for auto-run on 15th" },
+          { task: "Trigger FRED refresh (if not on scheduler)", url: null, action: "POST /api/fetch/fred — or wait for auto-run at 2am" },
+          { task: "Update spot gold price CSV (quarterly)", url: "https://www.gold.org/goldhub/data/gold-prices", action: "Save as C:\\projects\\sentinel\\data\\gold_prices.csv → run POST /api/fetch/gold-price" },
+          { task: "Refresh broad money growth JSON (annually)", url: null, action: 'curl "https://api.worldbank.org/v2/country/JP;CN;GB;...all codes.../indicator/FM.LBL.BMNY.ZG?format=json&mrv=30&per_page=2000" -o data\\money_supply.json → POST /api/fetch/money-supply' },
+        ].map((item, i) => (
+          <div key={i} style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "flex-start" }}>
+            <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginTop: 1 }}>□</span>
+            <div>
+              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8E0D0" }}>{item.task}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginTop: 2 }}>{item.action}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Signal Methodology */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>SIGNAL METHODOLOGY</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {SIGNALS.map(s => (
+            <div key={s.name} style={{ background: "#0A1520", border: `1px solid ${s.color}33`, borderLeft: `3px solid ${s.color}`, borderRadius: 2, padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: s.color, background: `${s.color}18`, border: `1px solid ${s.color}44`, borderRadius: 2, padding: "1px 6px" }}>TIER {s.tier}</span>
+                <span style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", fontWeight: 600 }}>{s.name}</span>
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 6 }}>Formula: {s.formula}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 6 }}>Threshold: {s.threshold}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", lineHeight: 1.6 }}>{s.interpretation}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Future Pipelines */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>PLANNED PIPELINES</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {FUTURE.map(f => (
+            <div key={f.name} style={{ background: "#0A1520", border: "1px solid #1A2530", borderLeft: "3px solid #1E2D3D", borderRadius: 2, padding: "14px 20px" }}>
+              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", fontWeight: 600, marginBottom: 4 }}>{f.name}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", lineHeight: 1.6 }}>{f.why}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#1E2D3D", borderTop: "1px solid #1A2530", paddingTop: 16 }}>
+        Project Sentinel · Built with FastAPI + PostgreSQL + React · Data: FRED, TIC, WGC
       </div>
     </div>
   );
