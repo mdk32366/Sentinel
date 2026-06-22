@@ -13,7 +13,6 @@ const METRICS = [
   { code: "DTWEXBGS",   label: "Dollar Index",  color: "#7EC4A0", unit: "" },
   { code: "CPIAUCSL",   label: "CPI",           color: "#C47EB8", unit: "" },
   { code: "M2SL",       label: "M2 Money",      color: "#6A8FC4", unit: "B$" },
-  { code: "GOLDAMGBD228NLBM", label: "Gold Price", color: "#C8A96E", unit: "$/troy oz" },
 ];
 
 const RANGES = [
@@ -23,7 +22,7 @@ const RANGES = [
   { label: "5Y",  days: 1825 },
 ];
 
-const TABS = ["MARKETS", "HOLDINGS"];
+const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET"];
 
 function formatDate(d) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
@@ -41,6 +40,22 @@ function scoreColor(score) {
   if (score >= 50) return "#E07B5A";
   if (score >= 25) return "#E8C547";
   return "#5A6878";
+}
+
+function tierColor(tier) {
+  if (tier === "DIVERGENCE")    return "#FF4444";
+  if (tier === "CROSS_ASSET")   return "#E07B5A";
+  if (tier === "TREASURY_ONLY") return "#E8C547";
+  if (tier === "GOLD_ONLY")     return "#C8A96E";
+  return "#5A6878";
+}
+
+function tierLabel(tier) {
+  if (tier === "DIVERGENCE")    return "⚡ DIVERGENCE";
+  if (tier === "CROSS_ASSET")   return "⚠ CROSS-ASSET";
+  if (tier === "TREASURY_ONLY") return "T-ONLY";
+  if (tier === "GOLD_ONLY")     return "Au ONLY";
+  return tier;
 }
 
 function StatCard({ label, value, unit, change, color }) {
@@ -93,7 +108,7 @@ const CustomTooltip = ({ active, payload, label }) => {
   );
 };
 
-// ── Holdings Tab Components ────────────────────────────────────────────────
+// ── Shared Components ─────────────────────────────────────────────────────────
 
 function AlertBanner({ message, color = "#E07B5A" }) {
   return (
@@ -103,18 +118,20 @@ function AlertBanner({ message, color = "#E07B5A" }) {
   );
 }
 
-function StressBar({ score }) {
-  const w = Math.min(100, score);
+function StressBar({ score, max = 100 }) {
+  const w = Math.min(100, (score / max) * 100);
   const color = scoreColor(score);
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
       <div style={{ flex: 1, background: "#0F1923", borderRadius: 2, height: 6, overflow: "hidden" }}>
         <div style={{ width: `${w}%`, background: color, height: "100%", borderRadius: 2, transition: "width 0.3s" }} />
       </div>
-      <span style={{ fontFamily: "monospace", fontSize: 11, color, minWidth: 28, textAlign: "right" }}>{score.toFixed(0)}</span>
+      <span style={{ fontFamily: "monospace", fontSize: 11, color, minWidth: 32, textAlign: "right" }}>{score.toFixed(0)}</span>
     </div>
   );
 }
+
+// ── Holdings Tab ──────────────────────────────────────────────────────────────
 
 function StressTable({ countries, onSelect, selected }) {
   const [sort, setSort] = useState("stress_score");
@@ -127,11 +144,12 @@ function StressTable({ countries, onSelect, selected }) {
     return 0;
   });
 
-  const col = (label, key, title) => (
-    <th onClick={() => setSort(key)} title={title} style={{
-      fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", color: sort === key ? "#C8A96E" : "#3A4D5C",
-      textTransform: "uppercase", padding: "8px 12px", textAlign: "right", cursor: "pointer",
-      borderBottom: "1px solid #1A2530", whiteSpace: "nowrap",
+  const col = (label, key) => (
+    <th onClick={() => setSort(key)} style={{
+      fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em",
+      color: sort === key ? "#C8A96E" : "#3A4D5C",
+      textTransform: "uppercase", padding: "8px 12px", textAlign: "right",
+      cursor: "pointer", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap",
     }}>{label} {sort === key ? "↓" : ""}</th>
   );
 
@@ -140,11 +158,11 @@ function StressTable({ countries, onSelect, selected }) {
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Country</th>
+            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Country</th>
             <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Region</th>
-            {col("Holdings $B", "holdings", "Latest holdings in billions USD")}
-            {col("MoM %", "mom", "Month-over-month change")}
-            {col("Consec ↓", "consecutive", "Consecutive declining months")}
+            {col("Holdings $B", "holdings")}
+            {col("MoM %", "mom")}
+            {col("Consec ↓", "consecutive")}
             <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", borderBottom: "1px solid #1A2530", minWidth: 120 }}>Stress</th>
           </tr>
         </thead>
@@ -200,11 +218,7 @@ function CountryDetail({ iso, onClose }) {
   if (loading) return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading...</div>;
   if (!data) return null;
 
-  const chartData = data.history.map(h => ({
-    date: h.date,
-    holdings: h.holdings_bn,
-    mom: h.mom_change_pct,
-  }));
+  const chartData = data.history.map(h => ({ date: h.date, holdings: h.holdings_bn, mom: h.mom_change_pct }));
 
   return (
     <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: 24, marginTop: 12 }}>
@@ -230,33 +244,23 @@ function CountryDetail({ iso, onClose }) {
         </div>
         <button onClick={onClose} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#5A6878", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>✕ close</button>
       </div>
-
-      <ResponsiveContainer width="100%" height={220}>
+      <ResponsiveContainer width="100%" height={200}>
         <BarChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
           <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
           <XAxis dataKey="date" tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={40} />
           <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={48} tickFormatter={v => `$${v}B`} />
-          <Tooltip
-            formatter={(val) => [`$${val?.toFixed(1)}B`, "Holdings"]}
-            contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }}
-            labelStyle={{ color: "#5A6878" }}
-          />
+          <Tooltip formatter={(val) => [`$${val?.toFixed(1)}B`, "Holdings"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }} labelStyle={{ color: "#5A6878" }} />
           <Bar dataKey="holdings" radius={[2, 2, 0, 0]}>
-            {chartData.map((entry, i) => (
-              <Cell key={i} fill={entry.mom != null && entry.mom < 0 ? "#E07B5A" : "#5DB87A"} fillOpacity={0.7} />
-            ))}
+            {chartData.map((entry, i) => <Cell key={i} fill={entry.mom != null && entry.mom < 0 ? "#E07B5A" : "#5DB87A"} fillOpacity={0.7} />)}
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-
       <div style={{ marginTop: 16, overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
-            <tr>
-              {["Date", "Holdings $B", "MoM Change", "Trend"].map(h => (
-                <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 10px", textAlign: h === "Date" ? "left" : "right", borderBottom: "1px solid #1A2530" }}>{h}</th>
-              ))}
-            </tr>
+            <tr>{["Date", "Holdings $B", "MoM Change", "Trend"].map(h => (
+              <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 10px", textAlign: h === "Date" ? "left" : "right", borderBottom: "1px solid #1A2530" }}>{h}</th>
+            ))}</tr>
           </thead>
           <tbody>
             {[...data.history].reverse().slice(0, 24).map((row, i) => (
@@ -267,11 +271,7 @@ function CountryDetail({ iso, onClose }) {
                   {row.mom_change_pct != null ? `${row.mom_change_pct > 0 ? "+" : ""}${row.mom_change_pct.toFixed(2)}%` : "—"}
                 </td>
                 <td style={{ padding: "6px 10px", textAlign: "right" }}>
-                  {row.mom_change_pct != null && (
-                    <span style={{ fontFamily: "monospace", fontSize: 14, color: row.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
-                      {row.mom_change_pct < 0 ? "▼" : "▲"}
-                    </span>
-                  )}
+                  {row.mom_change_pct != null && <span style={{ fontFamily: "monospace", fontSize: 14, color: row.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>{row.mom_change_pct < 0 ? "▼" : "▲"}</span>}
                 </td>
               </tr>
             ))}
@@ -287,49 +287,24 @@ function HoldingsTab() {
   const [stress, setStress] = useState(null);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
-  const [view, setView] = useState("stress"); // "stress" | "all"
+  const [view, setView] = useState("stress");
 
   useEffect(() => {
     Promise.all([
       fetch(`${API}/holdings/summary`).then(r => r.json()),
       fetch(`${API}/holdings/stress`).then(r => r.json()),
-    ]).then(([s, st]) => {
-      setSummary(s);
-      setStress(st);
-      setLoading(false);
-    }).catch(() => setLoading(false));
+    ]).then(([s, st]) => { setSummary(s); setStress(st); setLoading(false); })
+      .catch(() => setLoading(false));
   }, []);
 
-  if (loading) return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>
-      loading holdings data...
-    </div>
-  );
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading holdings data...</div>;
+  if (!summary || summary.error) return <div style={{ fontFamily: "monospace", fontSize: 13, color: "#E07B5A", padding: 24 }}>No TIC data loaded. Run POST /api/fetch/tic first.</div>;
 
-  if (!summary || summary.error) return (
-    <div style={{ fontFamily: "monospace", fontSize: 13, color: "#E07B5A", padding: 24 }}>
-      No TIC data loaded. Go to <a href="http://localhost:8000/docs" style={{ color: "#C8A96E" }}>API docs</a> and run POST /api/fetch/tic
-    </div>
-  );
-
+  const stressCountries = stress ? [...(stress.alerts || []), ...(stress.watch_list || [])] : [];
   const allCountries = summary.top_holders ? [
     ...summary.most_stressed,
     ...summary.top_holders.filter(c => !summary.most_stressed.find(s => s.iso === c.iso))
-  ].map(c => ({
-    country_iso: c.iso,
-    country_name: c.name,
-    region: c.region,
-    latest_holdings_bn: c.holdings_bn,
-    mom_change_pct: c.mom_change_pct,
-    consecutive_declining_months: c.consecutive_declining ?? 0,
-    stress_score: c.stress_score ?? 0,
-    alert: c.alert ?? false,
-  })) : [];
-
-  const stressCountries = stress ? [
-    ...(stress.alerts || []),
-    ...(stress.watch_list || []),
-  ] : [];
+  ].map(c => ({ country_iso: c.iso, country_name: c.name, region: c.region, latest_holdings_bn: c.holdings_bn, mom_change_pct: c.mom_change_pct, consecutive_declining_months: c.consecutive_declining ?? 0, stress_score: c.stress_score ?? 0, alert: c.alert ?? false })) : [];
 
   const displayCountries = view === "stress" ? stressCountries : allCountries;
   const noBuyers = summary.biggest_buyers?.length === 0;
@@ -337,7 +312,6 @@ function HoldingsTab() {
 
   return (
     <div>
-      {/* Summary bar */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
           { label: "Total Foreign Holdings", val: `$${(summary.total_foreign_holdings_bn / 1000).toFixed(2)}T` },
@@ -353,15 +327,13 @@ function HoldingsTab() {
         ))}
       </div>
 
-      {/* Alert banners */}
-      {noBuyers && <AlertBanner message={`No net buyers in ${summary.as_of} — all tracked countries were reducing or flat. Broad-based demand weakness.`} color="#E07B5A" />}
+      {noBuyers && <AlertBanner message={`No net buyers in ${summary.as_of} — all tracked countries reducing or flat. Broad-based demand weakness.`} color="#E07B5A" />}
       {alertCount >= 5 && <AlertBanner message={`${alertCount} countries on active stress alert — elevated systemic risk signal.`} color="#E8C547" />}
 
-      {/* Top holders quick view */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {(summary.top_holders || []).slice(0, 8).map(c => (
           <div key={c.iso} onClick={() => setSelected(selected?.country_iso === c.iso ? null : { country_iso: c.iso, ...c })}
-            style={{ background: "#0A1520", border: `1px solid ${c.alert ? "#E07B5A44" : "#1A2530"}`, borderRadius: 2, padding: "8px 14px", cursor: "pointer", flex: "1 1 120px", maxWidth: 160 }}>
+            style={{ background: "#0A1520", border: `1px solid ${c.alert ? "#E07B5A44" : "#1A2530"}`, borderRadius: 2, padding: "8px 14px", cursor: "pointer", flex: "1 1 110px", maxWidth: 160 }}>
             <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878" }}>{c.iso}</div>
             <div style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", marginTop: 2 }}>${c.holdings_bn?.toFixed(0)}B</div>
             <div style={{ fontFamily: "monospace", fontSize: 11, color: c.mom_change_pct == null ? "#3A4D5C" : c.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A", marginTop: 2 }}>
@@ -371,10 +343,8 @@ function HoldingsTab() {
         ))}
       </div>
 
-      {/* Country detail */}
       {selected && <CountryDetail iso={selected.country_iso ?? selected.iso} onClose={() => setSelected(null)} />}
 
-      {/* Stress table */}
       <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
           <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
@@ -383,30 +353,241 @@ function HoldingsTab() {
           </div>
           <div style={{ display: "flex", gap: 6 }}>
             {[["stress", "STRESSED"], ["all", "ALL"]].map(([v, l]) => (
-              <button key={v} onClick={() => setView(v)} style={{
-                background: view === v ? "#1A2530" : "transparent",
-                border: `1px solid ${view === v ? "#5A6878" : "#1E2D3D"}`,
-                color: view === v ? "#C8A96E" : "#3A4D5C",
-                borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11,
-              }}>{l}</button>
+              <button key={v} onClick={() => setView(v)} style={{ background: view === v ? "#1A2530" : "transparent", border: `1px solid ${view === v ? "#5A6878" : "#1E2D3D"}`, color: view === v ? "#C8A96E" : "#3A4D5C", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>{l}</button>
             ))}
           </div>
         </div>
-        {displayCountries.length === 0 ? (
-          <div style={{ padding: "40px 20px", fontFamily: "monospace", fontSize: 13, color: "#3A4D5C", textAlign: "center" }}>no countries in this view</div>
-        ) : (
-          <StressTable countries={displayCountries} onSelect={setSelected} selected={selected} />
-        )}
+        {displayCountries.length === 0
+          ? <div style={{ padding: "40px 20px", fontFamily: "monospace", fontSize: 13, color: "#3A4D5C", textAlign: "center" }}>no countries in this view</div>
+          : <StressTable countries={displayCountries} onSelect={setSelected} selected={selected} />}
+      </div>
+      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Source: US Treasury TIC data · Data as of {summary.as_of}</div>
+    </div>
+  );
+}
+
+// ── Cross-Asset Tab ───────────────────────────────────────────────────────────
+
+function SpotGoldChart() {
+  const [chartData, setChartData] = useState([]);
+  const [range, setRange] = useState(365);
+
+  useEffect(() => {
+    const end = new Date();
+    const start = new Date();
+    start.setDate(start.getDate() - range);
+    fetch(`${API}/timeseries?metric_codes=GOLD_SPOT_USD&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
+      .then(r => r.json())
+      .then(rows => {
+        setChartData(rows.map(r => ({ date: r.date.split("T")[0], price: parseFloat(r.value) })));
+      }).catch(() => {});
+  }, [range]);
+
+  if (!chartData.length) return <div style={{ height: 180, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "monospace", fontSize: 12, color: "#3A4D5C" }}>no gold price data — run POST /api/fetch/gold-price</div>;
+
+  const latest = chartData[chartData.length - 1]?.price;
+  const start = chartData[0]?.price;
+  const changePct = start ? ((latest - start) / start * 100).toFixed(1) : null;
+  const rising = changePct > 0;
+
+  return (
+    <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 24px", marginBottom: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+        <div style={{ display: "flex", alignItems: "baseline", gap: 16 }}>
+          <span style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>SPOT GOLD</span>
+          {latest && <span style={{ fontFamily: "monospace", fontSize: 22, color: "#C8A96E", fontWeight: 700 }}>${latest.toLocaleString()}</span>}
+          {changePct && (
+            <span style={{ fontFamily: "monospace", fontSize: 13, color: rising ? "#5DB87A" : "#E07B5A" }}>
+              {rising ? "▲" : "▼"} {Math.abs(changePct)}% ({range === 365 ? "1Y" : range === 180 ? "6M" : range === 90 ? "3M" : "5Y"})
+            </span>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          {[["3M", 90], ["6M", 180], ["1Y", 365], ["5Y", 1825]].map(([l, d]) => (
+            <button key={l} onClick={() => setRange(d)} style={{ background: range === d ? "#1A2530" : "transparent", border: `1px solid ${range === d ? "#5A6878" : "#1E2D3D"}`, color: range === d ? "#C8A96E" : "#3A4D5C", borderRadius: 2, padding: "3px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>{l}</button>
+          ))}
+        </div>
+      </div>
+      <ResponsiveContainer width="100%" height={160}>
+        <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+          <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
+          <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} />
+          <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={56} tickFormatter={v => `$${v.toLocaleString()}`} />
+          <Tooltip formatter={(v) => [`$${v.toLocaleString()}`, "Gold"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }} labelStyle={{ color: "#5A6878" }} labelFormatter={formatDate} />
+          <Line type="monotone" dataKey="price" stroke="#C8A96E" strokeWidth={1.5} dot={false} activeDot={{ r: 3, strokeWidth: 0 }} connectNulls />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function CrossAssetTable({ data }) {
+  const [sort, setSort] = useState("stress_score");
+
+  const sorted = [...data].sort((a, b) => {
+    if (sort === "stress_score") return b.stress_score - a.stress_score;
+    if (sort === "tic") return a.tic_mom_pct - b.tic_mom_pct;
+    if (sort === "gold") return (a.gold_mom_pct ?? 0) - (b.gold_mom_pct ?? 0);
+    if (sort === "consec") return b.tic_consecutive_months - a.tic_consecutive_months;
+    return 0;
+  });
+
+  const col = (label, key) => (
+    <th onClick={() => setSort(key)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", color: sort === key ? "#C8A96E" : "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "right", cursor: "pointer", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>
+      {label} {sort === key ? "↓" : ""}
+    </th>
+  );
+
+  return (
+    <div style={{ overflowX: "auto" }}>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead>
+          <tr>
+            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Country</th>
+            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Signal</th>
+            {col("T-Bills MoM", "tic")}
+            {col("Consec ↓", "consec")}
+            {col("Gold Reserves", "gold")}
+            {col("Gold MoM", "gold")}
+            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", borderBottom: "1px solid #1A2530", minWidth: 120 }}>Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {sorted.map(c => {
+            const tc = tierColor(c.signal_tier);
+            return (
+              <tr key={c.country_iso} style={{ borderBottom: "1px solid #0F1923" }}
+                onMouseEnter={e => e.currentTarget.style.background = "#0D1820"}
+                onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0" }}>
+                  {c.country_name}
+                  <span style={{ marginLeft: 6, fontSize: 10, color: "#3A4D5C" }}>{c.country_iso}</span>
+                </td>
+                <td style={{ padding: "10px 12px" }}>
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: tc, background: `${tc}18`, border: `1px solid ${tc}44`, borderRadius: 2, padding: "2px 6px", whiteSpace: "nowrap" }}>
+                    {tierLabel(c.signal_tier)}
+                  </span>
+                </td>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.tic_mom_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
+                  {c.tic_mom_pct > 0 ? "+" : ""}{c.tic_mom_pct.toFixed(2)}%
+                </td>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.tic_consecutive_months >= 3 ? "#E07B5A" : "#8A9BAC" }}>
+                  {c.tic_consecutive_months > 0 ? `${c.tic_consecutive_months}mo` : "—"}
+                </td>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: "#8A9BAC" }}>
+                  {c.gold_tonnes != null ? `${c.gold_tonnes.toLocaleString()}t` : "—"}
+                </td>
+                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: c.gold_mom_pct == null ? "#3A4D5C" : c.gold_mom_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
+                  {c.gold_mom_pct != null ? `${c.gold_mom_pct > 0 ? "+" : ""}${c.gold_mom_pct.toFixed(2)}%` : "—"}
+                </td>
+                <td style={{ padding: "10px 12px", minWidth: 140 }}>
+                  <StressBar score={c.stress_score} max={150} />
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function CrossAssetTab() {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [view, setView] = useState("all");
+
+  useEffect(() => {
+    fetch(`${API}/holdings/cross-asset-stress`)
+      .then(r => r.json())
+      .then(d => { setData(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading cross-asset data...</div>;
+  if (!data) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>Failed to load cross-asset stress data.</div>;
+
+  const { summary } = data;
+  const allStressed = [...(data.cross_asset_stress || []), ...(data.treasury_only_stress || []), ...(data.gold_only_stress || [])];
+  const displayData = view === "cross" ? data.cross_asset_stress : view === "treasury" ? data.treasury_only_stress : allStressed;
+
+  const spotRising = allStressed[0]?.spot_gold_rising;
+  const spotPrice = allStressed[0]?.spot_gold_price;
+  const spot3m = allStressed[0]?.spot_gold_3m_pct;
+
+  return (
+    <div>
+      {/* Spot gold chart */}
+      <SpotGoldChart />
+
+      {/* Signal context banner */}
+      {spotRising === false && summary.cross_asset_stressed === 0 && (
+        <AlertBanner message="Spot gold declining — divergence signal inactive. Cross-asset stress scoring at base multipliers." color="#5A6878" />
+      )}
+      {spotRising === true && summary.cross_asset_stressed > 0 && (
+        <AlertBanner message={`⚡ DIVERGENCE SIGNAL ACTIVE — ${summary.cross_asset_stressed} countr${summary.cross_asset_stressed === 1 ? "y" : "ies"} selling gold reserves INTO rising spot price. Maximum distress indicator.`} color="#FF4444" />
+      )}
+      {spotRising === true && summary.cross_asset_stressed === 0 && (
+        <AlertBanner message="Spot gold rising — divergence multiplier (2x) would activate if any country begins selling reserves." color="#C8A96E" />
+      )}
+
+      {/* Summary cards */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
+        {[
+          { label: "Divergence Signal", val: summary.cross_asset_stressed, alert: summary.cross_asset_stressed > 0, color: "#FF4444" },
+          { label: "Cross-Asset Stress", val: summary.cross_asset_stressed, alert: summary.cross_asset_stressed > 0, color: "#E07B5A" },
+          { label: "Treasury-Only Stress", val: summary.treasury_only, alert: summary.treasury_only > 5, color: "#E8C547" },
+          { label: "Spot Gold 3M", val: spot3m != null ? `${spot3m > 0 ? "+" : ""}${spot3m}%` : "—", alert: spotRising, color: spotRising ? "#5DB87A" : "#E07B5A" },
+          { label: "Gold Price", val: spotPrice != null ? `$${spotPrice.toLocaleString()}` : "—", color: "#C8A96E" },
+        ].map(s => (
+          <div key={s.label} style={{ background: "#0F1923", border: `1px solid ${s.alert ? `${s.color}33` : "#1A2530"}`, borderTop: `2px solid ${s.alert ? s.color : "#1A2530"}`, borderRadius: 2, padding: "14px 20px", flex: "1 1 140px" }}>
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{s.label}</div>
+            <div style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: s.alert ? s.color : "#E8E0D0" }}>{s.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Signal explanation */}
+      <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "16px 20px", marginBottom: 20, display: "flex", gap: 32, flexWrap: "wrap" }}>
+        {[
+          { tier: "DIVERGENCE", label: "⚡ Divergence", desc: "Selling gold INTO rising spot price. Forced seller. 2x score.", color: "#FF4444" },
+          { tier: "CROSS_ASSET", label: "⚠ Cross-Asset", desc: "Selling both treasuries AND gold reserves. 1.5x score.", color: "#E07B5A" },
+          { tier: "TREASURY_ONLY", label: "T-Bills Only", desc: "Reducing treasury holdings. Base score.", color: "#E8C547" },
+          { tier: "GOLD_ONLY", label: "Au Only", desc: "Reducing gold reserves only. Base score.", color: "#C8A96E" },
+        ].map(s => (
+          <div key={s.tier} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            <span style={{ fontFamily: "monospace", fontSize: 10, color: s.color, background: `${s.color}18`, border: `1px solid ${s.color}44`, borderRadius: 2, padding: "2px 6px", whiteSpace: "nowrap", marginTop: 2 }}>{s.label}</span>
+            <span style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878" }}>{s.desc}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0" }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
+            CROSS-ASSET STRESS LEADERBOARD
+            <span style={{ marginLeft: 10, fontSize: 10, color: "#3A4D5C" }}>gold MoM activates after 2nd monthly CSV import</span>
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            {[["all", "ALL"], ["cross", "CROSS-ASSET"], ["treasury", "T-ONLY"]].map(([v, l]) => (
+              <button key={v} onClick={() => setView(v)} style={{ background: view === v ? "#1A2530" : "transparent", border: `1px solid ${view === v ? "#5A6878" : "#1E2D3D"}`, color: view === v ? "#C8A96E" : "#3A4D5C", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>{l}</button>
+            ))}
+          </div>
+        </div>
+        {displayData.length === 0
+          ? <div style={{ padding: "40px 20px", fontFamily: "monospace", fontSize: 13, color: "#3A4D5C", textAlign: "center" }}>no countries in this view</div>
+          : <CrossAssetTable data={displayData} />}
       </div>
 
       <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>
-        Source: US Treasury TIC data · Published ~45 days after month-end · Data as of {summary.as_of}
+        Sources: US Treasury TIC · World Gold Council · WGC/ICE spot gold price
       </div>
     </div>
   );
 }
 
-// ── Main App ───────────────────────────────────────────────────────────────
+// ── Main App ──────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [tab, setTab] = useState("MARKETS");
@@ -465,9 +646,7 @@ export default function App() {
         activeMetrics.forEach(m => { base[m] = rows.find(r => r[m] != null)?.[m]; });
         rows = rows.map(r => {
           const nr = { date: r.date };
-          activeMetrics.forEach(m => {
-            if (r[m] != null && base[m]) nr[m] = ((r[m] - base[m]) / base[m]) * 100;
-          });
+          activeMetrics.forEach(m => { if (r[m] != null && base[m]) nr[m] = ((r[m] - base[m]) / base[m]) * 100; });
           return nr;
         });
       }
@@ -493,7 +672,6 @@ export default function App() {
 
   return (
     <div style={{ minHeight: "100vh", background: "#060D14", color: "#E8E0D0", fontFamily: "'Inter', system-ui, sans-serif" }}>
-      {/* Header */}
       <div style={{ borderBottom: "1px solid #1A2530", padding: "0 32px", display: "flex", alignItems: "center", justifyContent: "space-between", height: 52 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#C8A96E", boxShadow: "0 0 8px #C8A96E" }} />
@@ -509,7 +687,6 @@ export default function App() {
 
       <Ticker data={tickerData} />
 
-      {/* Tab nav */}
       <div style={{ borderBottom: "1px solid #1A2530", padding: "0 32px", display: "flex", gap: 0 }}>
         {TABS.map(t => (
           <button key={t} onClick={() => setTab(t)} style={{
@@ -517,8 +694,7 @@ export default function App() {
             borderBottom: `2px solid ${tab === t ? "#C8A96E" : "transparent"}`,
             color: tab === t ? "#C8A96E" : "#3A4D5C",
             padding: "12px 20px", cursor: "pointer",
-            fontFamily: "monospace", fontSize: 12, letterSpacing: "0.1em",
-            marginBottom: -1,
+            fontFamily: "monospace", fontSize: 12, letterSpacing: "0.1em", marginBottom: -1,
           }}>{t}</button>
         ))}
       </div>
@@ -528,44 +704,27 @@ export default function App() {
         {tab === "MARKETS" && (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 28 }}>
-              {METRICS.map(m => (
-                <StatCard key={m.code} label={m.label} value={latest[m.code]} unit={m.unit} change={getChange(m.code, m.unit)} color={m.color} />
-              ))}
+              {METRICS.map(m => <StatCard key={m.code} label={m.label} value={latest[m.code]} unit={m.unit} change={getChange(m.code, m.unit)} color={m.color} />)}
             </div>
-
             <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "24px 28px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                   {METRICS.map(m => {
                     const on = activeMetrics.includes(m.code);
                     return (
-                      <button key={m.code} onClick={() => setActiveMetrics(prev => prev.includes(m.code) ? prev.filter(c => c !== m.code) : [...prev, m.code])} style={{
-                        background: on ? `${m.color}18` : "transparent", border: `1px solid ${on ? m.color : "#1E2D3D"}`,
-                        color: on ? m.color : "#3A4D5C", borderRadius: 2, padding: "5px 12px",
-                        cursor: "pointer", fontFamily: "monospace", fontSize: 12, letterSpacing: "0.05em", transition: "all 0.15s",
-                      }}>{m.label}</button>
+                      <button key={m.code} onClick={() => setActiveMetrics(prev => prev.includes(m.code) ? prev.filter(c => c !== m.code) : [...prev, m.code])} style={{ background: on ? `${m.color}18` : "transparent", border: `1px solid ${on ? m.color : "#1E2D3D"}`, color: on ? m.color : "#3A4D5C", borderRadius: 2, padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12, letterSpacing: "0.05em", transition: "all 0.15s" }}>{m.label}</button>
                     );
                   })}
                 </div>
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                  <button onClick={() => setNormalized(p => !p)} style={{
-                    background: normalized ? "#1A2530" : "transparent", border: `1px solid ${normalized ? "#5A6878" : "#1E2D3D"}`,
-                    color: normalized ? "#8A9BAC" : "#3A4D5C", borderRadius: 2, padding: "5px 12px",
-                    cursor: "pointer", fontFamily: "monospace", fontSize: 11,
-                  }}>% CHANGE</button>
+                  <button onClick={() => setNormalized(p => !p)} style={{ background: normalized ? "#1A2530" : "transparent", border: `1px solid ${normalized ? "#5A6878" : "#1E2D3D"}`, color: normalized ? "#8A9BAC" : "#3A4D5C", borderRadius: 2, padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>% CHANGE</button>
                   <div style={{ display: "flex", border: "1px solid #1E2D3D", borderRadius: 2, overflow: "hidden" }}>
                     {RANGES.map(r => (
-                      <button key={r.label} onClick={() => setRange(r)} style={{
-                        background: range.label === r.label ? "#1A2530" : "transparent",
-                        border: "none", borderLeft: "1px solid #1E2D3D",
-                        color: range.label === r.label ? "#C8A96E" : "#3A4D5C",
-                        padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12,
-                      }}>{r.label}</button>
+                      <button key={r.label} onClick={() => setRange(r)} style={{ background: range.label === r.label ? "#1A2530" : "transparent", border: "none", borderLeft: "1px solid #1E2D3D", color: range.label === r.label ? "#C8A96E" : "#3A4D5C", padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>{r.label}</button>
                     ))}
                   </div>
                 </div>
               </div>
-
               {loading ? (
                 <div style={{ height: 380, display: "flex", alignItems: "center", justifyContent: "center", color: "#2A3540", fontFamily: "monospace", fontSize: 13 }}>fetching data...</div>
               ) : (
@@ -585,7 +744,6 @@ export default function App() {
                 </ResponsiveContainer>
               )}
             </div>
-
             {!normalized && latest["DGS10"] != null && latest["DGS2"] != null && (
               <div style={{ marginTop: 12, background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "14px 28px", display: "flex", gap: 32, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C", letterSpacing: "0.1em" }}>SPREAD</span>
@@ -597,15 +755,12 @@ export default function App() {
                 ].filter(s => s.val != null).map(s => (
                   <div key={s.label} style={{ fontFamily: "monospace" }}>
                     <span style={{ fontSize: 11, color: "#3A4D5C", marginRight: 8 }}>{s.label}</span>
-                    <span style={{ fontSize: 15, color: s.val < 0 ? "#E07B5A" : "#5DB87A", fontWeight: 600 }}>
-                      {s.val > 0 ? "+" : ""}{s.val.toFixed(2)}pp
-                    </span>
+                    <span style={{ fontSize: 15, color: s.val < 0 ? "#E07B5A" : "#5DB87A", fontWeight: 600 }}>{s.val > 0 ? "+" : ""}{s.val.toFixed(2)}pp</span>
                     {s.label === "10Y–2Y" && s.val < 0 && <span style={{ marginLeft: 8, fontSize: 10, color: "#E07B5A88" }}>INVERTED</span>}
                   </div>
                 ))}
               </div>
             )}
-
             <div style={{ marginTop: 24, display: "flex", justifyContent: "space-between" }}>
               <span style={{ fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Source: FRED / Federal Reserve Bank of St. Louis</span>
               {stats?.data_latest && <span style={{ fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Last data point: {formatDate(stats.data_latest)}</span>}
@@ -614,6 +769,7 @@ export default function App() {
         )}
 
         {tab === "HOLDINGS" && <HoldingsTab />}
+        {tab === "CROSS-ASSET" && <CrossAssetTab />}
 
       </div>
     </div>
