@@ -263,7 +263,7 @@ function CountryDetail({ iso, onClose }) {
             ))}</tr>
           </thead>
           <tbody>
-            {[...data.history].reverse().slice(0, 24).map((row, i) => (
+            {[...data.history].reverse().slice(0, 120).map((row, i) => (
               <tr key={i} style={{ borderBottom: "1px solid #080E14" }}>
                 <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{row.date}</td>
                 <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, color: "#E8E0D0", textAlign: "right" }}>${row.holdings_bn.toFixed(1)}B</td>

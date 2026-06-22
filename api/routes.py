@@ -230,7 +230,7 @@ def get_stress_leaderboard(
 @router.get("/holdings/country/{iso_code}")
 def get_country_holdings(
     iso_code: str,
-    months: int = Query(24, description="Number of months of history"),
+    months: int = Query(120, description="Number of months of history"),
     db: Session = Depends(get_db)
 ):
     """
