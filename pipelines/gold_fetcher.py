@@ -1,19 +1,22 @@
 """
 Gold Reserves Pipeline + Cross-Asset Stress Scorer
 ----------------------------------------------------
-Imports World Gold Council gold reserves CSV and computes cross-asset
-stress signals combining treasury holdings, gold reserves, and spot gold price.
+Imports World Gold Council historical gold reserves CSV and computes
+cross-asset stress signals.
+
+CSV format (historical):
+  - Wide format: Country | Q4 00 | Q1 01 | Q2 01 | ...
+  - Quarterly data back to Q4 2000
+  - Values in tonnes, "AWAITED" for unreported
+
+Download from: https://www.gold.org/goldhub/data/gold-reserves-by-country
+Save to: C:\projects\sentinel\data\gold_reserves.csv
+Re-download monthly to keep current.
 
 SIGNAL HIERARCHY:
-  Base:           Country selling treasuries OR gold
-  Cross-asset:    Country selling BOTH treasuries AND gold (1.5x multiplier)
-  Divergence:     Selling gold reserves INTO rising spot price (2x multiplier)
-                  → Strongest possible distress signal. Country is a forced
-                    seller even when gold is at peak value. They need cash NOW.
-
-Download CSV monthly from:
-  https://www.gold.org/goldhub/data/gold-reserves-by-country
-Save to: C:\projects\sentinel\data\gold_reserves.csv
+  TREASURY_ONLY:  Country selling treasuries (1x)
+  CROSS_ASSET:    Selling both treasuries AND gold (1.5x)
+  DIVERGENCE:     Selling gold INTO rising spot price (2x) — maximum distress
 """
 
 import csv
@@ -35,7 +38,7 @@ GOLD_METRIC = {
     "category": "gold",
     "unit": "tonnes",
     "source": "WGC",
-    "description": "Official gold reserves held by central banks (World Gold Council)"
+    "description": "Official gold reserves held by central banks (World Gold Council, quarterly)"
 }
 
 WGC_COUNTRY_MAP = {
@@ -68,7 +71,36 @@ WGC_COUNTRY_MAP = {
     "Georgia": "GEO", "Azerbaijan": "AZE", "Mongolia": "MNG",
     "Kyrgyzstan": "KGZ", "Morocco": "MAR", "Vietnam": "VNM",
     "New Zealand": "NZL", "Jordan": "JOR", "Ghana": "GHA",
+    "Kyrgyz Republic": "KGZ", "Venezuela": "VEN",
+    "Ecuador": "ECU", "Bolivia": "BOL", "Cambodia": "KHM",
+    "Sri Lanka": "LKA", "Tunisia": "TUN", "Algeria": "DZA",
+    "Nigeria": "NGA", "Tanzania": "TZA", "Kenya": "KEN",
+    "Ethiopia": "ETH", "Mozambique": "MOZ", "Zimbabwe": "ZWE",
+    "Cameroon": "CMR", "Senegal": "SEN", "Uganda": "UGA",
+    "Malta": "MLT", "Cyprus": "CYP", "Albania": "ALB",
+    "North Macedonia": "MKD", "Bosnia and Herzegovina": "BIH",
+    "Kosovo": "XKX", "Moldova": "MDA", "Tajikistan": "TJK",
+    "Turkmenistan": "TKM", "Myanmar": "MMR", "Laos": "LAO",
+    "Nepal": "NPL", "Afghanistan": "AFG", "Oman": "OMN",
+    "Bahrain": "BHR", "Syria": "SYR", "Lebanon": "LBN",
+    "Libya": "LBY", "Sudan": "SDN", "Mauritius": "MUS",
+    "Guatemala": "GTM", "Costa Rica": "CRI", "El Salvador": "SLV",
+    "Honduras": "HND", "Nicaragua": "NIC", "Panama": "PAN",
+    "Paraguay": "PRY", "Uruguay": "URY",
 }
+
+
+def parse_quarter(q_str: str) -> datetime:
+    """
+    Parse quarter string like 'Q4 00', 'Q1 26' into first-of-quarter datetime.
+    Q1 = Jan, Q2 = Apr, Q3 = Jul, Q4 = Oct
+    """
+    parts = q_str.strip().split()
+    quarter = int(parts[0][1])  # Q1 -> 1
+    year_2d = int(parts[1])
+    year = 2000 + year_2d if year_2d <= 99 else year_2d
+    month = {1: 1, 2: 4, 3: 7, 4: 10}[quarter]
+    return datetime(year, month, 1)
 
 
 def ensure_gold_metric(db: Session) -> Metric:
@@ -82,10 +114,7 @@ def ensure_gold_metric(db: Session) -> Metric:
 
 
 def get_spot_gold_trend(db: Session, months: int = 3) -> dict:
-    """
-    Get recent spot gold price trend from FRED data.
-    Returns: {latest_price, mom_pct, trend_3m_pct, rising}
-    """
+    """Get recent spot gold price trend."""
     gold_price_metric = db.query(Metric).filter_by(code="GOLD_SPOT_USD").first()
     if not gold_price_metric:
         return {"latest_price": None, "mom_pct": None, "trend_3m_pct": None, "rising": None}
@@ -101,7 +130,7 @@ def get_spot_gold_trend(db: Session, months: int = 3) -> dict:
         return {"latest_price": None, "mom_pct": None, "trend_3m_pct": None, "rising": None}
 
     latest = float(history[-1].value)
-    month_ago = float(history[max(0, len(history)-22)].value)  # ~1 month of trading days
+    month_ago = float(history[max(0, len(history)-22)].value)
     start = float(history[0].value)
 
     mom_pct = (latest - month_ago) / month_ago * 100 if month_ago else None
@@ -115,9 +144,13 @@ def get_spot_gold_trend(db: Session, months: int = 3) -> dict:
     }
 
 
-def import_wgc_csv(db: Session, csv_path: Path = CSV_PATH,
-                   as_of_date: datetime = None) -> dict:
-    """Import WGC gold reserves snapshot CSV."""
+def import_wgc_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
+    """
+    Import WGC historical gold reserves CSV.
+
+    Format: Wide, Country × Quarter (Q4 00 → Q1 26)
+    Values: tonnes or "AWAITED"
+    """
     if not csv_path.exists():
         raise FileNotFoundError(
             f"Gold reserves CSV not found at {csv_path}\n"
@@ -125,32 +158,25 @@ def import_wgc_csv(db: Session, csv_path: Path = CSV_PATH,
             f"Save as: {csv_path}"
         )
 
-    if as_of_date is None:
-        now = datetime.utcnow()
-        as_of_date = datetime(now.year, now.month, 1)
-
     metric = ensure_gold_metric(db)
     inserted = updated = skipped = 0
 
     with open(csv_path, newline='', encoding='utf-8-sig') as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            country_name = row.get('Country', '').strip()
-            tonnes_str = row.get('Gold Reserves Tonnes', '').strip()
+        reader = csv.reader(f)
+        headers = next(reader)
 
-            if not tonnes_str or tonnes_str == 'AWAITED':
-                skipped += 1
-                continue
+        # Parse quarter dates for all columns
+        quarter_dates = []
+        for h in headers[1:]:
             try:
-                tonnes = Decimal(tonnes_str)
+                quarter_dates.append(parse_quarter(h))
             except Exception:
-                skipped += 1
-                continue
+                quarter_dates.append(None)
 
-            if tonnes <= 0:
-                skipped += 1
+        for row in reader:
+            if not row:
                 continue
-
+            country_name = row[0].strip()
             iso_code = WGC_COUNTRY_MAP.get(country_name)
             if not iso_code:
                 logger.debug(f"No ISO mapping for: {country_name}")
@@ -162,53 +188,57 @@ def import_wgc_csv(db: Session, csv_path: Path = CSV_PATH,
                 skipped += 1
                 continue
 
-            existing = db.query(TimeSeries).filter(
-                TimeSeries.metric_id == metric.id,
-                TimeSeries.country_id == country.id,
-                TimeSeries.date == as_of_date,
-            ).first()
+            for i, value_str in enumerate(row[1:]):
+                if i >= len(quarter_dates) or quarter_dates[i] is None:
+                    continue
+                value_str = value_str.strip()
+                if not value_str or value_str == 'AWAITED':
+                    continue
+                try:
+                    tonnes = Decimal(value_str)
+                except Exception:
+                    continue
 
-            if existing:
-                existing.value = tonnes
-                existing.updated_at = datetime.utcnow()
-                updated += 1
-            else:
-                db.add(TimeSeries(
-                    metric_id=metric.id,
-                    country_id=country.id,
-                    date=as_of_date,
-                    value=tonnes,
-                ))
-                inserted += 1
+                if tonnes < 0:
+                    continue
+
+                date = quarter_dates[i]
+                existing = db.query(TimeSeries).filter(
+                    TimeSeries.metric_id == metric.id,
+                    TimeSeries.country_id == country.id,
+                    TimeSeries.date == date,
+                ).first()
+
+                if existing:
+                    existing.value = tonnes
+                    existing.updated_at = datetime.utcnow()
+                    updated += 1
+                else:
+                    db.add(TimeSeries(
+                        metric_id=metric.id,
+                        country_id=country.id,
+                        date=date,
+                        value=tonnes,
+                    ))
+                    inserted += 1
 
     db.commit()
-    logger.info(f"WGC import: {inserted} inserted, {updated} updated, {skipped} skipped")
+    logger.info(f"WGC historical import: {inserted} inserted, {updated} updated, {skipped} countries skipped")
     return {
         "status": "success",
         "inserted": inserted,
         "updated": updated,
         "skipped": skipped,
-        "as_of": as_of_date.strftime("%Y-%m"),
+        "note": "Quarterly data Q4 2000 to present",
     }
 
 
 def compute_cross_asset_stress(db: Session) -> list:
     """
-    Cross-asset stress scoring with three signal tiers:
-
-    TIER 1 — Treasury stress only (base score)
-    TIER 2 — Treasury + gold reserves selling (1.5x multiplier)
-    TIER 3 — Treasury + gold reserves selling INTO rising spot price (2x multiplier)
-              The divergence signal: selling gold at peak prices = forced seller
-
-    Score components:
-      TIC MoM decline magnitude   0–30 pts
-      TIC consecutive months      0–20 pts
-      Gold MoM decline magnitude  0–30 pts
-      Gold consecutive months     0–20 pts
-      Max base: 100 pts
-      Cross-asset multiplier: 1.5x
-      Divergence multiplier: 2.0x (overrides 1.5x)
+    Three-tier cross-asset stress scoring:
+      TIER 1 TREASURY_ONLY:  selling treasuries (1x)
+      TIER 2 CROSS_ASSET:    selling treasuries + gold (1.5x)
+      TIER 3 DIVERGENCE:     selling gold INTO rising spot price (2x)
     """
     tic_metric = db.query(Metric).filter_by(code="TIC_HOLDINGS").first()
     gold_metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
@@ -224,30 +254,27 @@ def compute_cross_asset_stress(db: Session) -> list:
     if not tic_latest or not gold_latest:
         return []
 
-    # Get spot gold trend once — applies to all countries
     spot = get_spot_gold_trend(db, months=3)
     spot_rising = spot.get("rising")
 
     results = []
     for country in db.query(Country).all():
-        # TIC history
         tic_hist = db.query(TimeSeries).filter(
             TimeSeries.metric_id == tic_metric.id,
             TimeSeries.country_id == country.id,
             TimeSeries.date >= tic_latest - timedelta(days=185),
         ).order_by(TimeSeries.date.asc()).all()
 
-        # Gold history
+        # Gold: use last 4 quarters for trend
         gold_hist = db.query(TimeSeries).filter(
             TimeSeries.metric_id == gold_metric.id,
             TimeSeries.country_id == country.id,
-            TimeSeries.date >= gold_latest - timedelta(days=185),
+            TimeSeries.date >= gold_latest - timedelta(days=400),
         ).order_by(TimeSeries.date.asc()).all()
 
         if len(tic_hist) < 2 or len(gold_hist) < 1:
             continue
 
-        # TIC metrics
         tic_prev = float(tic_hist[-2].value)
         if tic_prev == 0:
             continue
@@ -255,7 +282,6 @@ def compute_cross_asset_stress(db: Session) -> list:
         tic_consec = sum(1 for i in range(len(tic_hist)-1, 0, -1)
                          if float(tic_hist[i].value) < float(tic_hist[i-1].value))
 
-        # Gold metrics
         gold_tonnes = float(gold_hist[-1].value)
         gold_mom = None
         gold_consec = 0
@@ -272,7 +298,9 @@ def compute_cross_asset_stress(db: Session) -> list:
         if not (selling_tic or selling_gold):
             continue
 
-        # Base score
+        cross_asset = selling_tic and selling_gold
+        divergence = cross_asset and spot_rising
+
         score = 0
         if tic_mom < 0:
             score += min(30, abs(tic_mom) * 3)
@@ -280,10 +308,6 @@ def compute_cross_asset_stress(db: Session) -> list:
         if gold_mom is not None and gold_mom < 0:
             score += min(30, abs(gold_mom) * 3)
         score += min(20, gold_consec * 4)
-
-        # Signal tier and multiplier
-        cross_asset = selling_tic and selling_gold
-        divergence = cross_asset and spot_rising  # selling gold INTO rising prices
 
         if divergence:
             multiplier = 2.0
@@ -295,25 +319,19 @@ def compute_cross_asset_stress(db: Session) -> list:
             multiplier = 1.0
             signal_tier = "TREASURY_ONLY" if selling_tic else "GOLD_ONLY"
 
-        final_score = score * multiplier
-
         results.append({
             "country_iso": country.iso_code,
             "country_name": country.name,
             "region": country.region,
-            # Treasury data
             "tic_holdings_bn": round(float(tic_hist[-1].value), 2),
             "tic_mom_pct": round(tic_mom, 2),
             "tic_consecutive_months": tic_consec,
-            # Gold reserves data
             "gold_tonnes": round(gold_tonnes, 1),
             "gold_mom_pct": round(gold_mom, 2) if gold_mom is not None else None,
             "gold_consecutive_months": gold_consec,
-            # Spot gold context
             "spot_gold_price": spot.get("latest_price"),
             "spot_gold_3m_pct": spot.get("trend_3m_pct"),
             "spot_gold_rising": spot_rising,
-            # Signal classification
             "selling_treasuries": selling_tic,
             "selling_gold": selling_gold,
             "cross_asset_stress": cross_asset,
@@ -321,8 +339,8 @@ def compute_cross_asset_stress(db: Session) -> list:
             "signal_tier": signal_tier,
             "score_before_multiplier": round(score, 1),
             "multiplier": multiplier,
-            "stress_score": round(final_score, 1),
-            "alert": divergence or cross_asset or final_score >= 30,
+            "stress_score": round(score * multiplier, 1),
+            "alert": divergence or cross_asset or (score * multiplier) >= 30,
             "tic_as_of": tic_latest.strftime("%Y-%m"),
             "gold_as_of": gold_latest.strftime("%Y-%m"),
         })
@@ -361,4 +379,3 @@ def run_gold_fetch(db: Session) -> dict:
         ))
         db.commit()
         raise
-
