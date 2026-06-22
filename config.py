@@ -5,6 +5,7 @@ from typing import Optional
 class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql://postgres:postgres@localhost:5432/treasury_monitor"
+    anthropic_api_key: str = ""
     
     # API
     fred_api_key: str = "your_fred_api_key_here"  # Get free at https://fred.stlouisfed.org/docs/api/

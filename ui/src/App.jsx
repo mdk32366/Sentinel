@@ -70,7 +70,7 @@ function StatCard({ label, value, unit, change, color }) {
       </div>
       {change != null && (
         <div style={{ marginTop: 6, fontSize: 12, color: up ? "#5DB87A" : "#E07B5A", fontFamily: "monospace" }}>
-          {up ? "▲" : "▼"} {unit === "%" ? `${Math.round(Math.abs(change) * 100)}bps` : `${Math.abs(change).toFixed(2)}%`} vs 30d
+          {up ? "▲" : "▼"} {Math.abs(change).toFixed(2)}{unit === "%" ? "pp" : "%"} vs 30d
         </div>
       )}
     </div>
@@ -133,180 +133,251 @@ function StressBar({ score, max = 100 }) {
 
 // ── Country Detail (shared between HOLDINGS and COUNTRY tabs) ─────────────────
 
-function CountryDetail({ iso, onClose, standalone = false }) {
+
+// Sovereign yield FRED codes
+const SOVEREIGN_YIELD_CODES = {
+  JPN: "IRLTLT01JPM156N", DEU: "IRLTLT01DEM156N", ITA: "IRLTLT01ITM156N",
+  FRA: "IRLTLT01FRM156N", ESP: "IRLTLT01ESM156N", GBR: "IRLTLT01GBM156N",
+  AUS: "IRLTLT01AUM156N", CAN: "IRLTLT01CAM156N",
+};
+
+async function generateCountryNarrative(countryData) {
+  const { iso, name, ticData, goldData, moneyData, spreadBps, spreadTrend, compositeData } = countryData;
+  const latestTic = ticData?.history?.slice(-1)[0];
+  const prevYearTic = ticData?.history?.slice(-13, -12)[0];
+  const spreadStr = spreadBps != null
+    ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)}bps vs US 10Y (${spreadTrend})`
+    : "not available";
+
+  const prompt = `You are a senior sovereign credit analyst for Project Sentinel. Generate a concise analyst brief (250-350 words) for ${name} (${iso}).
+
+DATA:
+TREASURY: Current $${ticData?.summary?.latest_holdings_bn?.toFixed(1)}B, Peak $${ticData?.summary?.peak_holdings_bn?.toFixed(1)}B, MoM ${latestTic?.mom_change_pct != null ? (latestTic.mom_change_pct > 0 ? "+" : "") + latestTic.mom_change_pct.toFixed(2) + "%" : "unknown"}, Consecutive declining months: ${compositeData?.tic_consecutive_months ?? 0}, YoY: ${prevYearTic && latestTic ? (((latestTic.holdings_bn - prevYearTic.holdings_bn) / prevYearTic.holdings_bn) * 100).toFixed(1) + "%" : "n/a"}
+GOLD: ${goldData?.summary?.latest_tonnes?.toFixed(0) ?? "no data"}t current, ${goldData?.summary?.peak_tonnes?.toFixed(0) ?? "n/a"}t peak, ${goldData?.summary?.drawdown_from_peak_pct?.toFixed(1) ?? "0"}% drawdown
+M2 GROWTH: ${moneyData.length > 0 ? moneyData[moneyData.length-1].pct.toFixed(1) + "% YoY (" + moneyData[moneyData.length-1].date + ")" : "no data"}
+SOVEREIGN SPREAD: ${spreadStr}
+COMPOSITE SCORE: ${compositeData?.composite_score?.toFixed(1) ?? "n/a"} (${compositeData?.tier ?? "WATCH"})
+ACTIVE SIGNALS: ${compositeData?.active_signals?.join("; ") || "none"}
+
+Structure your response:
+SITUATION: What the data shows right now (2-3 sentences)
+INTERPRETATION: What this means — distinguish strategic repositioning vs forced selling, explain the spread context (2-3 sentences)
+RISK FACTORS: What would escalate this to a higher stress tier (2-3 sentences)
+WATCH FOR: 2-3 specific metrics or thresholds to monitor next month
+
+Be direct. Use actual numbers. No hedging.`;
+
+const response = await fetch(`${API}/analyze/country`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ prompt })
+  });
+  const data = await response.json();
+  return data.text || "Analysis unavailable.";
+}
+
+function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   const [ticData, setTicData] = useState(null);
   const [goldData, setGoldData] = useState(null);
   const [moneyData, setMoneyData] = useState([]);
+  const [compositeData, setCompositeData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [histRange, setHistRange] = useState(120);
+  const [narrative, setNarrative] = useState(null);
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setNarrative(null);
     const start = new Date();
     start.setFullYear(start.getFullYear() - 30);
     Promise.all([
       fetch(`${API}/holdings/country/${iso}?months=${histRange}`).then(r => r.json()).catch(() => null),
       fetch(`${API}/holdings/gold/${iso}?months=120`).then(r => r.json()).catch(() => null),
       fetch(`${API}/timeseries?metric_codes=BROAD_MONEY_GROWTH&country_iso=${iso}&start_date=${start.toISOString()}`).then(r => r.json()).catch(() => []),
-    ]).then(([tic, gold, money]) => {
+      fetch(`${API}/stress/composite`).then(r => r.json()).catch(() => null),
+    ]).then(([tic, gold, money, composite]) => {
       setTicData(tic);
       setGoldData(gold);
       const moneyRows = Array.isArray(money)
-        ? money.map(r => ({ date: r.date.split("T")[0].slice(0, 4), pct: parseFloat(r.value) }))
-            .filter(r => !isNaN(r.pct))
-            .sort((a, b) => a.date.localeCompare(b.date))
+        ? money.map(r => ({ date: r.date.split("T")[0].slice(0, 4), pct: parseFloat(r.value) })).filter(r => !isNaN(r.pct)).sort((a, b) => a.date.localeCompare(b.date))
         : [];
       setMoneyData(moneyRows);
+      if (composite) {
+        const all = [...(composite.crisis||[]), ...(composite.stressed||[]), ...(composite.elevated||[]), ...(composite.watch||[])];
+        setCompositeData(all.find(c => c.country_iso === iso) || null);
+      }
       setLoading(false);
     });
   }, [iso, histRange]);
+
+  const handleGenerateNarrative = async () => {
+    setNarrativeLoading(true);
+    setNarrative(null);
+    try {
+      const yieldCode = SOVEREIGN_YIELD_CODES[iso];
+      const us10y = latestAll["DGS10"];
+      const countryYield = yieldCode ? latestAll[yieldCode] : null;
+      const spreadBps = countryYield != null && us10y != null ? (countryYield - us10y) * 100 : null;
+      const spreadTrend = spreadBps == null ? "n/a" : spreadBps > 150 ? "elevated — significant risk premium" : spreadBps > 50 ? "slight premium" : spreadBps > 0 ? "marginal premium" : spreadBps < -100 ? "deeply negative (safe-haven/YCC)" : "negative (below US)";
+      const text = await generateCountryNarrative({ iso, name: ticData?.country?.name, ticData, goldData, moneyData, spreadBps, spreadTrend, compositeData });
+      setNarrative(text);
+    } catch (e) { setNarrative("Failed to generate analysis. Please try again."); }
+    setNarrativeLoading(false);
+  };
 
   if (loading) return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
   if (!ticData) return null;
 
   const ticChart = ticData.history?.map(h => ({ date: h.date, holdings: h.holdings_bn, mom: h.mom_change_pct })) || [];
-  const goldChart = goldData?.history?.map(h => ({ date: h.date, tonnes: h.tonnes, mom: h.mom_change_pct })) || [];
+  const goldChart = goldData?.history?.map(h => ({ date: h.date, tonnes: h.tonnes })) || [];
   const latestMoney = moneyData.length > 0 ? moneyData[moneyData.length - 1] : null;
+  const yieldCode = SOVEREIGN_YIELD_CODES[iso];
+  const us10y = latestAll["DGS10"];
+  const countryYield = yieldCode ? latestAll[yieldCode] : null;
+  const spreadBps = countryYield != null && us10y != null ? (countryYield - us10y) * 100 : null;
+  const spreadColor = spreadBps == null ? "#3A4D5C" : spreadBps > 150 ? "#FF4444" : spreadBps > 50 ? "#E07B5A" : spreadBps > 0 ? "#E8C547" : spreadBps < -100 ? "#7EB8C9" : "#5A6878";
+  const tierColor = compositeData ? (compositeData.tier === "CRISIS" ? "#FF4444" : compositeData.tier === "STRESSED" ? "#E07B5A" : compositeData.tier === "ELEVATED" ? "#E8C547" : "#5A6878") : "#5A6878";
 
-  const container = standalone
-    ? { background: "#080E14", minHeight: "100%" }
-    : { background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: 24, marginTop: 12 };
+  const container = standalone ? { background: "#080E14", minHeight: "100%" } : { background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: 24, marginTop: 12 };
+
+  const formatNarrative = (text) => text.split("\n").map((line, i) => {
+    const isHeader = /^(SITUATION|INTERPRETATION|RISK FACTORS|WATCH FOR)/i.test(line.trim());
+    return <div key={i} style={{ fontFamily: "monospace", fontSize: isHeader ? 10 : 12, color: isHeader ? "#C8A96E" : "#8A9BAC", letterSpacing: isHeader ? "0.1em" : 0, textTransform: isHeader ? "uppercase" : "none", marginBottom: isHeader ? 4 : 2, marginTop: isHeader && i > 0 ? 12 : 0, lineHeight: 1.7 }}>{line}</div>;
+  });
 
   return (
     <div style={container}>
       {/* Header */}
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20, padding: standalone ? "0 0 0 0" : 0 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 20 }}>
         <div>
           <div style={{ fontFamily: "monospace", fontSize: standalone ? 20 : 16, color: "#E8E0D0", fontWeight: 700 }}>
             {ticData.country?.name}
             <span style={{ marginLeft: 10, fontSize: 11, color: "#3A4D5C" }}>{ticData.country?.iso} · {ticData.country?.region}</span>
+            {compositeData && <span style={{ marginLeft: 12, fontFamily: "monospace", fontSize: 10, color: tierColor, background: `${tierColor}18`, border: `1px solid ${tierColor}44`, borderRadius: 2, padding: "2px 7px" }}>{compositeData.tier} · {compositeData.composite_score?.toFixed(0)}</span>}
           </div>
-          <div style={{ display: "flex", gap: 28, marginTop: 12, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", gap: 24, marginTop: 12, flexWrap: "wrap" }}>
             {[
-              { label: "Treasury Holdings", val: ticData.summary?.latest_holdings_bn != null ? `$${ticData.summary.latest_holdings_bn.toFixed(1)}B` : "—", color: "#C8A96E" },
-              { label: "Peak Holdings", val: ticData.summary?.peak_holdings_bn != null ? `$${ticData.summary.peak_holdings_bn.toFixed(1)}B` : "—", color: "#5A6878" },
-              { label: "Declining Months", val: `${ticData.summary?.declining_months_in_period ?? 0} / ${ticData.history?.length ?? 0}`, color: "#E07B5A" },
-              { label: "Gold Reserves", val: goldData?.summary?.latest_tonnes != null ? `${goldData.summary.latest_tonnes.toFixed(0)}t` : "—", color: "#C8A96E" },
-              { label: "Gold Peak", val: goldData?.summary?.peak_tonnes != null ? `${goldData.summary.peak_tonnes.toFixed(0)}t` : "—", color: "#5A6878" },
+              { label: "Treasury", val: ticData.summary?.latest_holdings_bn != null ? `$${ticData.summary.latest_holdings_bn.toFixed(1)}B` : "—", color: "#C8A96E" },
+              { label: "Peak", val: ticData.summary?.peak_holdings_bn != null ? `$${ticData.summary.peak_holdings_bn.toFixed(1)}B` : "—", color: "#5A6878" },
+              { label: "Consec ↓", val: `${compositeData?.tic_consecutive_months ?? 0}mo`, color: (compositeData?.tic_consecutive_months ?? 0) >= 3 ? "#E07B5A" : "#5A6878" },
+              { label: "Gold", val: goldData?.summary?.latest_tonnes != null ? `${goldData.summary.latest_tonnes.toFixed(0)}t` : "—", color: "#C8A96E" },
               { label: "M2 Growth", val: latestMoney ? `${latestMoney.pct.toFixed(1)}% (${latestMoney.date})` : "—", color: latestMoney?.pct > 30 ? "#E07B5A" : latestMoney?.pct > 15 ? "#E8C547" : "#5DB87A" },
-            ].map(s => (
-              <div key={s.label}>
-                <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", textTransform: "uppercase" }}>{s.label}</div>
-                <div style={{ fontFamily: "monospace", fontSize: 15, color: s.color, marginTop: 2 }}>{s.val}</div>
-              </div>
-            ))}
+              { label: "Bond Spread", val: spreadBps != null ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)}bps` : "—", color: spreadColor },
+            ].map(s => <div key={s.label}><div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", textTransform: "uppercase" }}>{s.label}</div><div style={{ fontFamily: "monospace", fontSize: 15, color: s.color, marginTop: 2 }}>{s.val}</div></div>)}
           </div>
         </div>
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          {/* History range selector */}
-          <div style={{ display: "flex", gap: 4 }}>
-            {[[24,"2Y"],[60,"5Y"],[120,"10Y"]].map(([m, l]) => (
-              <button key={l} onClick={() => setHistRange(m)} style={{ background: histRange === m ? "#1A2530" : "transparent", border: `1px solid ${histRange === m ? "#5A6878" : "#1E2D3D"}`, color: histRange === m ? "#C8A96E" : "#3A4D5C", borderRadius: 2, padding: "3px 8px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>{l}</button>
-            ))}
-          </div>
-          {!standalone && onClose && (
-            <button onClick={onClose} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#5A6878", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>✕</button>
-          )}
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {[[24,"2Y"],[60,"5Y"],[120,"10Y"]].map(([m, l]) => <button key={l} onClick={() => setHistRange(m)} style={{ background: histRange===m?"#1A2530":"transparent", border:`1px solid ${histRange===m?"#5A6878":"#1E2D3D"}`, color:histRange===m?"#C8A96E":"#3A4D5C", borderRadius:2, padding:"3px 8px", cursor:"pointer", fontFamily:"monospace", fontSize:11 }}>{l}</button>)}
+          {!standalone && onClose && <button onClick={onClose} style={{ background:"transparent", border:"1px solid #1E2D3D", color:"#5A6878", borderRadius:2, padding:"4px 10px", cursor:"pointer", fontFamily:"monospace", fontSize:12 }}>✕</button>}
         </div>
       </div>
 
-      {/* Treasury Holdings Chart */}
-      <div style={{ marginBottom: 8 }}>
-        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", marginBottom: 8 }}>TREASURY HOLDINGS (USD billions) — red = declining month</div>
+      {/* AI Narrative */}
+      <div style={{ background:"#060D14", border:"1px solid #C8A96E33", borderLeft:"3px solid #C8A96E", borderRadius:2, padding:"16px 20px", marginBottom:20 }}>
+        <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom: narrative||narrativeLoading ? 16 : 0 }}>
+          <div>
+            <div style={{ fontFamily:"monospace", fontSize:11, color:"#C8A96E", letterSpacing:"0.1em", marginBottom:2 }}>SENTINEL ANALYST BRIEF</div>
+            {!narrative && !narrativeLoading && <div style={{ fontFamily:"monospace", fontSize:11, color:"#3A4D5C" }}>AI-generated narrative using all available data — treasury, gold, M2, sovereign spread, composite score</div>}
+          </div>
+          <button onClick={handleGenerateNarrative} disabled={narrativeLoading} style={{ background:narrativeLoading?"#0F1923":"#C8A96E18", border:`1px solid ${narrativeLoading?"#1E2D3D":"#C8A96E"}`, color:narrativeLoading?"#3A4D5C":"#C8A96E", borderRadius:2, padding:"8px 16px", cursor:narrativeLoading?"not-allowed":"pointer", fontFamily:"monospace", fontSize:12, whiteSpace:"nowrap" }}>
+            {narrativeLoading ? "⟳ Generating..." : narrative ? "↻ Regenerate" : "▶ Generate Analysis"}
+          </button>
+        </div>
+        {narrativeLoading && <div style={{ fontFamily:"monospace", fontSize:12, color:"#3A4D5C", lineHeight:1.8 }}>Analyzing treasury data, gold reserves, monetary policy, sovereign spreads, and composite stress signals...</div>}
+        {narrative && !narrativeLoading && (
+          <div style={{ borderTop:"1px solid #1A2530", paddingTop:14 }}>
+            {formatNarrative(narrative)}
+            <div style={{ fontFamily:"monospace", fontSize:10, color:"#1E2D3D", marginTop:12, borderTop:"1px solid #1A2530", paddingTop:8 }}>
+              Generated by Claude · Data: US Treasury TIC · World Gold Council · World Bank · OECD/FRED · Project Sentinel composite scorer
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Sovereign spread */}
+      {spreadBps != null && (
+        <div style={{ background:"#0A1520", border:`1px solid ${spreadColor}33`, borderRadius:2, padding:"12px 16px", marginBottom:16 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:16, flexWrap:"wrap" }}>
+            <div>
+              <div style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", letterSpacing:"0.1em", marginBottom:3 }}>SOVEREIGN BOND SPREAD VS US 10Y</div>
+              <span style={{ fontFamily:"monospace", fontSize:18, fontWeight:700, color:spreadColor }}>{spreadBps>0?"+":""}{spreadBps.toFixed(0)}bps</span>
+              <span style={{ fontFamily:"monospace", fontSize:11, color:"#5A6878", marginLeft:12 }}>
+                {spreadBps>150?"⚠ ELEVATED — market pricing significant risk premium":spreadBps>50?"Mild premium — slight credit/inflation concern":spreadBps>0?"Negligible premium vs US":spreadBps<-100?"Deeply negative — safe-haven or YCC effect":"Negative — policy divergence or safe-haven flow"}
+              </span>
+            </div>
+            <div style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", lineHeight:1.6 }}>
+              {countryYield?.toFixed(2)}% ({iso} 10Y) − {us10y?.toFixed(2)}% (US 10Y) = {spreadBps>0?"+":""}{spreadBps.toFixed(0)}bps · Positive = country pays more · Widening = rising market concern
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Treasury chart */}
+      <div style={{ marginBottom:8 }}>
+        <div style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", letterSpacing:"0.1em", marginBottom:8 }}>TREASURY HOLDINGS (USD billions) — red = declining month</div>
         <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={ticChart} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+          <BarChart data={ticChart} margin={{ top:4, right:8, bottom:4, left:8 }}>
             <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
-            <XAxis dataKey="date" tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={40} />
-            <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={52} tickFormatter={v => `$${v}B`} />
-            <Tooltip formatter={(val) => [`$${val?.toFixed(1)}B`, "Holdings"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }} labelStyle={{ color: "#5A6878" }} />
-            <Bar dataKey="holdings" radius={[2, 2, 0, 0]}>
-              {ticChart.map((entry, i) => <Cell key={i} fill={entry.mom != null && entry.mom < 0 ? "#E07B5A" : "#5DB87A"} fillOpacity={0.75} />)}
+            <XAxis dataKey="date" tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} minTickGap={40} />
+            <YAxis tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} width={52} tickFormatter={v=>`$${v}B`} />
+            <Tooltip formatter={(val)=>[`$${val?.toFixed(1)}B`,"Holdings"]} contentStyle={{ background:"#0A1520", border:"1px solid #1E2D3D", borderRadius:2, fontFamily:"monospace", fontSize:12 }} labelStyle={{ color:"#5A6878" }} />
+            <Bar dataKey="holdings" radius={[2,2,0,0]}>
+              {ticChart.map((e,i)=><Cell key={i} fill={e.mom!=null&&e.mom<0?"#E07B5A":"#5DB87A"} fillOpacity={0.75}/>)}
             </Bar>
           </BarChart>
         </ResponsiveContainer>
       </div>
 
-      {/* Gold Reserves Chart (if data exists) */}
+      {/* Gold chart */}
       {goldChart.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em", marginBottom: 8 }}>GOLD RESERVES (tonnes) — quarterly</div>
+        <div style={{ marginBottom:20 }}>
+          <div style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", letterSpacing:"0.1em", marginBottom:8 }}>GOLD RESERVES (tonnes) — quarterly</div>
           <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={goldChart} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+            <LineChart data={goldChart} margin={{ top:4, right:8, bottom:4, left:8 }}>
               <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={40} />
-              <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={52} tickFormatter={v => `${v}t`} />
-              <Tooltip formatter={(val) => [`${val?.toFixed(1)}t`, "Gold"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }} labelStyle={{ color: "#5A6878" }} />
-              <Line type="monotone" dataKey="tonnes" stroke="#C8A96E" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} connectNulls />
+              <XAxis dataKey="date" tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} minTickGap={40} />
+              <YAxis tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} width={52} tickFormatter={v=>`${v}t`} />
+              <Tooltip formatter={(val)=>[`${val?.toFixed(1)}t`,"Gold"]} contentStyle={{ background:"#0A1520", border:"1px solid #1E2D3D", borderRadius:2, fontFamily:"monospace", fontSize:12 }} labelStyle={{ color:"#5A6878" }} />
+              <Line type="monotone" dataKey="tonnes" stroke="#C8A96E" strokeWidth={1.5} dot={false} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         </div>
       )}
 
-      {/* Money Supply Growth Chart */}
+      {/* M2 chart */}
       {moneyData.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8 }}>
-            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.1em" }}>BROAD MONEY GROWTH (% YoY, annual)</div>
-            {latestMoney && (
-              <span style={{
-                fontFamily: "monospace", fontSize: 10,
-                color: latestMoney.pct > 30 ? "#E07B5A" : latestMoney.pct > 15 ? "#E8C547" : "#5DB87A",
-                background: latestMoney.pct > 30 ? "#E07B5A18" : latestMoney.pct > 15 ? "#E8C54718" : "#5DB87A18",
-                border: `1px solid ${latestMoney.pct > 30 ? "#E07B5A44" : latestMoney.pct > 15 ? "#E8C54744" : "#5DB87A44"}`,
-                borderRadius: 2, padding: "1px 6px",
-              }}>
-                {latestMoney.pct.toFixed(1)}% in {latestMoney.date}
-                {latestMoney.pct > 50 ? " ⚠ CRISIS LEVEL" : latestMoney.pct > 30 ? " ⚠ HIGH" : latestMoney.pct > 15 ? " ELEVATED" : " NORMAL"}
-              </span>
-            )}
+        <div style={{ marginBottom:20 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:12, marginBottom:8 }}>
+            <div style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", letterSpacing:"0.1em" }}>BROAD MONEY GROWTH (% YoY)</div>
+            {latestMoney && <span style={{ fontFamily:"monospace", fontSize:10, color:latestMoney.pct>30?"#E07B5A":latestMoney.pct>15?"#E8C547":"#5DB87A", background:`${latestMoney.pct>30?"#E07B5A":latestMoney.pct>15?"#E8C547":"#5DB87A"}18`, border:`1px solid ${latestMoney.pct>30?"#E07B5A":latestMoney.pct>15?"#E8C547":"#5DB87A"}44`, borderRadius:2, padding:"1px 6px" }}>{latestMoney.pct.toFixed(1)}% in {latestMoney.date}{latestMoney.pct>50?" ⚠ CRISIS":latestMoney.pct>30?" ⚠ HIGH":latestMoney.pct>15?" ELEVATED":""}</span>}
           </div>
           <ResponsiveContainer width="100%" height={160}>
-            <LineChart data={moneyData} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+            <LineChart data={moneyData} margin={{ top:4, right:8, bottom:4, left:8 }}>
               <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={30} />
-              <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={44} tickFormatter={v => `${v}%`} />
-              <ReferenceLine y={20} stroke="#E07B5A" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value: "20%", fill: "#E07B5A88", fontFamily: "monospace", fontSize: 9, position: "right" }} />
-              <Tooltip
-                formatter={(v) => [`${v?.toFixed(1)}%`, "M2 Growth"]}
-                contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 12 }}
-                labelStyle={{ color: "#5A6878" }}
-              />
-              <Line
-                type="monotone" dataKey="pct" stroke="#9B8EC4" strokeWidth={1.5}
-                dot={(props) => {
-                  const { cx, cy, payload } = props;
-                  const color = payload.pct > 30 ? "#E07B5A" : payload.pct > 15 ? "#E8C547" : "#9B8EC4";
-                  return <circle key={`dot-${cx}-${cy}`} cx={cx} cy={cy} r={3} fill={color} />;
-                }}
-                connectNulls
-              />
+              <XAxis dataKey="date" tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} minTickGap={30} />
+              <YAxis tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} width={44} tickFormatter={v=>`${v}%`} />
+              <ReferenceLine y={20} stroke="#E07B5A" strokeDasharray="4 4" strokeOpacity={0.5} />
+              <Tooltip formatter={(v)=>[`${v?.toFixed(1)}%`,"M2 Growth"]} contentStyle={{ background:"#0A1520", border:"1px solid #1E2D3D", borderRadius:2, fontFamily:"monospace", fontSize:12 }} labelStyle={{ color:"#5A6878" }} />
+              <Line type="monotone" dataKey="pct" stroke="#9B8EC4" strokeWidth={1.5} dot={(props)=>{ const {cx,cy,payload}=props; const c=payload.pct>30?"#E07B5A":payload.pct>15?"#E8C547":"#9B8EC4"; return <circle key={`d${cx}${cy}`} cx={cx} cy={cy} r={3} fill={c}/>; }} connectNulls />
             </LineChart>
           </ResponsiveContainer>
-          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#1E2D3D", marginTop: 4 }}>
-            Dashed line = 20% threshold · Dots: purple = normal · yellow = elevated (&gt;15%) · red = high (&gt;30%) · Source: World Bank / IMF IFS
-          </div>
         </div>
       )}
 
-      {/* History Table */}
-      <div style={{ overflowX: "auto", maxHeight: 360, overflowY: "auto" }}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead style={{ position: "sticky", top: 0, background: "#0A1520" }}>
-            <tr>{["Date", "Holdings $B", "MoM %", "Trend"].map(h => (
-              <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 10px", textAlign: h === "Date" ? "left" : "right", borderBottom: "1px solid #1A2530" }}>{h}</th>
-            ))}</tr>
+      {/* History table */}
+      <div style={{ overflowX:"auto", maxHeight:360, overflowY:"auto" }}>
+        <table style={{ width:"100%", borderCollapse:"collapse" }}>
+          <thead style={{ position:"sticky", top:0, background:standalone?"#080E14":"#0A1520" }}>
+            <tr>{["Date","Holdings $B","MoM %","Trend"].map(h=><th key={h} style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", textTransform:"uppercase", padding:"6px 10px", textAlign:h==="Date"?"left":"right", borderBottom:"1px solid #1A2530" }}>{h}</th>)}</tr>
           </thead>
           <tbody>
-            {[...(ticData.history || [])].reverse().map((row, i) => (
-              <tr key={i} style={{ borderBottom: "1px solid #080E14" }}>
-                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{row.date}</td>
-                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, color: "#E8E0D0", textAlign: "right" }}>${row.holdings_bn.toFixed(1)}B</td>
-                <td style={{ padding: "6px 10px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: row.mom_change_pct == null ? "#3A4D5C" : row.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
-                  {row.mom_change_pct != null ? `${row.mom_change_pct > 0 ? "+" : ""}${row.mom_change_pct.toFixed(2)}%` : "—"}
-                </td>
-                <td style={{ padding: "6px 10px", textAlign: "right" }}>
-                  {row.mom_change_pct != null && <span style={{ fontFamily: "monospace", fontSize: 14, color: row.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>{row.mom_change_pct < 0 ? "▼" : "▲"}</span>}
-                </td>
+            {[...(ticData.history||[])].reverse().map((row,i)=>(
+              <tr key={i} style={{ borderBottom:"1px solid #080E14" }}>
+                <td style={{ padding:"6px 10px", fontFamily:"monospace", fontSize:12, color:"#8A9BAC" }}>{row.date}</td>
+                <td style={{ padding:"6px 10px", fontFamily:"monospace", fontSize:12, color:"#E8E0D0", textAlign:"right" }}>${row.holdings_bn.toFixed(1)}B</td>
+                <td style={{ padding:"6px 10px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:row.mom_change_pct==null?"#3A4D5C":row.mom_change_pct<0?"#E07B5A":"#5DB87A" }}>{row.mom_change_pct!=null?`${row.mom_change_pct>0?"+":""}${row.mom_change_pct.toFixed(2)}%`:"—"}</td>
+                <td style={{ padding:"6px 10px", textAlign:"right" }}>{row.mom_change_pct!=null&&<span style={{ fontFamily:"monospace", fontSize:14, color:row.mom_change_pct<0?"#E07B5A":"#5DB87A" }}>{row.mom_change_pct<0?"▼":"▲"}</span>}</td>
               </tr>
             ))}
           </tbody>
@@ -376,7 +447,7 @@ function StressTable({ countries, onSelect, selected }) {
   );
 }
 
-function HoldingsTab({ onCountrySelect }) {
+function HoldingsTab({ onCountrySelect, latestAll = {} }) {
   const [summary, setSummary] = useState(null);
   const [stress, setStress] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -444,7 +515,7 @@ function HoldingsTab({ onCountrySelect }) {
 
       {/* Inline country detail */}
       {selected && (
-        <CountryDetail iso={selected.country_iso ?? selected.iso} onClose={() => setSelected(null)} />
+        <CountryDetail iso={selected.country_iso ?? selected.iso} onClose={() => setSelected(null)} latestAll={latest} />
       )}
 
       {/* Stress leaderboard */}
@@ -812,7 +883,7 @@ function USADashboard() {
 }
 
 
-function CountryTab({ initialIso, onIsoChange }) {
+function CountryTab({ initialIso, onIsoChange, latestAll = {} }) {
   const [countries, setCountries] = useState([]);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(initialIso || null);
@@ -856,7 +927,7 @@ function CountryTab({ initialIso, onIsoChange }) {
           style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#5A6878", borderRadius: 2, padding: "6px 14px", cursor: "pointer", fontFamily: "monospace", fontSize: 12, marginBottom: 20 }}>
           ← all countries
         </button>
-        <CountryDetail iso={selected} onClose={() => setSelected(null)} standalone />
+        <CountryDetail iso={selected} onClose={() => setSelected(null)} standalone latestAll={latestAll} />
       </div>
     );
   }
@@ -1135,10 +1206,10 @@ export default function App() {
   };
 
   useEffect(() => {
-    const allCodes = [...METRICS.map(m => m.code), "IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N","IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N"].join(",");
+    const allCodes = [...METRICS.map(m => m.code),"IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N","IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N"].join(",");
     const end = new Date();
     const start = new Date();
-    start.setDate(start.getDate() - 400);
+    start.setDate(start.getDate() - 120);
     fetch(`${API}/timeseries?metric_codes=${allCodes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then(r => r.json())
       .then(raw => {
@@ -1148,7 +1219,7 @@ export default function App() {
           if (!byDate[d]) byDate[d] = { date: d };
           byDate[d][metric_code] = value;
         });
-        const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
 const latest = {}, month30 = {};
 const allTrackedCodes = [...METRICS.map(m => m.code),
   "IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N",
@@ -1159,7 +1230,7 @@ allTrackedCodes.forEach((code) => {
   if (withVal.length) latest[code] = withVal[withVal.length - 1][code];
   if (withVal.length > 1) month30[code] = withVal[Math.max(0, withVal.length - 2)][code];
 });
-        setLatestAll({ latest, month30 });
+setLatestAll({ latest, month30 });
       }).catch(() => {});
   }, []);
 
@@ -1302,47 +1373,15 @@ allTrackedCodes.forEach((code) => {
             </div>
           </>
         )}
-{/* Sovereign Yield Spreads vs US 10Y */}
-{!normalized && latest["DGS10"] != null && (
-  <div style={{ marginTop: 12, background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "14px 28px" }}>
-    <div style={{ display: "flex", gap: 32, alignItems: "center", flexWrap: "wrap" }}>
-      <span style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C", letterSpacing: "0.1em" }}>SOVEREIGN SPREADS vs US 10Y</span>
-      {[
-        { label: "JPN", code: "IRLTLT01JPM156N" },
-        { label: "DEU", code: "IRLTLT01DEM156N" },
-        { label: "ITA", code: "IRLTLT01ITM156N" },
-        { label: "FRA", code: "IRLTLT01FRM156N" },
-        { label: "ESP", code: "IRLTLT01ESM156N" },
-        { label: "GBR", code: "IRLTLT01GBM156N" },
-        { label: "AUS", code: "IRLTLT01AUM156N" },
-        { label: "CAN", code: "IRLTLT01CAM156N" },
-      ].map(s => {
-        const val = latest[s.code];
-        const spread = val != null && latest["DGS10"] != null ? val - latest["DGS10"] : null;
-        if (spread == null) return null;
-        const color = spread > 1.5 ? "#E07B5A" : spread > 0.5 ? "#E8C547" : spread < -0.5 ? "#7EB8C9" : "#5A6878";
-        return (
-          <div key={s.label} style={{ fontFamily: "monospace" }}>
-            <span style={{ fontSize: 11, color: "#3A4D5C", marginRight: 6 }}>{s.label}</span>
-            <span style={{ fontSize: 14, color, fontWeight: 600 }}>
-              {spread > 0 ? "+" : ""}{spread.toFixed(2)}pp
-            </span>
-          </div>
-        );
-      }).filter(Boolean)}
-    </div>
-    <div style={{ fontFamily: "monospace", fontSize: 10, color: "#1E2D3D", marginTop: 8 }}>
-      Positive spread = higher yield than US (credit premium) · &gt;150bps = elevated stress · Source: OECD/FRED monthly
-    </div>
-  </div>
-)}
-        {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} />}
+
+        {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} latestAll={latest} />}
         {tab === "CROSS-ASSET" && <CrossAssetTab />}
         {tab === "COMPOSITE" && <CompositeTab onCountrySelect={handleCountrySelect} />}
         {tab === "COUNTRY" && (
           <CountryTab
             initialIso={countryIso}
             onIsoChange={setCountryIso}
+            latestAll={latest}
           />
         )}
         {tab === "ADMIN" && <AdminTab />}

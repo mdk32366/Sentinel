@@ -482,3 +482,33 @@ def get_composite_stress(db: Session = Depends(get_db)):
         return {"as_of": results[0]["as_of"] if results else None, "spot_gold_rising": results[0]["spot_gold_rising"] if results else None, "summary": {"crisis": len(crisis), "stressed": len(stressed), "elevated": len(elevated), "watch": len(watch), "highest_risk": results[0] if results else None}, "crisis": crisis, "stressed": stressed, "elevated": elevated, "watch": watch}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+@router.post("/analyze/country")
+async def analyze_country(request: dict, db: Session = Depends(get_db)):
+    """Generate AI analyst brief for a country using all available data."""
+    import os, httpx
+    from config import settings
+    api_key = settings.anthropic_api_key
+    if not api_key:
+        raise HTTPException(status_code=500, detail="ANTHROPIC_API_KEY not configured")
+    
+    prompt = request.get("prompt", "")
+    if not prompt:
+        raise HTTPException(status_code=400, detail="No prompt provided")
+    
+    async with httpx.AsyncClient() as client:
+        response = await client.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-sonnet-4-6",
+                "max_tokens": 1000,
+                "messages": [{"role": "user", "content": prompt}]
+            },
+            timeout=30.0
+        )
+        data = response.json()
+        return {"text": data.get("content", [{}])[0].get("text", "Analysis unavailable.")}
