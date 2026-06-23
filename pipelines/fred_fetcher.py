@@ -18,15 +18,15 @@ logger = logging.getLogger(__name__)
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 
 FRED_METRICS = [
-    {"code": "DGS10",             "name": "10-Year Treasury Yield",         "category": "treasury",   "unit": "%",          "description": "Market yield on US Treasury securities at 10-year constant maturity"},
-    {"code": "DGS5",              "name": "5-Year Treasury Yield",          "category": "treasury",   "unit": "%",          "description": "Market yield on US Treasury securities at 5-year constant maturity"},
-    {"code": "DGS2",              "name": "2-Year Treasury Yield",          "category": "treasury",   "unit": "%",          "description": "Market yield on US Treasury securities at 2-year constant maturity"},
-    {"code": "FEDFUNDS",          "name": "Federal Funds Rate",             "category": "monetary",   "unit": "%",          "description": "Effective federal funds rate"},
-    {"code": "DFII10",            "name": "10-Year Real Yield (TIPS)",      "category": "treasury",   "unit": "%",          "description": "Market yield on US Treasury inflation-indexed securities at 10-year constant maturity"},
-    {"code": "DCOILWTICO",        "name": "WTI Crude Oil Price",            "category": "commodity",  "unit": "$/bbl",      "description": "Crude oil prices: West Texas Intermediate (WTI)"},
-    {"code": "DTWEXBGS",          "name": "US Dollar Index",                "category": "fx",         "unit": "index",      "description": "Nominal broad US dollar index"},
-    {"code": "CPIAUCSL",          "name": "Consumer Price Index (CPI)",     "category": "inflation",  "unit": "index",      "description": "Consumer price index for all urban consumers: all items"},
-    {"code": "M2SL",              "name": "M2 Money Supply",                "category": "monetary",   "unit": "billions",   "description": "M2 money stock"},
+    {"code": "DGS10",             "name": "10-Year Treasury Yield",         "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 10-year constant maturity"},
+    {"code": "DGS5",              "name": "5-Year Treasury Yield",          "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 5-year constant maturity"},
+    {"code": "DGS2",              "name": "2-Year Treasury Yield",          "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 2-year constant maturity"},
+    {"code": "FEDFUNDS",          "name": "Federal Funds Rate",             "category": "monetary",   "unit": "%", "source": "FRED",          "description": "Effective federal funds rate"},
+    {"code": "DFII10",            "name": "10-Year Real Yield (TIPS)",      "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury inflation-indexed securities at 10-year constant maturity"},
+    {"code": "DCOILWTICO",        "name": "WTI Crude Oil Price",            "category": "commodity",  "unit": "$/bbl", "source": "FRED",      "description": "Crude oil prices: West Texas Intermediate (WTI)"},
+    {"code": "DTWEXBGS",          "name": "US Dollar Index",                "category": "fx",         "unit": "index", "source": "FRED",      "description": "Nominal broad US dollar index"},
+    {"code": "CPIAUCSL",          "name": "Consumer Price Index (CPI)",     "category": "inflation",  "unit": "index", "source": "FRED",      "description": "Consumer price index for all urban consumers: all items"},
+    {"code": "M2SL",              "name": "M2 Money Supply",                "category": "monetary",   "unit": "billions", "source": "FRED",   "description": "M2 money stock"},
     {"code": "IRLTLT01JPM156N", "name": "Japan 10Y Gov Bond Yield",    "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Japan 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01DEM156N", "name": "Germany 10Y Gov Bond Yield",  "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Germany 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01ITM156N", "name": "Italy 10Y Gov Bond Yield",    "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Italy 10-year government bond yield, monthly (OECD)"},
@@ -140,3 +140,4 @@ def run_fred_fetch(db: Session, days_back: int = 1825) -> dict:
         "updated": total_updated,
         "errors": errors,
     }
+
