@@ -145,7 +145,7 @@ const SOVEREIGN_YIELD_CODES = {
 };
 
 async function generateCountryNarrative(countryData) {
-  const { iso, name, ticData, goldData, moneyData, spreadBps, spreadTrend, compositeData } = countryData;
+  const { iso, name, ticData, goldData, moneyData, spreadBps, spreadTrend, compositeData, oilDependent, brentPct, brentPrice, oilSignal } = countryData;
   const latestTic = ticData?.history?.slice(-1)[0];
   const prevYearTic = ticData?.history?.slice(-13, -12)[0];
   const spreadStr = spreadBps != null
