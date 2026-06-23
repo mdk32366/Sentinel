@@ -1,7 +1,7 @@
 """
 Composite Sovereign Stress Scorer
 ------------------------------------
-Four-dimension scoring system:
+Five-dimension scoring system:
 
   DIMENSION 1 — Treasury (0-50 pts)
     MoM decline magnitude:    0-30 pts (scaled)
@@ -16,11 +16,23 @@ Four-dimension scoring system:
     >30% YoY M2 growth:       20 pts
     >50% YoY M2 growth:       35 pts
 
-  DIMENSION 4 — Sovereign Spread (0-15 pts)  ← NEW
+  DIMENSION 4 — Sovereign Spread (0-20 pts)
     Spread >50bps vs US 10Y:   5 pts  (mild risk premium)
     Spread >100bps vs US 10Y: 10 pts  (elevated)
     Spread >200bps vs US 10Y: 15 pts  (significant stress)
     Spread widening >30bps in 3M: +5 pts (trend component)
+
+  DIMENSION 5 — Petrodollar / Oil Pressure (0-20 pts)  ← NEW
+    Only fires for oil-dependent economies.
+    Brent down >10% over 3M:  5 pts  (mild revenue pressure)
+    Brent down >20% over 3M: 10 pts  (significant)
+    Brent down >30% over 3M: 20 pts  (severe — forced seller risk)
+    Convergence bonus: +5 pts if oil falling AND country selling treasuries
+    simultaneously (confirms petrodollar recycling breakdown)
+
+    Oil-dependent nations: Gulf states, Russia/CIS oil exporters,
+    Nigeria, Algeria, Libya, Angola, Mexico, Colombia, Ecuador,
+    Venezuela, Norway, Kazakhstan, Azerbaijan.
 
 MULTIPLIERS (applied to raw sum):
   Cross-asset (selling both T + gold):    1.5x
@@ -31,10 +43,6 @@ TIERS:
   ELEVATED: 25 ≤ score < 50
   STRESSED: 50 ≤ score < 75
   CRISIS:   score ≥ 75
-
-Sovereign spreads map (ISO → FRED code for 10Y gov bond yield):
-  Only OECD countries have data on FRED. EM countries won't have a spread
-  component but will score on the other three dimensions.
 """
 
 import logging
@@ -63,6 +71,23 @@ SOVEREIGN_YIELD_CODES = {
     "KOR": "IRLTLT01KRM156N",
 }
 
+# Countries whose external reserve dynamics are significantly driven by
+# oil/gas export revenues. When Brent falls, these countries experience
+# reduced petrodollar recycling — meaning less USD flowing back into
+# Treasuries, and potential forced selling to cover fiscal gaps.
+OIL_DEPENDENT_COUNTRIES = {
+    # Gulf / Middle East
+    "SAU", "ARE", "KWT", "QAT", "IRQ", "OMN", "BHR",
+    # Russia / CIS
+    "RUS", "KAZ", "AZE",
+    # Africa
+    "NGA", "AGO", "DZA", "LBY",
+    # Latin America
+    "VEN", "ECU", "COL", "MEX",
+    # Europe/Other
+    "NOR",
+}
+
 
 def get_us_10y_yield(db: Session) -> float | None:
     """Get latest US 10Y yield from DB."""
@@ -76,10 +101,98 @@ def get_us_10y_yield(db: Session) -> float | None:
     return float(latest.value) if latest else None
 
 
+def get_brent_trend(db: Session, months: int = 3) -> dict:
+    """
+    Get Brent crude price trend over the past N months.
+    Uses DCOILBRENTEU (daily) from FRED.
+    Falls back to WTI (DCOILWTICO) if Brent not available.
+    Returns: {latest_price, start_price, change_pct, falling}
+    """
+    for code in ("DCOILBRENTEU", "DCOILWTICO"):
+        metric = db.query(Metric).filter_by(code=code).first()
+        if not metric:
+            continue
+
+        cutoff = datetime.utcnow() - timedelta(days=months * 31)
+        history = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == metric.id,
+            TimeSeries.country_id == None,
+            TimeSeries.date >= cutoff,
+        ).order_by(TimeSeries.date.asc()).all()
+
+        if len(history) < 10:
+            continue
+
+        latest = float(history[-1].value)
+        start = float(history[0].value)
+        change_pct = (latest - start) / start * 100 if start else None
+
+        return {
+            "source": code,
+            "latest_price": round(latest, 2),
+            "start_price": round(start, 2),
+            "change_pct": round(change_pct, 1) if change_pct is not None else None,
+            "falling": change_pct < -10 if change_pct is not None else None,
+            "change_3m_pct": round(change_pct, 1) if change_pct is not None else None,
+        }
+
+    return {
+        "source": None,
+        "latest_price": None,
+        "start_price": None,
+        "change_pct": None,
+        "falling": None,
+        "change_3m_pct": None,
+    }
+
+
+def get_petrodollar_score(iso: str, brent: dict, selling_tic: bool) -> dict:
+    """
+    Compute petrodollar stress score for a given country.
+    Only fires for oil-dependent economies.
+
+    The signal: oil revenue is the primary source of USD for these countries.
+    When Brent falls, their ability to recycle petrodollars into US Treasuries
+    weakens. Combined with active treasury selling, this confirms a revenue
+    stress dynamic rather than strategic repositioning.
+    """
+    if iso not in OIL_DEPENDENT_COUNTRIES:
+        return {"score": 0, "oil_dependent": False, "oil_signal": None}
+
+    change_pct = brent.get("change_pct")
+    if change_pct is None:
+        return {"score": 0, "oil_dependent": True, "oil_signal": "no price data"}
+
+    score = 0
+    signal = None
+
+    if change_pct <= -30:
+        score = 20
+        signal = f"Brent {change_pct:.1f}% (3M) — severe revenue shock"
+    elif change_pct <= -20:
+        score = 10
+        signal = f"Brent {change_pct:.1f}% (3M) — significant revenue pressure"
+    elif change_pct <= -10:
+        score = 5
+        signal = f"Brent {change_pct:.1f}% (3M) — mild revenue pressure"
+
+    # Convergence bonus: oil falling AND selling treasuries simultaneously
+    # This is the clearest petrodollar recycling breakdown signal
+    if score > 0 and selling_tic:
+        score += 5
+        signal += " + treasury selling (petrodollar recycling breakdown)"
+
+    return {
+        "score": min(score, 20),
+        "oil_dependent": True,
+        "oil_signal": signal,
+    }
+
+
 def get_sovereign_spread(db: Session, iso: str, us_10y: float | None) -> dict:
     """
     Get sovereign bond yield spread vs US 10Y for a given country.
-    Returns: {spread_bps, spread_3m_ago_bps, widening, score}
+    Returns: {spread_bps, widening_bps, score}
     """
     if us_10y is None or iso not in SOVEREIGN_YIELD_CODES:
         return {"spread_bps": None, "widening_bps": None, "score": 0}
@@ -102,15 +215,12 @@ def get_sovereign_spread(db: Session, iso: str, us_10y: float | None) -> dict:
     latest_yield = float(history[-1].value)
     spread_bps = (latest_yield - us_10y) * 100
 
-    # 3-month trend: compare current spread to spread 3 months ago
     widening_bps = None
     if len(history) >= 2:
         old_yield = float(history[0].value)
         old_spread = (old_yield - us_10y) * 100
-        widening_bps = spread_bps - old_spread  # positive = widening
+        widening_bps = spread_bps - old_spread
 
-    # Score: only fires if spread is POSITIVE (country paying more than US)
-    # Negative spread = country yields LESS than US = no credit stress signal
     score = 0
     if spread_bps > 200:
         score = 15
@@ -119,14 +229,13 @@ def get_sovereign_spread(db: Session, iso: str, us_10y: float | None) -> dict:
     elif spread_bps > 50:
         score = 5
 
-    # Widening trend bonus — fires regardless of level
     if widening_bps is not None and widening_bps > 30:
         score += 5
 
     return {
         "spread_bps": round(spread_bps, 1),
         "widening_bps": round(widening_bps, 1) if widening_bps is not None else None,
-        "score": min(score, 20),  # cap at 20 to prevent spread from dominating
+        "score": min(score, 20),
     }
 
 
@@ -159,7 +268,7 @@ def get_spot_gold_trend(db: Session, months: int = 3) -> dict:
 
 def compute_composite_stress(db: Session) -> dict:
     """
-    Compute four-dimension composite stress scores for all countries.
+    Compute five-dimension composite stress scores for all countries.
     Returns structured dict with tiers and summary.
     """
     tic_metric = db.query(Metric).filter_by(code="TIC_HOLDINGS").first()
@@ -181,9 +290,10 @@ def compute_composite_stress(db: Session) -> dict:
 
     spot = get_spot_gold_trend(db, months=3)
     spot_rising = spot.get("rising")
-
-    # Get US 10Y yield once — used for all spread calculations
     us_10y = get_us_10y_yield(db)
+
+    # Fetch Brent trend once — applies to all oil-dependent countries
+    brent = get_brent_trend(db, months=3)
 
     results = []
     for country in db.query(Country).all():
@@ -252,14 +362,14 @@ def compute_composite_stress(db: Session) -> dict:
         m2_year = None
 
         if m2_metric:
-            m2_rows = db.query(TimeSeries).filter(
+            m2_row = db.query(TimeSeries).filter(
                 TimeSeries.metric_id == m2_metric.id,
                 TimeSeries.country_id == country.id,
             ).order_by(TimeSeries.date.desc()).first()
 
-            if m2_rows:
-                m2_growth_pct = float(m2_rows.value)
-                m2_year = m2_rows.date.year
+            if m2_row:
+                m2_growth_pct = float(m2_row.value)
+                m2_year = m2_row.date.year
                 if m2_growth_pct > 50:
                     monetary_score = 35
                 elif m2_growth_pct > 30:
@@ -273,8 +383,14 @@ def compute_composite_stress(db: Session) -> dict:
         spread_bps = spread_data["spread_bps"]
         spread_widening = spread_data["widening_bps"]
 
-        # ── MULTIPLIERS ────────────────────────────────────────────────────
+        # ── DIMENSION 5: Petrodollar / Oil Pressure ────────────────────────
         selling_tic = tic_mom < -0.5 or tic_consec >= 2
+        petro_data = get_petrodollar_score(iso, brent, selling_tic)
+        petro_score = petro_data["score"]
+        oil_dependent = petro_data["oil_dependent"]
+        oil_signal = petro_data["oil_signal"]
+
+        # ── MULTIPLIERS ────────────────────────────────────────────────────
         cross_asset = selling_tic and selling_gold
         divergence = cross_asset and spot_rising
 
@@ -285,10 +401,9 @@ def compute_composite_stress(db: Session) -> dict:
         else:
             multiplier = 1.0
 
-        raw_score = tic_score + gold_score + monetary_score + spread_score
+        raw_score = tic_score + gold_score + monetary_score + spread_score + petro_score
         composite_score = raw_score * multiplier
 
-        # ── TIER ───────────────────────────────────────────────────────────
         if composite_score >= 75:
             tier = "CRISIS"
         elif composite_score >= 50:
@@ -298,7 +413,6 @@ def compute_composite_stress(db: Session) -> dict:
         else:
             tier = "WATCH"
 
-        # Skip WATCH countries with zero score to reduce noise
         if composite_score == 0:
             continue
 
@@ -316,6 +430,8 @@ def compute_composite_stress(db: Session) -> dict:
             signals.append(f"Spread: +{spread_bps:.0f}bps vs US")
         if spread_widening and spread_widening > 30:
             signals.append(f"Spread widening: +{spread_widening:.0f}bps (3M)")
+        if oil_signal:
+            signals.append(f"🛢 {oil_signal}")
         if divergence:
             signals.append("⚡ DIVERGENCE: selling gold into rising price")
         elif cross_asset:
@@ -343,6 +459,12 @@ def compute_composite_stress(db: Session) -> dict:
             "spread_bps": spread_bps,
             "spread_widening_bps": spread_widening,
             "spread_score": round(spread_score, 1),
+            # Petrodollar
+            "oil_dependent": oil_dependent,
+            "oil_signal": oil_signal,
+            "brent_3m_pct": brent.get("change_3m_pct"),
+            "brent_price": brent.get("latest_price"),
+            "petro_score": round(petro_score, 1),
             # Multipliers & totals
             "multiplier": multiplier,
             "raw_score": round(raw_score, 1),
@@ -380,7 +502,11 @@ def compute_composite_stress(db: Session) -> dict:
             "total": len(results),
             "highest_risk": results[0] if results else None,
             "us_10y_yield": us_10y,
+            "brent_price": brent.get("latest_price"),
+            "brent_3m_pct": brent.get("change_3m_pct"),
+            "brent_source": brent.get("source"),
             "countries_with_spread_data": len([r for r in results if r["spread_bps"] is not None]),
+            "oil_dependent_countries": len([r for r in results if r["oil_dependent"]]),
         },
         "as_of": tic_latest.strftime("%Y-%m") if tic_latest else None,
     }

@@ -41,6 +41,7 @@ FRED_METRICS = [
     {"code": "IRLTLT01CHM156N", "name": "Switzerland 10Y Gov Bond Yield", "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Switzerland 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01BEM156N", "name": "Belgium 10Y Gov Bond Yield",     "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Belgium 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01KRM156N", "name": "South Korea 10Y Gov Bond Yield", "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "South Korea 10-year government bond yield, monthly (OECD)"},
+    {"code": "DCOILBRENTEU", "name": "Brent Crude Oil Price", "category": "commodity", "unit": "$/bbl", "source": "FRED", "description": "Crude Oil Prices: Brent - Europe, dollars per barrel, daily"},
 ]
 
 

@@ -161,6 +161,8 @@ BROAD MONEY GROWTH: ${moneyData.length > 0 ? moneyData[moneyData.length-1].pct.t
 SOVEREIGN BOND SPREAD: ${spreadStr}
 STRESS TIER: ${compositeData?.tier ?? "WATCH"} (score ${compositeData?.composite_score?.toFixed(1) ?? "n/a"})
 ACTIVE SIGNALS: ${compositeData?.active_signals?.join("; ") || "none"}
+OIL DEPENDENCY: ${countryData.oilDependent ? `Yes — Brent ${countryData.brentPct?.toFixed(1)}% (3M) at $${countryData.brentPrice}` : "Not classified as oil-dependent economy"}
+PETRODOLLAR SCORE: ${countryData.compositeData?.petro_score ?? 0} pts
 
 Write four short sections with these exact headers. Use plain English. Explain what the numbers mean in human terms — what is actually happening, why it matters, what the risk is. Use analogies if helpful. Avoid jargon like "MoM", "basis points", "liquidity", "repositioning" without explaining them first.
 
@@ -229,7 +231,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
       const countryYield = yieldCode ? latestAll[yieldCode] : null;
       const spreadBps = countryYield != null && us10y != null ? (countryYield - us10y) * 100 : null;
       const spreadTrend = spreadBps == null ? "n/a" : spreadBps > 150 ? "elevated — significant risk premium" : spreadBps > 50 ? "slight premium" : spreadBps > 0 ? "marginal premium" : spreadBps < -100 ? "deeply negative (safe-haven/YCC)" : "negative (below US)";
-      const text = await generateCountryNarrative({ iso, name: ticData?.country?.name, ticData, goldData, moneyData, spreadBps, spreadTrend, compositeData });
+      const text = await generateCountryNarrative({ iso, name: ticData?.country?.name, ticData, goldData, moneyData, spreadBps, spreadTrend, compositeData, oilDependent: compositeData?.oil_dependent ?? false, brentPct: compositeData?.brent_3m_pct, brentPrice: compositeData?.brent_price, oilSignal: compositeData?.oil_signal });
       setNarrative(text);
     } catch (e) { setNarrative("Failed to generate analysis. Please try again."); }
     setNarrativeLoading(false);
@@ -1505,7 +1507,7 @@ function CompositeTab({ onCountrySelect }) {
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr>
-                  {["Country", "Tier", "T-Bill MoM", "Consec", "Gold t", "M2 YoY", "T", "G", "M", "Spread", "Mult", "Score", "Active Signals"].map(h => (
+                  {["Country", "Tier", "T-Bill MoM", "Consec", "Gold t", "M2 YoY", "T", "G", "M", "Spread", "P", "Mult", "Score", "Active Signals"].map(h => (
   <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 8px", textAlign: h === "Country" || h === "Active Signals" || h === "Tier" ? "left" : "right", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>{h}</th>
 ))}
                 </tr>
@@ -1542,6 +1544,8 @@ function CompositeTab({ onCountrySelect }) {
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: "#9B8EC4" }}>{c.monetary_score}</td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: c.spread_score > 0 ? "#7EB8C9" : "#3A4D5C" }}>
                           {c.spread_bps != null ? `${c.spread_bps > 0 ? "+" : ""}${c.spread_bps.toFixed(0)}` : "—"}
+</td><td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: c.petro_score > 0 ? "#E07B5A" : "#3A4D5C" }}>
+  {c.oil_dependent ? (c.petro_score > 0 ? c.petro_score : "🛢") : "—"}
 </td>
                       <td style={{ padding: "7px 8px", fontFamily: "monospace", fontSize: 11, textAlign: "right", color: c.multiplier > 1 ? "#FF4444" : "#3A4D5C" }}>
                         {c.multiplier > 1 ? `${c.multiplier}×` : "—"}
