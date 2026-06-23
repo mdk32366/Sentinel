@@ -1,5 +1,6 @@
 import logging
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import sys
@@ -76,17 +77,8 @@ app.add_middleware(
 # Include API routes
 app.include_router(router)
 
-
-@app.get("/")
-def root():
-    """API root endpoint"""
-    return {
-        "name": "Treasury Monitor",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "status": "running",
-    }
-
+# Mount React frontend
+app.mount("/", StaticFiles(directory="api/static", html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
@@ -97,3 +89,4 @@ if __name__ == "__main__":
         port=settings.api_port,
         log_level=settings.log_level.lower(),
     )
+
