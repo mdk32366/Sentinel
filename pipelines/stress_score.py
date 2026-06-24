@@ -273,9 +273,10 @@ def calculate_gold_accumulation_stress(db: Session) -> tuple:
     """
     Factor 4: Central bank gold accumulation rate
     Rapid accumulation = de-dollarization signal = stress.
-    Compares latest quarter total vs same quarter one year ago (YoY).
+    Compares latest quarter vs ~1 year ago (4 quarters back), YoY.
+    Only sums countries present on BOTH dates to avoid coverage bias.
     Normalized 0-100 where:
-    - >3% YoY increase in total CB gold = 100 (heavy accumulation)
+    - >3% YoY increase = 100 (heavy accumulation / stress)
     - <0% YoY (net selling) = 0 (no stress)
     """
     metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
@@ -284,7 +285,6 @@ def calculate_gold_accumulation_stress(db: Session) -> tuple:
 
     from sqlalchemy import func as sqlfunc
 
-    # Get all distinct dates with data, newest first
     all_dates = (
         db.query(TimeSeries.date)
         .filter(TimeSeries.metric_id == metric.id, TimeSeries.country_id != None)
@@ -297,21 +297,40 @@ def calculate_gold_accumulation_stress(db: Session) -> tuple:
         return 0.0, 0.0
 
     latest_date = all_dates[0][0]
-    # Compare against ~1 year ago (4 quarters back)
     prior_date = all_dates[min(4, len(all_dates) - 1)][0]
+
+    # Only compare countries present with non-zero values on BOTH dates
+    latest_countries = set(
+        r[0] for r in db.query(TimeSeries.country_id).filter(
+            TimeSeries.metric_id == metric.id,
+            TimeSeries.date == latest_date,
+            TimeSeries.value > 0,
+            TimeSeries.country_id != None,
+        ).all()
+    )
+    prior_countries = set(
+        r[0] for r in db.query(TimeSeries.country_id).filter(
+            TimeSeries.metric_id == metric.id,
+            TimeSeries.date == prior_date,
+            TimeSeries.value > 0,
+            TimeSeries.country_id != None,
+        ).all()
+    )
+    common = list(latest_countries & prior_countries)
+
+    if not common:
+        return 0.0, 0.0
 
     latest_total = db.query(sqlfunc.sum(TimeSeries.value)).filter(
         TimeSeries.metric_id == metric.id,
         TimeSeries.date == latest_date,
-        TimeSeries.country_id != None,
-        TimeSeries.value > 0,
+        TimeSeries.country_id.in_(common),
     ).scalar() or 0
 
     prior_total = db.query(sqlfunc.sum(TimeSeries.value)).filter(
         TimeSeries.metric_id == metric.id,
         TimeSeries.date == prior_date,
-        TimeSeries.country_id != None,
-        TimeSeries.value > 0,
+        TimeSeries.country_id.in_(common),
     ).scalar() or 0
 
     if not prior_total:
@@ -319,7 +338,6 @@ def calculate_gold_accumulation_stress(db: Session) -> tuple:
 
     pct_change = ((float(latest_total) - float(prior_total)) / float(prior_total)) * 100.0
 
-    # Map: >3% YoY growth = 100 (stress), <0% = 0 (no stress)
     if pct_change >= 3.0:
         stress = 100.0
     elif pct_change <= 0.0:
