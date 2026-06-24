@@ -387,7 +387,7 @@ def get_gold_reserves(
             {
                 "country_code": r[0],
                 "country_name": r[1],
-                "as_of_date": r[2].strftime("%Y-Q%d")[:7] if r[2] else None,
+                "as_of_date": f"{r[2].year}-Q{(r[2].month - 1) // 3 + 1}" if r[2] else None,
                 "metric_tonnes": round(float(r[3]), 1),
                 "percent_of_total": round((float(r[3]) / total_tonnes) * 100, 1),
             }

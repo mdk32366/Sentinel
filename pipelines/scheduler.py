@@ -5,6 +5,7 @@ from config import settings
 from database.connection import get_session
 from pipelines.fred_fetcher import run_fred_fetch
 from pipelines.treasury_holdings import run_treasury_holdings_fetch
+from pipelines.stress_score import run_stress_score_calculation
 from pipelines.gold_reserves import run_gold_reserves_fetch
 
 logger = logging.getLogger(__name__)
@@ -48,6 +49,21 @@ def scheduled_gold_fetch():
         db.close()
 
 
+def scheduled_stress_score():
+    """Stress score calculation task - daily at configured hour"""
+    try:
+        db = get_session()
+        result = run_stress_score_calculation(db)
+        if result['status'] == 'success':
+            logger.info(f"Stress score: {result['data']['overall_score']} - {result['data']['interpretation']}")
+        else:
+            logger.error(f"Stress score failed: {result.get('error')}")
+    except Exception as e:
+        logger.error(f"Scheduled stress score failed: {e}", exc_info=True)
+    finally:
+        db.close()
+
+
 def start_scheduler():
     """Initialize and start the background scheduler"""
     if not settings.scheduler_enabled:
@@ -73,6 +89,16 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info(f"Scheduled Treasury fetch on day {settings.treasury_fetch_day} at 03:00")
+    
+    # Daily stress score calculation at 4:30 AM (30 min after FRED fetch)
+    scheduler.add_job(
+        scheduled_stress_score,
+        CronTrigger(hour=4, minute=30),
+        id="stress_score",
+        name="Macro Stress Score Calculation",
+        replace_existing=True,
+    )
+    logger.info("Scheduled stress score daily at 04:30")
     
     # Monthly gold fetch on configured day
     scheduler.add_job(
