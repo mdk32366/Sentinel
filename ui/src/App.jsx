@@ -250,11 +250,33 @@ Use plain English. No markdown formatting. No bullet points.`;
         )}
       </div>
 
+      {/* Exited position banner */}
+      {ticHistory?.data_points === 0 && goldChart.length > 0 && (
+        <div style={{ background: "#FF444415", border: "1px solid #FF444444", borderLeft: "4px solid #FF4444", borderRadius: 2, padding: "12px 18px", marginBottom: 20 }}>
+          <div style={{ fontFamily: "monospace", fontSize: 12, color: "#FF4444", fontWeight: 700, marginBottom: 4 }}>
+            ⚠ COMPLETED TREASURY LIQUIDATION
+          </div>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", lineHeight: 1.6 }}>
+            {ticHistory?.country_name ?? iso} holds zero US Treasury securities. Position has been fully exited.
+            {goldChart.length > 0 && ` Gold reserves: ${goldChart[goldChart.length-1]?.tonnes?.toFixed(0)}t — gold accumulation pattern confirms de-dollarization posture.`}
+          </div>
+        </div>
+      )}
+
       {/* Stat cards */}
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         {[
-          { label: "T-Bill Holdings", val: latestTic ? `$${latestTic.holdings.toFixed(1)}B` : "—", color: "#C8A96E" },
-          { label: "MoM Change", val: ticMom != null ? `${ticMom > 0 ? "+" : ""}${ticMom.toFixed(2)}%` : "—", color: ticMom == null ? "#3A4D5C" : ticMom < 0 ? "#E07B5A" : "#5DB87A" },
+          {
+            label: "T-Bill Holdings",
+            val: latestTic ? `$${latestTic.holdings.toFixed(1)}B` : ticHistory?.data_points === 0 ? "EXITED" : "—",
+            color: latestTic ? "#C8A96E" : ticHistory?.data_points === 0 ? "#FF4444" : "#3A4D5C",
+            sub: ticHistory?.data_points === 0 ? "Zero US Treasuries held" : null,
+          },
+          {
+            label: "MoM Change",
+            val: ticMom != null ? `${ticMom > 0 ? "+" : ""}${ticMom.toFixed(2)}%` : ticHistory?.data_points === 0 ? "N/A" : "—",
+            color: ticMom == null ? "#3A4D5C" : ticMom < 0 ? "#E07B5A" : "#5DB87A"
+          },
           { label: "Gold Reserves", val: latestGold ? `${latestGold.tonnes.toFixed(0)}t` : "—", color: "#E8C547" },
           { label: "Sovereign Yield", val: countryYield != null ? `${countryYield.toFixed(2)}%` : "—", color: "#7EB8C9" },
           { label: "Spread vs US 10Y", val: spreadBps != null ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)}bps` : "—", color: spreadColor },
@@ -262,6 +284,7 @@ Use plain English. No markdown formatting. No bullet points.`;
           <div key={s.label} style={{ background: "#0F1923", border: `1px solid ${s.color}22`, borderTop: `2px solid ${s.color}`, borderRadius: 2, padding: "12px 16px", flex: "1 1 120px" }}>
             <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>{s.label}</div>
             <div style={{ fontFamily: "monospace", fontSize: 16, fontWeight: 700, color: s.color }}>{s.val}</div>
+            {s.sub && <div style={{ fontFamily: "monospace", fontSize: 10, color: s.color, marginTop: 3, opacity: 0.8 }}>{s.sub}</div>}
           </div>
         ))}
       </div>
