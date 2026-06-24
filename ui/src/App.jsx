@@ -145,9 +145,26 @@ const SOVEREIGN_YIELD_CODES = {
 };
 
 
+// Map ISO -> FRED total reserves ex-gold series code
+const TRESEG_CODES = {
+  CHN: "TRESEGCNM052N",
+  JPN: "TRESEGJPM052N",
+  RUS: "TRESEGRUM052N",
+  IND: "TRESEGINM052N",
+  TUR: "TRESEGTRM052N",
+  DEU: "TRESEGDEM052N",
+  FRA: "TRESEGFRM052N",
+  GBR: "TRESEGGBM052N",
+  SAU: "TRESEGSAM052N",
+  BRA: "TRESEGBRM052N",
+  USA: "TRESEGUSM052N",
+  IDN: "TRESEGIDM052N",
+};
+
 function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   const [ticHistory, setTicHistory] = useState(null);
   const [goldHistory, setGoldHistory] = useState(null);
+  const [reservesHistory, setReservesHistory] = useState(null);
   const [loading, setLoading] = useState(true);
   const [narrative, setNarrative] = useState(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
@@ -158,12 +175,17 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
     const end = new Date();
     const start = new Date();
     start.setFullYear(start.getFullYear() - 3);
+    const tresegCode = TRESEG_CODES[iso];
     Promise.all([
       fetch(`${API}/holdings/${iso}?start_date=${start.toISOString()}&end_date=${end.toISOString()}`).then(r => r.json()).catch(() => null),
       fetch(`${API}/gold-reserves/${iso}`).then(r => r.json()).catch(() => null),
-    ]).then(([tic, gold]) => {
+      tresegCode
+        ? fetch(`${API}/timeseries?metric_codes=${tresegCode}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`).then(r => r.json()).catch(() => null)
+        : Promise.resolve(null),
+    ]).then(([tic, gold, reserves]) => {
       setTicHistory(tic);
       setGoldHistory(gold);
+      setReservesHistory(reserves);
       setLoading(false);
     });
   }, [iso]);
@@ -223,6 +245,10 @@ Use plain English. No markdown formatting. No bullet points.`;
     date: h.date.split("T")[0],
     tonnes: h.metric_tonnes,
   }));
+
+  const reservesChart = Array.isArray(reservesHistory)
+    ? reservesHistory.map(h => ({ date: h.date.split("T")[0], value: parseFloat(h.value) })).filter(h => !isNaN(h.value))
+    : [];
 
   const latestTic = ticChart[ticChart.length - 1];
   const prevTic = ticChart[ticChart.length - 2];
@@ -290,7 +316,7 @@ Use plain English. No markdown formatting. No bullet points.`;
       </div>
 
       {/* Charts */}
-      <div style={{ display: "grid", gridTemplateColumns: ticChart.length && goldChart.length ? "1fr 1fr" : "1fr", gap: 16 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
         {ticChart.length > 0 && (
           <div style={{ background: "#0F1923", border: "1px solid #1A2530", borderRadius: 2, padding: "16px 20px" }}>
             <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 12, letterSpacing: "0.1em" }}>TREASURY HOLDINGS ($B) — {ticHistory?.data_points} months</div>
@@ -319,14 +345,33 @@ Use plain English. No markdown formatting. No bullet points.`;
             </ResponsiveContainer>
           </div>
         )}
+        {reservesChart.length > 0 && (
+          <div style={{ background: "#0F1923", border: "1px solid #1A2530", borderRadius: 2, padding: "16px 20px" }}>
+            <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 12, letterSpacing: "0.1em" }}>
+              TOTAL RESERVES EX-GOLD ($M) — non-dollar reserve diversification
+            </div>
+            <ResponsiveContainer width="100%" height={160}>
+              <LineChart data={reservesChart} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
+                <CartesianGrid strokeDasharray="2 6" stroke="#0A1520" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} />
+                <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={56} tickFormatter={v => `$${(v/1000).toFixed(0)}B`} />
+                <Tooltip formatter={v => [`$${(v/1000).toFixed(1)}B`, "Reserves ex-Gold"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 11 }} labelFormatter={formatDate} labelStyle={{ color: "#5A6878" }} />
+                <Line type="monotone" dataKey="value" stroke="#7EB8C9" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#1E2D3D", marginTop: 8 }}>
+              Source: IMF IFS · Includes FX, SDRs, IMF positions · Excludes gold · Monthly
+            </div>
+          </div>
+        )}
       </div>
 
-      {!ticChart.length && !goldChart.length && (
+      {!ticChart.length && !goldChart.length && !reservesChart.length && (
         <div style={{ fontFamily: "monospace", fontSize: 13, color: "#3A4D5C", padding: 24, textAlign: "center" }}>No data available for {iso}</div>
       )}
 
       {/* AI Narrative */}
-      {(ticChart.length > 0 || goldChart.length > 0) && (
+      {(ticChart.length > 0 || goldChart.length > 0 || reservesChart.length > 0) && (
         <div style={{ background: "#060D14", border: "1px solid #C8A96E33", borderLeft: "3px solid #C8A96E", borderRadius: 2, padding: "16px 20px", marginTop: 16 }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: narrative || narrativeLoading ? 16 : 0 }}>
             <div>
@@ -488,6 +533,30 @@ function HoldingsTab({ onCountrySelect, latestAll = {} }) {
       {selected && (
         <CountryDetail iso={selected.country_code} onClose={() => setSelected(null)} latestAll={latestAll.latest ?? {}} />
       )}
+
+      {/* Exited countries note */}
+      <div style={{ background: "#FF444410", border: "1px solid #FF444433", borderLeft: "3px solid #FF4444", borderRadius: 2, padding: "12px 18px", marginBottom: 16 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 11, color: "#FF4444", fontWeight: 700, marginBottom: 4 }}>
+          🚨 COUNTRIES WITH COMPLETED TREASURY LIQUIDATION (not in table below)
+        </div>
+        <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", lineHeight: 1.8 }}>
+          The following hold <strong style={{ color: "#FF4444" }}>zero US Treasuries</strong> — they exited before the TIC reporting window. See CROSS-ASSET tab for stress analysis.
+        </div>
+        <div style={{ display: "flex", gap: 10, marginTop: 8, flexWrap: "wrap" }}>
+          {[
+            { iso: "RUS", name: "Russia", gold: "2,304t" },
+            { iso: "TUR", name: "Turkey", gold: "535t" },
+            { iso: "QAT", name: "Qatar", gold: "115t" },
+            { iso: "UZB", name: "Uzbekistan", gold: "416t" },
+          ].map(c => (
+            <div key={c.iso} style={{ background: "#0F1923", border: "1px solid #FF444433", borderRadius: 2, padding: "6px 12px" }}>
+              <span style={{ fontFamily: "monospace", fontSize: 11, color: "#FF4444" }}>{c.iso}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", marginLeft: 6 }}>{c.name}</span>
+              <span style={{ fontFamily: "monospace", fontSize: 10, color: "#E8C547", marginLeft: 8 }}>⬛ $0B · 🥇 {c.gold}</span>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Full holdings table */}
       <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0" }}>
@@ -1081,7 +1150,7 @@ function CrossAssetTab() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["Country","Signal","T-Bills MoM","Consec ↓","Gold t","Gold MoM","Score"].map(h => (
+                    {["Country","Signal","T-Bills MoM","Consec ↓","Gold t","Gold MoM","Non-$ Reserves","Score"].map(h => (
                       <th key={h} style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", textTransform:"uppercase", padding:"8px 12px", textAlign:h==="Country"||h==="Signal"?"left":"right", borderBottom:"1px solid #1A2530", whiteSpace:"nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -1110,6 +1179,9 @@ function CrossAssetTab() {
                         <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:"#8A9BAC" }}>{c.gold_tonnes!=null?`${c.gold_tonnes.toLocaleString()}t`:"—"}</td>
                         <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:c.gold_mom_pct==null?"#3A4D5C":c.gold_mom_pct<0?"#E07B5A":"#5DB87A" }}>
                           {c.gold_mom_pct!=null?`${c.gold_mom_pct>0?"+":""}${c.gold_mom_pct.toFixed(2)}%`:"—"}
+                        </td>
+                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.treseg_signal==="REBUILDING"?"#FF4444":c.treseg_signal==="DEPLETING"?"#E07B5A":"#3A4D5C" }}>
+                          {c.treseg_signal==="NO_DATA"||!c.treseg_signal ? "—" : `${c.treseg_signal} ${c.treseg_trend_pct!=null?(c.treseg_trend_pct>0?"+":"")+c.treseg_trend_pct+"%":""}`}
                         </td>
                         <td style={{ padding:"10px 12px", minWidth:140 }}><StressBar score={c.stress_score??0} max={150} /></td>
                       </tr>
@@ -1226,7 +1298,7 @@ function CompositeTab({ onCountrySelect }) {
               <table style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
                   <tr>
-                    {["Country","Tier","T-Bill MoM","Consec","Gold t","T","G","Spread","P","Mult","Score","Active Signals"].map(h => (
+                    {["Country","Tier","T-Bill MoM","Consec","Gold t","T","G","Spread","P","Mult","Non-$","Score","Active Signals"].map(h => (
                       <th key={h} style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", textTransform:"uppercase", padding:"6px 8px", textAlign:h==="Country"||h==="Active Signals"||h==="Tier"?"left":"right", borderBottom:"1px solid #1A2530", whiteSpace:"nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -1267,6 +1339,9 @@ function CompositeTab({ onCountrySelect }) {
                         </td>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.multiplier??1)>1?"#FF4444":"#3A4D5C" }}>
                           {(c.multiplier??1)>1?`${c.multiplier}×`:"—"}
+                        </td>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:10, textAlign:"right", color:c.treseg_signal==="REBUILDING"?"#FF4444":c.treseg_signal==="DEPLETING"?"#E07B5A":"#3A4D5C", whiteSpace:"nowrap" }}>
+                          {c.treseg_signal&&c.treseg_signal!=="NO_DATA" ? `${c.treseg_signal.slice(0,3)} ${c.treseg_trend_pct!=null?(c.treseg_trend_pct>0?"+":"")+c.treseg_trend_pct+"%":""}` : "—"}
                         </td>
                         <td style={{ padding:"7px 8px", minWidth:120 }}>
                           <div style={{ display:"flex", alignItems:"center", gap:6 }}>

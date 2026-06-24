@@ -310,6 +310,17 @@ def compute_cross_asset_stress(db: Session) -> list:
                 multiplier = 1.0
                 signal_tier = "EXITED"
 
+            # ── TRESEG: non-dollar reserve trend for EXITED countries ─────
+            try:
+                from pipelines.experimental.composite_stress import get_treseg_signal
+                treseg = get_treseg_signal(db, country.iso_code, True)
+            except Exception:
+                treseg = {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}
+
+            # Boost score if rebuilding in alternative currencies
+            if treseg["signal"] == "REBUILDING":
+                score = min(score * 1.2, 150)
+
             results.append({
                 "country_iso": country.iso_code,
                 "country_name": country.name,
@@ -321,6 +332,9 @@ def compute_cross_asset_stress(db: Session) -> list:
                 "gold_tonnes": round(gold_tonnes, 1),
                 "gold_mom_pct": round(gold_mom, 2) if gold_mom is not None else None,
                 "gold_consecutive_months": gold_consec,
+                "treseg_signal": treseg["signal"],
+                "treseg_trend_pct": treseg["trend_pct"],
+                "treseg_latest_bn": treseg["latest_bn"],
                 "spot_gold_price": spot.get("latest_price"),
                 "spot_gold_3m_pct": spot.get("trend_3m_pct"),
                 "spot_gold_rising": spot_rising,
@@ -375,6 +389,13 @@ def compute_cross_asset_stress(db: Session) -> list:
             multiplier = 1.0
             signal_tier = "TREASURY_ONLY" if selling_tic else "GOLD_ONLY"
 
+        # ── TRESEG: non-dollar reserve trend ──────────────────────────────
+        try:
+            from pipelines.experimental.composite_stress import get_treseg_signal
+            treseg = get_treseg_signal(db, country.iso_code, False)
+        except Exception:
+            treseg = {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}
+
         results.append({
             "country_iso": country.iso_code,
             "country_name": country.name,
@@ -386,6 +407,9 @@ def compute_cross_asset_stress(db: Session) -> list:
             "gold_tonnes": round(gold_tonnes, 1),
             "gold_mom_pct": round(gold_mom, 2) if gold_mom is not None else None,
             "gold_consecutive_months": gold_consec,
+            "treseg_signal": treseg["signal"],
+            "treseg_trend_pct": treseg["trend_pct"],
+            "treseg_latest_bn": treseg["latest_bn"],
             "spot_gold_price": spot.get("latest_price"),
             "spot_gold_3m_pct": spot.get("trend_3m_pct"),
             "spot_gold_rising": spot_rising,

@@ -449,6 +449,17 @@ def compute_composite_stress(db: Session) -> dict:
         if not signals and composite_score == 0:
             continue
 
+        # ── DIMENSION 6: Non-dollar reserve trend (TRESEG) ────────────────
+        treseg = get_treseg_signal(db, iso, no_tic_holdings)
+
+        # Boost score if exited TIC AND rebuilding non-gold reserves
+        # (active de-dollarization into alternative system)
+        if no_tic_holdings and treseg["signal"] == "REBUILDING":
+            signals.append(f"⚡ Non-$ reserves rebuilding: +{treseg['trend_pct']}% YoY (de-dollarization)")
+            composite_score = min(composite_score * 1.2, 150)  # 20% boost, capped at 150
+        elif no_tic_holdings and treseg["signal"] == "DEPLETING":
+            signals.append(f"⚠ Non-$ reserves depleting: {treseg['trend_pct']}% YoY (distress)")
+
         results.append({
             "country_iso": iso,
             "country_name": country.name,
@@ -478,6 +489,10 @@ def compute_composite_stress(db: Session) -> dict:
             "brent_3m_pct": brent.get("change_3m_pct"),
             "brent_price": brent.get("latest_price"),
             "petro_score": round(petro_score, 1),
+            # Non-dollar reserves (TRESEG)
+            "treseg_signal": treseg["signal"],
+            "treseg_trend_pct": treseg["trend_pct"],
+            "treseg_latest_bn": treseg["latest_bn"],
             # Multipliers & totals
             "multiplier": multiplier,
             "raw_score": round(raw_score, 1),
@@ -522,4 +537,65 @@ def compute_composite_stress(db: Session) -> dict:
             "oil_dependent_countries": len([r for r in results if r["oil_dependent"]]),
         },
         "as_of": tic_latest.strftime("%Y-%m") if tic_latest else None,
+    }
+
+
+# ── TRESEG country mapping ────────────────────────────────────────────────────
+TRESEG_MAP = {
+    "CHN": "TRESEGCNM052N",
+    "JPN": "TRESEGJPM052N",
+    "RUS": "TRESEGRUM052N",
+    "IND": "TRESEGINM052N",
+    "TUR": "TRESEGTRM052N",
+    "DEU": "TRESEGDEM052N",
+    "FRA": "TRESEGFRM052N",
+    "GBR": "TRESEGGBM052N",
+    "SAU": "TRESEGSAM052N",
+    "BRA": "TRESEGBRM052N",
+    "USA": "TRESEGUSM052N",
+    "IDN": "TRESEGIDM052N",
+}
+
+
+def get_treseg_signal(db: Session, iso: str, no_tic: bool) -> dict:
+    """
+    Get total reserves ex-gold trend for a country.
+    Returns signal: REBUILDING / DEPLETING / STABLE / NO_DATA
+    Analytically significant mainly when no_tic=True (exited Treasuries).
+    """
+    fred_code = TRESEG_MAP.get(iso)
+    if not fred_code:
+        return {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}
+
+    metric = db.query(Metric).filter_by(code=fred_code).first()
+    if not metric:
+        return {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}
+
+    history = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == None,
+    ).order_by(TimeSeries.date.desc()).limit(13).all()
+
+    if len(history) < 2:
+        return {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}
+
+    latest = float(history[0].value)
+    prior = float(history[min(12, len(history)-1)].value)
+
+    if prior == 0:
+        return {"signal": "NO_DATA", "trend_pct": None, "latest_bn": round(latest/1000, 1)}
+
+    trend_pct = (latest - prior) / prior * 100
+
+    if trend_pct > 5:
+        signal = "REBUILDING"
+    elif trend_pct < -5:
+        signal = "DEPLETING"
+    else:
+        signal = "STABLE"
+
+    return {
+        "signal": signal,
+        "trend_pct": round(trend_pct, 1),
+        "latest_bn": round(latest / 1000, 1),
     }
