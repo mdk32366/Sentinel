@@ -149,9 +149,12 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   const [ticHistory, setTicHistory] = useState(null);
   const [goldHistory, setGoldHistory] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [narrative, setNarrative] = useState(null);
+  const [narrativeLoading, setNarrativeLoading] = useState(false);
 
   useEffect(() => {
     setLoading(true);
+    setNarrative(null);
     const end = new Date();
     const start = new Date();
     start.setFullYear(start.getFullYear() - 3);
@@ -164,6 +167,46 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
       setLoading(false);
     });
   }, [iso]);
+
+  const handleGenerateNarrative = async (ticChart, goldChart, latestTic, ticMom, latestGold) => {
+    setNarrativeLoading(true);
+    setNarrative(null);
+    try {
+      const yieldCode = SOVEREIGN_YIELD_CODES[iso];
+      const countryYield = yieldCode ? latestAll[yieldCode] : null;
+      const us10y = latestAll["DGS10"];
+      const spreadBps = countryYield != null && us10y != null ? (countryYield - us10y) * 100 : null;
+      const prompt = `You are a financial analyst writing a concise 200-250 word brief for a sophisticated audience. Analyze ${ticHistory?.country_name ?? iso} (${iso}) based on this data:
+
+TREASURY HOLDINGS: ${latestTic ? `$${latestTic.holdings.toFixed(1)}B current` : "no data"}${ticMom != null ? `, MoM ${ticMom > 0 ? "+" : ""}${ticMom.toFixed(2)}%` : ""}, ${ticChart.length} months of history
+GOLD RESERVES: ${latestGold ? `${latestGold.tonnes.toFixed(0)} metric tonnes` : "no data"}
+SOVEREIGN YIELD SPREAD VS US 10Y: ${spreadBps != null ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)} basis points` : "not available"}
+
+Write three short sections:
+
+SITUATION
+What is this country doing with its US Treasury holdings and gold reserves? 2-3 plain sentences using the real numbers.
+
+WHAT TO WATCH
+What trends matter most right now? What would signal a change in posture? 2-3 sentences.
+
+RISK FACTORS
+What are the top 2 risks to monitor? Be specific. 2 sentences.
+
+Use plain English. No markdown formatting. No bullet points.`;
+
+      const r = await fetch(`${API}/analyze/country`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await r.json();
+      setNarrative(data.text || "Analysis unavailable.");
+    } catch (e) {
+      setNarrative("Failed to generate analysis. Please try again.");
+    }
+    setNarrativeLoading(false);
+  };
 
   if (loading) return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
 
@@ -257,6 +300,39 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
 
       {!ticChart.length && !goldChart.length && (
         <div style={{ fontFamily: "monospace", fontSize: 13, color: "#3A4D5C", padding: 24, textAlign: "center" }}>No data available for {iso}</div>
+      )}
+
+      {/* AI Narrative */}
+      {(ticChart.length > 0 || goldChart.length > 0) && (
+        <div style={{ background: "#060D14", border: "1px solid #C8A96E33", borderLeft: "3px solid #C8A96E", borderRadius: 2, padding: "16px 20px", marginTop: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: narrative || narrativeLoading ? 16 : 0 }}>
+            <div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#C8A96E", letterSpacing: "0.1em", marginBottom: 2 }}>SENTINEL ANALYST BRIEF</div>
+              {!narrative && !narrativeLoading && <div style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C" }}>AI-generated analysis using treasury, gold, and yield spread data</div>}
+            </div>
+            <button
+              onClick={() => handleGenerateNarrative(ticChart, goldChart, latestTic, ticMom, latestGold)}
+              disabled={narrativeLoading}
+              style={{ background: narrativeLoading ? "#0F1923" : "#C8A96E18", border: `1px solid ${narrativeLoading ? "#1E2D3D" : "#C8A96E"}`, color: narrativeLoading ? "#3A4D5C" : "#C8A96E", borderRadius: 2, padding: "8px 16px", cursor: narrativeLoading ? "not-allowed" : "pointer", fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>
+              {narrativeLoading ? "⟳ Generating..." : narrative ? "↻ Regenerate" : "▶ Generate Analysis"}
+            </button>
+          </div>
+          {narrativeLoading && <div style={{ fontFamily: "monospace", fontSize: 12, color: "#3A4D5C", lineHeight: 1.8 }}>Analyzing treasury holdings, gold reserves, and sovereign spread data...</div>}
+          {narrative && !narrativeLoading && (
+            <div style={{ borderTop: "1px solid #1A2530", paddingTop: 14 }}>
+              {narrative.split("\n").map((line, i) => {
+                const trimmed = line.trim();
+                if (!trimmed) return <div key={i} style={{ height: 6 }} />;
+                const isHeader = /^(SITUATION|WHAT TO WATCH|RISK FACTORS)/i.test(trimmed);
+                if (isHeader) return <div key={i} style={{ fontFamily: "monospace", fontSize: 10, color: "#C8A96E", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4, marginTop: i > 0 ? 14 : 0 }}>{trimmed}</div>;
+                return <div key={i} style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", lineHeight: 1.8, marginBottom: 2 }}>{trimmed}</div>;
+              })}
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#1E2D3D", marginTop: 12, borderTop: "1px solid #1A2530", paddingTop: 8 }}>
+                Generated by Claude Haiku · Data: US Treasury TIC · World Gold Council · FRED
+              </div>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

@@ -447,3 +447,44 @@ def trigger_gold_fetch(db: Session = Depends(get_db)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/analyze/country")
+def analyze_country(payload: dict, db: Session = Depends(get_db)):
+    """
+    Generate AI narrative for a country using Anthropic API.
+    Expects: { "prompt": "..." }
+    Returns: { "text": "..." }
+    """
+    import requests as req
+    from config import settings
+
+    if not settings.anthropic_api_key:
+        raise HTTPException(status_code=503, detail="Anthropic API key not configured")
+
+    prompt = payload.get("prompt", "")
+    if not prompt:
+        raise HTTPException(status_code=400, detail="prompt required")
+
+    try:
+        response = req.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": settings.anthropic_api_key,
+                "anthropic-version": "2023-06-01",
+                "content-type": "application/json",
+            },
+            json={
+                "model": "claude-haiku-4-5-20251001",
+                "max_tokens": 1024,
+                "messages": [{"role": "user", "content": prompt}],
+            },
+            timeout=30,
+        )
+        response.raise_for_status()
+        data = response.json()
+        text = data["content"][0]["text"] if data.get("content") else ""
+        return {"text": text}
+    except Exception as e:
+        logger.error(f"Anthropic API call failed: {e}")
+        raise HTTPException(status_code=502, detail=f"AI analysis failed: {str(e)}")

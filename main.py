@@ -1,5 +1,7 @@
 import logging
-from fastapi import FastAPI
+import secrets
+from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
@@ -22,10 +24,31 @@ from api.routes import router
 from pipelines.fred_fetcher import run_fred_fetch
 from pipelines.treasury_holdings import run_treasury_holdings_fetch
 
+# ── Basic Auth ────────────────────────────────────────────────────────────────
+
+security = HTTPBasic()
+
+def require_auth(credentials: HTTPBasicCredentials = Depends(security)):
+    """Verify HTTP Basic Auth credentials against env vars."""
+    correct_username = secrets.compare_digest(
+        credentials.username.encode("utf-8"),
+        settings.auth_username.encode("utf-8"),
+    )
+    correct_password = secrets.compare_digest(
+        credentials.password.encode("utf-8"),
+        settings.auth_password.encode("utf-8"),
+    )
+    if not (correct_username and correct_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Unauthorized",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    return credentials.username
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Startup and shutdown events"""
     logger.info("Treasury Monitor starting up...")
     try:
         init_db()
@@ -34,7 +57,6 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database initialization failed: {e}")
         raise
 
-    # FRED
     logger.info("Running initial FRED fetch...")
     try:
         db = get_session()
@@ -44,7 +66,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Initial FRED fetch failed: {e}")
 
-    # TIC Holdings
     logger.info("Running initial TIC holdings fetch...")
     try:
         db = get_session()
@@ -54,7 +75,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Initial TIC holdings fetch failed: {e}")
 
-    # Gold Reserves
     logger.info("Running initial gold reserves fetch...")
     try:
         from pipelines.gold_reserves import run_gold_reserves_fetch
@@ -65,7 +85,6 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Initial gold reserves fetch failed: {e}")
 
-    # Stress Score
     logger.info("Running initial stress score calculation...")
     try:
         from pipelines.stress_score import run_stress_score_calculation
@@ -78,7 +97,6 @@ async def lifespan(app: FastAPI):
         logger.error(f"Initial stress score calculation failed: {e}")
 
     start_scheduler()
-
     yield
 
     logger.info("Treasury Monitor shutting down...")
@@ -101,7 +119,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(router)
+# Apply auth to all API routes
+app.include_router(router, dependencies=[Depends(require_auth)])
+
+# Static frontend — protected by browser Basic Auth prompt
 app.mount("/", StaticFiles(directory="api/static", html=True), name="static")
 
 if __name__ == "__main__":
