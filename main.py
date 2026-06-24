@@ -5,7 +5,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 import sys
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -16,7 +15,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Import after logging setup
 from config import settings
 from database.connection import init_db, get_session
 from pipelines.scheduler import start_scheduler, stop_scheduler
@@ -28,7 +26,6 @@ from pipelines.treasury_holdings import run_treasury_holdings_fetch
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup and shutdown events"""
-    # Startup
     logger.info("Treasury Monitor starting up...")
     try:
         init_db()
@@ -36,78 +33,79 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logger.error(f"Database initialization failed: {e}")
         raise
-    
-    # Run initial FRED fetch to populate data
+
+    # FRED
     logger.info("Running initial FRED fetch...")
     try:
         db = get_session()
         result = run_fred_fetch(db)
-        logger.info(f"Initial FRED fetch: {result['status']} - {result['inserted']} inserted, {result['updated']} updated")
+        logger.info(f"FRED fetch: {result['status']} - {result['inserted']} inserted, {result['updated']} updated")
         db.close()
     except Exception as e:
         logger.error(f"Initial FRED fetch failed: {e}")
-    
-    # Run initial TIC holdings fetch
+
+    # TIC Holdings
     logger.info("Running initial TIC holdings fetch...")
     try:
         db = get_session()
         result = run_treasury_holdings_fetch(db)
-        logger.info(f"Initial TIC holdings fetch: {result['status']}")
+        logger.info(f"TIC holdings fetch: {result['status']}")
         db.close()
     except Exception as e:
         logger.error(f"Initial TIC holdings fetch failed: {e}")
-    
-    # Run initial stress score calculation
+
+    # Gold Reserves
+    logger.info("Running initial gold reserves fetch...")
+    try:
+        from pipelines.gold_reserves import run_gold_reserves_fetch
+        db = get_session()
+        result = run_gold_reserves_fetch(db)
+        logger.info(f"Gold reserves fetch: {result['status']} - {result.get('countries', 0)} countries")
+        db.close()
+    except Exception as e:
+        logger.error(f"Initial gold reserves fetch failed: {e}")
+
+    # Stress Score
     logger.info("Running initial stress score calculation...")
     try:
-        # LAZY IMPORT HERE - not at module level
         from pipelines.stress_score import run_stress_score_calculation
-        
         db = get_session()
         result = run_stress_score_calculation(db)
         if result['status'] == 'success':
-            logger.info(f"Initial stress score: {result['data']['overall_score']}")
+            logger.info(f"Stress score: {result['data']['overall_score']}")
         db.close()
     except Exception as e:
         logger.error(f"Initial stress score calculation failed: {e}")
-    
-    # Start scheduler
+
     start_scheduler()
-    
+
     yield
-    
-    # Shutdown
+
     logger.info("Treasury Monitor shutting down...")
     stop_scheduler()
     logger.info("Shutdown complete")
 
 
-# Create FastAPI app
 app = FastAPI(
     title="Treasury Monitor API",
     description="Monitor US Treasury bonds, oil prices, gold holdings, and USD strength indicators",
-    version="1.0.0",
+    version="2.0.0",
     lifespan=lifespan,
 )
 
-# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins for local dev
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Include API routes
 app.include_router(router)
-
-# Mount React frontend
 app.mount("/", StaticFiles(directory="api/static", html=True), name="static")
 
 if __name__ == "__main__":
     import uvicorn
-    
     uvicorn.run(
         app,
         host=settings.api_host,

@@ -267,3 +267,121 @@ def run_stress_score_calculation(db: Session) -> dict:
             "status": "failed",
             "error": str(e),
         }
+
+
+def calculate_gold_accumulation_stress(db: Session) -> tuple:
+    """
+    Factor 4: Central bank gold accumulation rate
+    Rapid accumulation = de-dollarization signal = stress
+    Uses US gold reserves as inverse proxy: US drawdown or global acceleration = stress.
+
+    Looks at 6-month change in global top-10 gold holdings.
+    Normalized 0-100 where:
+    - >5% 6-month increase in total gold (heavy accumulation) = 100
+    - <0% (net selling) = 0
+    """
+    metric = db.query(Metric).filter_by(code="GOLD_RESERVES_TOZ").first()
+    if not metric:
+        return 0.0, 0.0
+
+    from sqlalchemy import func as sqlfunc
+    from datetime import timedelta
+
+    # Get the two most recent distinct dates with data
+    recent_dates = (
+        db.query(TimeSeries.date)
+        .filter(TimeSeries.metric_id == metric.id, TimeSeries.country_id != None)
+        .distinct()
+        .order_by(TimeSeries.date.desc())
+        .limit(7)  # ~6 months back
+        .all()
+    )
+
+    if len(recent_dates) < 2:
+        return 0.0, 0.0
+
+    latest_date = recent_dates[0][0]
+    prior_date = recent_dates[-1][0]
+
+    latest_total = db.query(sqlfunc.sum(TimeSeries.value)).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.date == latest_date,
+        TimeSeries.country_id != None,
+    ).scalar() or 0
+
+    prior_total = db.query(sqlfunc.sum(TimeSeries.value)).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.date == prior_date,
+        TimeSeries.country_id != None,
+    ).scalar() or 0
+
+    if not prior_total:
+        return 0.0, 0.0
+
+    pct_change = ((float(latest_total) - float(prior_total)) / float(prior_total)) * 100.0
+
+    # Map: >5% growth = 100 (stress), <0% = 0 (no stress)
+    if pct_change >= 5.0:
+        stress = 100.0
+    elif pct_change <= 0.0:
+        stress = 0.0
+    else:
+        stress = (pct_change / 5.0) * 100.0
+
+    return stress, pct_change
+
+
+def calculate_stress_score_v2(db: Session) -> dict:
+    """
+    Composite stress score: weighted average of four factors.
+    Weights: 35% yield curve, 30% concentration, 20% volatility, 15% gold accumulation
+    """
+    yc_stress, yc_spread = calculate_yield_curve_stress(db)
+    conc_stress, conc_pct = calculate_concentration_stress(db)
+    vol_stress, wti_vol = calculate_volatility_stress(db)
+    gold_stress, gold_pct_change = calculate_gold_accumulation_stress(db)
+
+    has_gold = gold_stress > 0 or gold_pct_change != 0.0
+
+    if has_gold:
+        composite = (yc_stress * 0.35) + (conc_stress * 0.30) + (vol_stress * 0.20) + (gold_stress * 0.15)
+        weights = {"yield_curve": 0.35, "concentration": 0.30, "commodity_volatility": 0.20, "gold_accumulation": 0.15}
+    else:
+        # Fall back to 3-factor if no gold data yet
+        composite = (yc_stress * 0.40) + (conc_stress * 0.35) + (vol_stress * 0.25)
+        weights = {"yield_curve": 0.40, "concentration": 0.35, "commodity_volatility": 0.25, "gold_accumulation": 0.0}
+
+    components = {
+        "yield_curve": {
+            "score": round(yc_stress, 1),
+            "value": round(yc_spread, 2),
+            "unit": "percentage_points",
+            "interpretation": "DGS10 - DGS2 spread"
+        },
+        "concentration": {
+            "score": round(conc_stress, 1),
+            "value": round(conc_pct, 1),
+            "unit": "percent",
+            "interpretation": "Top country % of total holdings"
+        },
+        "commodity_volatility": {
+            "score": round(vol_stress, 1),
+            "value": round(wti_vol, 2),
+            "unit": "percent",
+            "interpretation": "30-day WTI price std dev"
+        },
+        "gold_accumulation": {
+            "score": round(gold_stress, 1),
+            "value": round(gold_pct_change, 2),
+            "unit": "percent_6m_change",
+            "interpretation": "6-month % change in total CB gold holdings"
+        },
+    }
+
+    return {
+        "overall_score": round(composite, 1),
+        "components": components,
+        "weights": weights,
+        "interpretation": stress_interpretation(composite),
+        "timestamp": datetime.utcnow().isoformat(),
+    }
