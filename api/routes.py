@@ -235,6 +235,41 @@ def get_all_holdings(
     }
 
 
+
+@router.get("/holdings/cross-asset-stress")
+def get_cross_asset_stress(db: Session = Depends(get_db)):
+    """
+    Cross-asset stress: countries selling both Treasuries AND gold,
+    with optional divergence multiplier when gold spot is rising.
+    """
+    try:
+        from pipelines.experimental.gold_fetcher import compute_cross_asset_stress
+        result = compute_cross_asset_stress(db)
+        # Wrap into expected format
+        cross = [r for r in result if r.get("cross_asset_stress") or r.get("divergence_signal")]
+        treasury_only = [r for r in result if not r.get("cross_asset_stress") and not r.get("divergence_signal") and r.get("selling_treasuries")]
+        gold_only = [r for r in result if not r.get("selling_treasuries") and r.get("selling_gold")]
+        spot = result[0] if result else {}
+        return {
+            "cross_asset_stress": cross,
+            "treasury_only_stress": treasury_only,
+            "gold_only_stress": gold_only,
+            "summary": {
+                "cross_asset_stressed": len(cross),
+                "treasury_only": len(treasury_only),
+                "gold_only": len(gold_only),
+                "total_stressed": len(result),
+            },
+            "spot_gold_rising": spot.get("spot_gold_rising"),
+            "spot_gold_price": spot.get("spot_gold_price"),
+            "spot_gold_3m_pct": spot.get("spot_gold_3m_pct"),
+            "as_of": spot.get("tic_as_of"),
+        }
+    except Exception as e:
+        logger.error(f"Cross-asset stress calculation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/holdings/{country_iso}")
 def get_country_holdings(
     country_iso: str,
@@ -506,40 +541,6 @@ def get_composite_stress(db: Session = Depends(get_db)):
         return result
     except Exception as e:
         logger.error(f"Composite stress calculation failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/holdings/cross-asset-stress")
-def get_cross_asset_stress(db: Session = Depends(get_db)):
-    """
-    Cross-asset stress: countries selling both Treasuries AND gold,
-    with optional divergence multiplier when gold spot is rising.
-    """
-    try:
-        from pipelines.experimental.gold_fetcher import compute_cross_asset_stress
-        result = compute_cross_asset_stress(db)
-        # Wrap into expected format
-        cross = [r for r in result if r.get("cross_asset_stress") or r.get("divergence_signal")]
-        treasury_only = [r for r in result if not r.get("cross_asset_stress") and not r.get("divergence_signal") and r.get("selling_treasuries")]
-        gold_only = [r for r in result if not r.get("selling_treasuries") and r.get("selling_gold")]
-        spot = result[0] if result else {}
-        return {
-            "cross_asset_stress": cross,
-            "treasury_only_stress": treasury_only,
-            "gold_only_stress": gold_only,
-            "summary": {
-                "cross_asset_stressed": len(cross),
-                "treasury_only": len(treasury_only),
-                "gold_only": len(gold_only),
-                "total_stressed": len(result),
-            },
-            "spot_gold_rising": spot.get("spot_gold_rising"),
-            "spot_gold_price": spot.get("spot_gold_price"),
-            "spot_gold_3m_pct": spot.get("spot_gold_3m_pct"),
-            "as_of": spot.get("tic_as_of"),
-        }
-    except Exception as e:
-        logger.error(f"Cross-asset stress calculation failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
