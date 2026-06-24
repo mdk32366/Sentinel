@@ -23,7 +23,6 @@ from pipelines.scheduler import start_scheduler, stop_scheduler
 from api.routes import router
 from pipelines.fred_fetcher import run_fred_fetch
 from pipelines.treasury_holdings import run_treasury_holdings_fetch
-from pipelines.stress_score import run_stress_score_calculation
 
 
 @asynccontextmanager
@@ -61,6 +60,9 @@ async def lifespan(app: FastAPI):
     # Run initial stress score calculation
     logger.info("Running initial stress score calculation...")
     try:
+        # LAZY IMPORT HERE - not at module level
+        from pipelines.stress_score import run_stress_score_calculation
+        
         db = get_session()
         result = run_stress_score_calculation(db)
         if result['status'] == 'success':
@@ -112,4 +114,3 @@ if __name__ == "__main__":
         port=settings.api_port,
         log_level=settings.log_level.lower(),
     )
-
