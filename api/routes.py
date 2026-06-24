@@ -488,3 +488,106 @@ def analyze_country(payload: dict, db: Session = Depends(get_db)):
     except Exception as e:
         logger.error(f"Anthropic API call failed: {e}")
         raise HTTPException(status_code=502, detail=f"AI analysis failed: {str(e)}")
+
+
+@router.get("/stress/composite")
+def get_composite_stress(db: Session = Depends(get_db)):
+    """
+    5-dimension composite sovereign stress scorer.
+    Scores all countries on: Treasury MoM + consecutive months,
+    Gold reserves trend, M2 monetary growth, Sovereign spread vs US 10Y,
+    Petrodollar / oil pressure.
+    Applies cross-asset (1.5x) and divergence (2.0x) multipliers.
+    Returns tiered results: CRISIS / STRESSED / ELEVATED / WATCH.
+    """
+    try:
+        from pipelines.experimental.composite_stress import compute_composite_stress
+        result = compute_composite_stress(db)
+        return result
+    except Exception as e:
+        logger.error(f"Composite stress calculation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/holdings/cross-asset-stress")
+def get_cross_asset_stress(db: Session = Depends(get_db)):
+    """
+    Cross-asset stress: countries selling both Treasuries AND gold,
+    with optional divergence multiplier when gold spot is rising.
+    """
+    try:
+        from pipelines.experimental.gold_fetcher import compute_cross_asset_stress
+        result = compute_cross_asset_stress(db)
+        # Wrap into expected format
+        cross = [r for r in result if r.get("cross_asset_stress") or r.get("divergence_signal")]
+        treasury_only = [r for r in result if not r.get("cross_asset_stress") and not r.get("divergence_signal") and r.get("selling_treasuries")]
+        gold_only = [r for r in result if not r.get("selling_treasuries") and r.get("selling_gold")]
+        spot = result[0] if result else {}
+        return {
+            "cross_asset_stress": cross,
+            "treasury_only_stress": treasury_only,
+            "gold_only_stress": gold_only,
+            "summary": {
+                "cross_asset_stressed": len(cross),
+                "treasury_only": len(treasury_only),
+                "gold_only": len(gold_only),
+                "total_stressed": len(result),
+            },
+            "spot_gold_rising": spot.get("spot_gold_rising"),
+            "spot_gold_price": spot.get("spot_gold_price"),
+            "spot_gold_3m_pct": spot.get("spot_gold_3m_pct"),
+            "as_of": spot.get("tic_as_of"),
+        }
+    except Exception as e:
+        logger.error(f"Cross-asset stress calculation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/holdings/country/{iso_code}")
+def get_country_tic_history(
+    iso_code: str,
+    months: int = Query(24, ge=1, le=120),
+    db: Session = Depends(get_db)
+):
+    """Get TIC holdings history for a specific country (legacy endpoint)."""
+    metric = db.query(Metric).filter_by(code="TIC_UST_HOLDINGS").first()
+    if not metric:
+        raise HTTPException(status_code=404, detail="TIC data not loaded")
+
+    country = db.query(Country).filter_by(iso_code=iso_code).first()
+    if not country:
+        raise HTTPException(status_code=404, detail=f"Country {iso_code} not found")
+
+    cutoff = datetime.utcnow() - timedelta(days=months * 31)
+    rows = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == country.id,
+        TimeSeries.date >= cutoff,
+    ).order_by(TimeSeries.date.asc()).all()
+
+    history = []
+    for i, r in enumerate(rows):
+        mom = None
+        if i > 0:
+            prev = float(rows[i-1].value)
+            if prev:
+                mom = round((float(r.value) - prev) / prev * 100, 2)
+        history.append({
+            "date": r.date.strftime("%Y-%m"),
+            "holdings_bn": round(float(r.value), 2),
+            "mom_change_pct": mom,
+        })
+
+    latest = float(rows[-1].value) if rows else None
+    peak = max((float(r.value) for r in rows), default=None)
+
+    return {
+        "country": {"iso": iso_code, "name": country.name, "region": country.region},
+        "summary": {
+            "latest_holdings_bn": round(latest, 2) if latest else None,
+            "peak_holdings_bn": round(peak, 2) if peak else None,
+            "drawdown_from_peak_pct": round((latest - peak) / peak * 100, 1) if latest and peak and peak > 0 else None,
+            "months": len(rows),
+        },
+        "history": history,
+    }

@@ -240,7 +240,7 @@ def compute_cross_asset_stress(db: Session) -> list:
       TIER 2 CROSS_ASSET:    selling treasuries + gold (1.5x)
       TIER 3 DIVERGENCE:     selling gold INTO rising spot price (2x)
     """
-    tic_metric = db.query(Metric).filter_by(code="TIC_HOLDINGS").first()
+    tic_metric = db.query(Metric).filter_by(code="TIC_UST_HOLDINGS").first()
     gold_metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
 
     if not tic_metric or not gold_metric:

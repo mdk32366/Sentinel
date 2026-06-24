@@ -271,7 +271,7 @@ def compute_composite_stress(db: Session) -> dict:
     Compute five-dimension composite stress scores for all countries.
     Returns structured dict with tiers and summary.
     """
-    tic_metric = db.query(Metric).filter_by(code="TIC_HOLDINGS").first()
+    tic_metric = db.query(Metric).filter_by(code="TIC_UST_HOLDINGS").first()
     gold_metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
     m2_metric = db.query(Metric).filter_by(code="BROAD_MONEY_GROWTH").first()
 
