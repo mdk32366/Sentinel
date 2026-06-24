@@ -272,15 +272,8 @@ def compute_cross_asset_stress(db: Session) -> list:
             TimeSeries.date >= gold_latest - timedelta(days=400),
         ).order_by(TimeSeries.date.asc()).all()
 
-        if len(tic_hist) < 2 or len(gold_hist) < 1:
+        if len(gold_hist) < 1:
             continue
-
-        tic_prev = float(tic_hist[-2].value)
-        if tic_prev == 0:
-            continue
-        tic_mom = (float(tic_hist[-1].value) - tic_prev) / tic_prev * 100
-        tic_consec = sum(1 for i in range(len(tic_hist)-1, 0, -1)
-                         if float(tic_hist[i].value) < float(tic_hist[i-1].value))
 
         gold_tonnes = float(gold_hist[-1].value)
         gold_mom = None
@@ -292,8 +285,71 @@ def compute_cross_asset_stress(db: Session) -> list:
                 gold_consec = sum(1 for i in range(len(gold_hist)-1, 0, -1)
                                   if float(gold_hist[i].value) < float(gold_hist[i-1].value))
 
-        selling_tic = tic_mom < -0.5 or tic_consec >= 2
         selling_gold = (gold_mom is not None and gold_mom < -0.5) or gold_consec >= 2
+
+        # ── EXITED TIER: zero TIC holdings + significant gold ─────────────────
+        # Completed liquidation is the most severe de-dollarization signal.
+        # Requires: no TIC history AND gold reserves > 50t
+        no_tic = len(tic_hist) == 0
+        if no_tic:
+            if gold_tonnes < 50:
+                continue  # Skip — small gold holder, not analytically significant
+
+            score = 50  # Base penalty for completed liquidation
+            if gold_tonnes > 500:
+                score += 20  # Large gold holder amplifies signal
+            if selling_gold:
+                score += 20  # Also selling gold = maximum stress
+            if selling_gold and spot_rising:
+                multiplier = 2.0
+                signal_tier = "DIVERGENCE"
+            elif selling_gold:
+                multiplier = 1.5
+                signal_tier = "EXITED+GOLD_SELL"
+            else:
+                multiplier = 1.0
+                signal_tier = "EXITED"
+
+            results.append({
+                "country_iso": country.iso_code,
+                "country_name": country.name,
+                "region": country.region,
+                "tic_holdings_bn": 0.0,
+                "tic_mom_pct": None,
+                "tic_consecutive_months": 0,
+                "no_tic_holdings": True,
+                "gold_tonnes": round(gold_tonnes, 1),
+                "gold_mom_pct": round(gold_mom, 2) if gold_mom is not None else None,
+                "gold_consecutive_months": gold_consec,
+                "spot_gold_price": spot.get("latest_price"),
+                "spot_gold_3m_pct": spot.get("trend_3m_pct"),
+                "spot_gold_rising": spot_rising,
+                "selling_treasuries": False,
+                "selling_gold": selling_gold,
+                "cross_asset_stress": False,
+                "divergence_signal": selling_gold and spot_rising,
+                "signal_tier": signal_tier,
+                "score_before_multiplier": round(score, 1),
+                "multiplier": multiplier,
+                "stress_score": round(score * multiplier, 1),
+                "alert": True,
+                "tic_as_of": tic_latest.strftime("%Y-%m"),
+                "gold_as_of": gold_latest.strftime("%Y-%m"),
+            })
+            continue
+
+        # ── Standard path: active TIC holders ────────────────────────────────
+        if len(tic_hist) < 2:
+            continue
+
+        tic_prev = float(tic_hist[-2].value)
+        if tic_prev == 0:
+            continue
+        tic_mom = (float(tic_hist[-1].value) - tic_prev) / tic_prev * 100
+        tic_consec = sum(1 for i in range(len(tic_hist)-1, 0, -1)
+                         if float(tic_hist[i].value) < float(tic_hist[i-1].value))
+
+        selling_tic = tic_mom < -0.5 or tic_consec >= 2
 
         if not (selling_tic or selling_gold):
             continue
@@ -326,6 +382,7 @@ def compute_cross_asset_stress(db: Session) -> list:
             "tic_holdings_bn": round(float(tic_hist[-1].value), 2),
             "tic_mom_pct": round(tic_mom, 2),
             "tic_consecutive_months": tic_consec,
+            "no_tic_holdings": False,
             "gold_tonnes": round(gold_tonnes, 1),
             "gold_mom_pct": round(gold_mom, 2) if gold_mom is not None else None,
             "gold_consecutive_months": gold_consec,

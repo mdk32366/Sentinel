@@ -1035,6 +1035,7 @@ function CrossAssetTab() {
 
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
+          { label: "Exited Position", val: (data.cross_asset_stress||[]).filter(c=>c.no_tic_holdings).length + (data.treasury_only_stress||[]).filter(c=>c.no_tic_holdings).length, alert: true, color: "#FF8C00" },
           { label: "Cross-Asset Stress", val: summary?.cross_asset_stressed ?? 0, alert: (summary?.cross_asset_stressed ?? 0) > 0, color: "#E07B5A" },
           { label: "Treasury-Only Stress", val: summary?.treasury_only ?? 0, alert: (summary?.treasury_only ?? 0) > 5, color: "#E8C547" },
           { label: "Gold-Only Stress", val: summary?.gold_only ?? 0, color: "#C8A96E" },
@@ -1052,6 +1053,7 @@ function CrossAssetTab() {
         {[
           { label: "⚡ Divergence", desc: "Selling gold INTO rising spot. 2× score.", color: "#FF4444" },
           { label: "⚠ Cross-Asset", desc: "Selling both treasuries AND gold. 1.5×.", color: "#E07B5A" },
+          { label: "🚨 Exited", desc: "Zero US Treasuries held + significant gold. Completed liquidation.", color: "#FF8C00" },
           { label: "T-Bills Only", desc: "Reducing treasury holdings. 1×.", color: "#E8C547" },
           { label: "Au Only", desc: "Reducing gold reserves only. 1×.", color: "#C8A96E" },
         ].map(s => (
@@ -1085,9 +1087,9 @@ function CrossAssetTab() {
                 </thead>
                 <tbody>
                   {displayData.map(c => {
-                    const tier = c.signal_tier || (c.divergence_signal ? "DIVERGENCE" : c.cross_asset_stress ? "CROSS_ASSET" : c.selling_treasuries ? "TREASURY_ONLY" : "GOLD_ONLY");
-                    const tc = tier==="DIVERGENCE"?"#FF4444":tier==="CROSS_ASSET"?"#E07B5A":tier==="TREASURY_ONLY"?"#E8C547":"#C8A96E";
-                    const tierLabel = tier==="DIVERGENCE"?"⚡ DIVERGENCE":tier==="CROSS_ASSET"?"⚠ CROSS-ASSET":tier==="TREASURY_ONLY"?"T-ONLY":"Au ONLY";
+                    const tier = c.signal_tier || (c.divergence_signal ? "DIVERGENCE" : c.cross_asset_stress ? "CROSS_ASSET" : c.no_tic_holdings ? "EXITED" : c.selling_treasuries ? "TREASURY_ONLY" : "GOLD_ONLY");
+                    const tc = tier==="DIVERGENCE"?"#FF4444":tier==="CROSS_ASSET"?"#E07B5A":tier==="EXITED"||tier==="EXITED+GOLD_SELL"?"#FF8C00":tier==="TREASURY_ONLY"?"#E8C547":"#C8A96E";
+                    const tierLabel = tier==="DIVERGENCE"?"⚡ DIVERGENCE":tier==="CROSS_ASSET"?"⚠ CROSS-ASSET":tier==="EXITED"?"🚨 EXITED":tier==="EXITED+GOLD_SELL"?"🚨 EXITED+Au↓":tier==="TREASURY_ONLY"?"T-ONLY":"Au ONLY";
                     return (
                       <tr key={c.country_iso} style={{ borderBottom:"1px solid #0F1923" }}
                         onMouseEnter={e => e.currentTarget.style.background="#0D1820"}
@@ -1098,7 +1100,11 @@ function CrossAssetTab() {
                         <td style={{ padding:"10px 12px" }}>
                           <span style={{ fontFamily:"monospace", fontSize:10, color:tc, background:`${tc}18`, border:`1px solid ${tc}44`, borderRadius:2, padding:"2px 6px", whiteSpace:"nowrap" }}>{tierLabel}</span>
                         </td>
-                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>{c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(2)}%`:"—"}</td>
+                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>
+                          {c.no_tic_holdings
+                            ? <span style={{ color:"#FF8C00", fontSize:10 }}>EXITED ⚠</span>
+                            : c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(2)}%`:"—"}
+                        </td>
                         <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_consecutive_months??0)>=3?"#E07B5A":"#8A9BAC" }}>{(c.tic_consecutive_months??0)>0?`${c.tic_consecutive_months}mo`:"—"}</td>
                         <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:"#8A9BAC" }}>{c.gold_tonnes!=null?`${c.gold_tonnes.toLocaleString()}t`:"—"}</td>
                         <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:c.gold_mom_pct==null?"#3A4D5C":c.gold_mom_pct<0?"#E07B5A":"#5DB87A" }}>
