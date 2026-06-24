@@ -346,7 +346,7 @@ def compute_cross_asset_stress(db: Session) -> list:
         })
 
     return sorted(results,
-                  key=lambda x: (x["divergence_signal"], x["cross_asset_stress"], x["stress_score"]),
+                  key=lambda x: (x["divergence_signal"] or False, x["cross_asset_stress"] or False, x["stress_score"] or 0),
                   reverse=True)
 
 
