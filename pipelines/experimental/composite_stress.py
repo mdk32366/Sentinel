@@ -326,9 +326,10 @@ def compute_composite_stress(db: Session) -> dict:
                 tic_score += min(20, tic_consec * 4)
                 selling_tic = tic_mom < -0.5 or tic_consec >= 2
         elif no_tic_holdings:
-            # Country holds zero US Treasuries — completed liquidation is max stress
-            # Only flag if they have meaningful gold reserves (confirms de-dollarization)
-            tic_score = 0  # Will get boosted by cross-asset multiplier if gold present
+            # Completed Treasury liquidation — most severe de-dollarization signal.
+            # Assign a strong tic_score based on gold holdings as confirmation.
+            # We don't know MoM since they've already exited, so we score on posture.
+            tic_score = 0  # Will be set after gold is known
             tic_mom = None
             tic_consec = 0
 
@@ -363,6 +364,13 @@ def compute_composite_stress(db: Session) -> dict:
                         selling_gold = gold_mom < -0.5 or gold_consec >= 2
 
         # ── DIMENSION 3: Monetary / M2 ─────────────────────────────────────
+        # If EXITED and has meaningful gold, now assign tic_score
+        if no_tic_holdings and gold_tonnes and gold_tonnes >= 50:
+            tic_score = 30  # Base: completed liquidation confirmed by gold holdings
+            if gold_tonnes >= 500:
+                tic_score = 40  # Large gold holder — structural de-dollarization
+            if gold_tonnes >= 1000:
+                tic_score = 50  # Major gold power — maximum posture score
         monetary_score = 0
         m2_growth_pct = None
         m2_year = None
@@ -398,17 +406,24 @@ def compute_composite_stress(db: Session) -> dict:
 
         # ── MULTIPLIERS ────────────────────────────────────────────────────
         cross_asset = selling_tic and selling_gold
-        divergence = cross_asset and spot_rising
+        # EXITED + selling gold = structurally equivalent to cross-asset stress
+        exited_cross = no_tic_holdings and selling_gold and (gold_tonnes or 0) >= 50
+        divergence = (cross_asset or exited_cross) and spot_rising
 
         if divergence:
             multiplier = 2.0
-        elif cross_asset:
+        elif cross_asset or exited_cross:
             multiplier = 1.5
         else:
             multiplier = 1.0
 
         raw_score = tic_score + gold_score + monetary_score + spread_score + petro_score
         composite_score = raw_score * multiplier
+
+        # Don't skip EXITED countries even if raw score is low —
+        # tic_score will be set after signals block if no_tic_holdings
+        if composite_score == 0 and not no_tic_holdings:
+            continue
 
         if composite_score >= 75:
             tier = "CRISIS"
@@ -419,13 +434,12 @@ def compute_composite_stress(db: Session) -> dict:
         else:
             tier = "WATCH"
 
-        if composite_score == 0:
-            continue
-
         # ── ACTIVE SIGNALS ─────────────────────────────────────────────────
         signals = []
-        if no_tic_holdings and gold_tonnes and gold_tonnes > 50:
-            signals.append("⚠ Zero US Treasuries held — completed liquidation")
+        if no_tic_holdings and gold_tonnes and gold_tonnes >= 50:
+            signals.append(f"🚨 EXITED: Zero US Treasuries · {gold_tonnes:.0f}t gold")
+        if exited_cross:
+            signals.append("⚠ EXITED + gold selling — maximum de-dollarization stress")
         if selling_tic and tic_consec >= 3:
             signals.append(f"T-bills: {tic_consec}mo consecutive ↓")
         elif selling_tic:
