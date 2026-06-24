@@ -1010,8 +1010,9 @@ function CrossAssetTab() {
   if (!data || data.detail) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>No cross-asset data. Ensure TIC and gold reserves are loaded.</div>;
 
   const { summary } = data;
-  const allStressed = [...(data.cross_asset_stress || []), ...(data.treasury_only_stress || []), ...(data.gold_only_stress || [])];
+  const allStressed = [...(data.cross_asset_stress || []), ...(data.treasury_only_stress || []), ...(data.gold_only_stress || [])].sort((a, b) => b.stress_score - a.stress_score);
   const displayData = view === "cross" ? data.cross_asset_stress
+    : view === "exited" ? data.gold_only_stress
     : view === "treasury" ? data.treasury_only_stress
     : allStressed;
 
@@ -1068,7 +1069,7 @@ function CrossAssetTab() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
           <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>CROSS-ASSET STRESS LEADERBOARD</div>
           <div style={{ display: "flex", gap: 6 }}>
-            {[["all","ALL"],["cross","CROSS-ASSET"],["treasury","T-ONLY"]].map(([v,l]) => (
+            {[["all","ALL"],["exited","🚨 EXITED"],["cross","CROSS-ASSET"],["treasury","T-ONLY"]].map(([v,l]) => (
               <button key={v} onClick={() => setView(v)} style={{ background: view===v?"#1A2530":"transparent", border:`1px solid ${view===v?"#5A6878":"#1E2D3D"}`, color:view===v?"#C8A96E":"#3A4D5C", borderRadius:2, padding:"4px 10px", cursor:"pointer", fontFamily:"monospace", fontSize:11 }}>{l}</button>
             ))}
           </div>
