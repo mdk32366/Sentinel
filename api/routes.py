@@ -289,7 +289,7 @@ def get_stress_score(db: Session = Depends(get_db)):
     Scale: 0-100, where 0 = low stress, 100 = severe stress.
     Based on: yield curve spread, holdings concentration, commodity volatility.
     """
-    from pipelines.stress_score import calculate_stress_score_v2 as calculate_stress_score
+    from pipelines.stress_score import calculate_stress_score
     
     try:
         result = calculate_stress_score(db)
@@ -306,116 +306,6 @@ def trigger_treasury_fetch(db: Session = Depends(get_db)):
     
     try:
         result = run_treasury_holdings_fetch(db)
-        return result
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/gold-reserves")
-def get_gold_reserves(
-    country_iso: Optional[str] = Query(None),
-    date: Optional[datetime] = Query(None),
-    db: Session = Depends(get_db)
-):
-    """
-    Get central bank gold reserves by country.
-    Units: fine troy ounces. If date not provided, returns latest available date.
-    """
-    metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
-    if not metric:
-        raise HTTPException(status_code=404, detail="Gold reserves data not yet loaded")
-
-    query = db.query(
-        Country.iso_code,
-        Country.name,
-        TimeSeries.date,
-        TimeSeries.value
-    ).join(TimeSeries).filter(
-        TimeSeries.metric_id == metric.id,
-        TimeSeries.country_id != None,
-    )
-
-    if country_iso:
-        query = query.filter(Country.iso_code == country_iso)
-
-    if not date:
-        latest_date = db.query(func.max(TimeSeries.date)).filter(
-            TimeSeries.metric_id == metric.id
-        ).scalar()
-        if latest_date:
-            query = query.filter(TimeSeries.date == latest_date)
-    else:
-        query = query.filter(TimeSeries.date == date)
-
-    results = query.order_by(TimeSeries.value.desc()).all()
-    if not results:
-        raise HTTPException(status_code=404, detail="No gold reserves data found")
-
-    total_tonnes = sum(float(r[3]) for r in results)
-
-    return {
-        "date": results[0][2].isoformat() if results else None,
-        "total_metric_tonnes": round(total_tonnes, 1),
-        "reserves": [
-            {
-                "country_code": r[0],
-                "country_name": r[1],
-                "metric_tonnes": round(float(r[3]), 1),
-                "percent_of_total": round((float(r[3]) / total_tonnes) * 100, 1),
-            }
-            for r in results
-        ]
-    }
-
-
-@router.get("/gold-reserves/{country_iso}")
-def get_country_gold_reserves(
-    country_iso: str,
-    start_date: Optional[datetime] = Query(None),
-    end_date: Optional[datetime] = Query(None),
-    db: Session = Depends(get_db)
-):
-    """Get historical gold reserves for a specific country."""
-    metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
-    if not metric:
-        raise HTTPException(status_code=404, detail="Gold reserves data not yet loaded")
-
-    country = db.query(Country).filter_by(iso_code=country_iso).first()
-    if not country:
-        raise HTTPException(status_code=404, detail=f"Country {country_iso} not found")
-
-    if not end_date:
-        end_date = datetime.utcnow()
-    if not start_date:
-        start_date = end_date - timedelta(days=3650)
-
-    results = db.query(TimeSeries).filter(
-        TimeSeries.metric_id == metric.id,
-        TimeSeries.country_id == country.id,
-        TimeSeries.date >= start_date,
-        TimeSeries.date <= end_date,
-    ).order_by(TimeSeries.date.asc()).all()
-
-    return {
-        "country_code": country_iso,
-        "country_name": country.name,
-        "data_points": len(results),
-        "reserves": [
-            {
-                "date": r.date.isoformat(),
-                "metric_tonnes": round(float(r.value), 1),
-            }
-            for r in results
-        ]
-    }
-
-
-@router.post("/fetch/gold-reserves")
-def trigger_gold_fetch(db: Session = Depends(get_db)):
-    """Manually trigger gold reserves fetch"""
-    from pipelines.gold_reserves import run_gold_reserves_fetch
-    try:
-        result = run_gold_reserves_fetch(db)
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
