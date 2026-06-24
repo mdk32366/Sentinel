@@ -42,6 +42,20 @@ FRED_METRICS = [
     {"code": "IRLTLT01BEM156N", "name": "Belgium 10Y Gov Bond Yield",     "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Belgium 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01KRM156N", "name": "South Korea 10Y Gov Bond Yield", "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "South Korea 10-year government bond yield, monthly (OECD)"},
     {"code": "DCOILBRENTEU", "name": "Brent Crude Oil Price", "category": "commodity", "unit": "$/bbl", "source": "FRED", "description": "Crude Oil Prices: Brent - Europe, dollars per barrel, daily"},
+    # ── Total Reserves Excluding Gold (IMF IFS via FRED) ──────────────────────
+    # Units: Millions of USD, Monthly. Tracks de-dollarization / reserve accumulation.
+    {"code": "TRESEGCNM052N", "name": "China Total Reserves ex-Gold",        "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "China total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGJPM052N", "name": "Japan Total Reserves ex-Gold",         "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "Japan total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGRUM052N", "name": "Russia Total Reserves ex-Gold",        "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "Russia total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGINM052N", "name": "India Total Reserves ex-Gold",         "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "India total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGTRM052N", "name": "Turkey Total Reserves ex-Gold",        "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "Turkey total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGDEM052N", "name": "Germany Total Reserves ex-Gold",       "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "Germany total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGFRM052N", "name": "France Total Reserves ex-Gold",        "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "France total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGGBM052N", "name": "UK Total Reserves ex-Gold",            "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "UK total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGSAM052N", "name": "Saudi Arabia Total Reserves ex-Gold",  "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "Saudi Arabia total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGBRM052N", "name": "Brazil Total Reserves ex-Gold",        "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "Brazil total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGUSM052N", "name": "US Total Reserves ex-Gold",            "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "US total reserves excluding gold (millions USD, IMF IFS)"},
+    {"code": "TRESEGIDM052N", "name": "Indonesia Total Reserves ex-Gold",     "category": "reserves", "unit": "millions_usd", "source": "IMF_IFS", "description": "Indonesia total reserves excluding gold (millions USD, IMF IFS)"},
 ]
 
 
