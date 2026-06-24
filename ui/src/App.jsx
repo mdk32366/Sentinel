@@ -1217,7 +1217,9 @@ function CompositeTab({ onCountrySelect }) {
                           <span style={{ fontFamily:"monospace", fontSize:10, color:tc, background:`${tc}18`, border:`1px solid ${tc}44`, borderRadius:2, padding:"1px 5px" }}>{c.tier}</span>
                         </td>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>
-                          {c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(1)}%`:"—"}
+                          {c.no_tic_holdings
+                            ? <span style={{ color:"#FF4444", fontSize:10 }}>ZERO ⚠</span>
+                            : c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(1)}%`:"—"}
                         </td>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.tic_consecutive_months??0)>=3?"#E07B5A":"#8A9BAC" }}>
                           {(c.tic_consecutive_months??0)>0?`${c.tic_consecutive_months}mo`:"—"}

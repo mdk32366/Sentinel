@@ -306,25 +306,31 @@ def compute_composite_stress(db: Session) -> dict:
             TimeSeries.date >= tic_latest - timedelta(days=185),
         ).order_by(TimeSeries.date.asc()).all()
 
-        if len(tic_hist) < 2:
-            continue
-
-        tic_prev = float(tic_hist[-2].value)
-        if tic_prev == 0:
-            continue
-
-        tic_mom = (float(tic_hist[-1].value) - tic_prev) / tic_prev * 100
+        tic_mom = 0
         tic_consec = 0
-        for i in range(len(tic_hist) - 1, 0, -1):
-            if float(tic_hist[i].value) < float(tic_hist[i-1].value):
-                tic_consec += 1
-            else:
-                break
-
         tic_score = 0
-        if tic_mom < 0:
-            tic_score += min(30, abs(tic_mom) * 3)
-        tic_score += min(20, tic_consec * 4)
+        selling_tic = False
+        no_tic_holdings = len(tic_hist) == 0
+
+        if len(tic_hist) >= 2:
+            tic_prev = float(tic_hist[-2].value)
+            if tic_prev > 0:
+                tic_mom = (float(tic_hist[-1].value) - tic_prev) / tic_prev * 100
+                for i in range(len(tic_hist) - 1, 0, -1):
+                    if float(tic_hist[i].value) < float(tic_hist[i-1].value):
+                        tic_consec += 1
+                    else:
+                        break
+                if tic_mom < 0:
+                    tic_score += min(30, abs(tic_mom) * 3)
+                tic_score += min(20, tic_consec * 4)
+                selling_tic = tic_mom < -0.5 or tic_consec >= 2
+        elif no_tic_holdings:
+            # Country holds zero US Treasuries — completed liquidation is max stress
+            # Only flag if they have meaningful gold reserves (confirms de-dollarization)
+            tic_score = 0  # Will get boosted by cross-asset multiplier if gold present
+            tic_mom = None
+            tic_consec = 0
 
         # ── DIMENSION 2: Gold Reserves ─────────────────────────────────────
         gold_score = 0
@@ -384,7 +390,7 @@ def compute_composite_stress(db: Session) -> dict:
         spread_widening = spread_data["widening_bps"]
 
         # ── DIMENSION 5: Petrodollar / Oil Pressure ────────────────────────
-        selling_tic = tic_mom < -0.5 or tic_consec >= 2
+        selling_tic = (tic_mom is not None and (tic_mom < -0.5 or tic_consec >= 2))
         petro_data = get_petrodollar_score(iso, brent, selling_tic)
         petro_score = petro_data["score"]
         oil_dependent = petro_data["oil_dependent"]
@@ -418,6 +424,8 @@ def compute_composite_stress(db: Session) -> dict:
 
         # ── ACTIVE SIGNALS ─────────────────────────────────────────────────
         signals = []
+        if no_tic_holdings and gold_tonnes and gold_tonnes > 50:
+            signals.append("⚠ Zero US Treasuries held — completed liquidation")
         if selling_tic and tic_consec >= 3:
             signals.append(f"T-bills: {tic_consec}mo consecutive ↓")
         elif selling_tic:
@@ -437,15 +445,20 @@ def compute_composite_stress(db: Session) -> dict:
         elif cross_asset:
             signals.append("⚠ Cross-asset: selling T-bills + gold")
 
+        # Skip countries with no signals at all
+        if not signals and composite_score == 0:
+            continue
+
         results.append({
             "country_iso": iso,
             "country_name": country.name,
             "region": country.region,
             # Treasury
-            "tic_holdings_bn": round(float(tic_hist[-1].value), 2),
-            "tic_mom_pct": round(tic_mom, 2),
+            "tic_holdings_bn": round(float(tic_hist[-1].value), 2) if tic_hist else 0,
+            "tic_mom_pct": round(tic_mom, 2) if tic_mom is not None else None,
             "tic_consecutive_months": tic_consec,
             "tic_score": round(tic_score, 1),
+            "no_tic_holdings": no_tic_holdings,
             # Gold
             "gold_tonnes": round(gold_tonnes, 1) if gold_tonnes else None,
             "gold_mom_pct": round(gold_mom, 2) if gold_mom is not None else None,
