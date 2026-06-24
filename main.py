@@ -22,6 +22,8 @@ from database.connection import init_db, get_session
 from pipelines.scheduler import start_scheduler, stop_scheduler
 from api.routes import router
 from pipelines.fred_fetcher import run_fred_fetch
+from pipelines.treasury_holdings import run_treasury_holdings_fetch
+from pipelines.stress_score import run_stress_score_calculation
 
 
 @asynccontextmanager
@@ -36,9 +38,6 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database initialization failed: {e}")
         raise
     
-    # Start scheduler
-    start_scheduler()
-    
     # Run initial FRED fetch to populate data
     logger.info("Running initial FRED fetch...")
     try:
@@ -48,6 +47,30 @@ async def lifespan(app: FastAPI):
         db.close()
     except Exception as e:
         logger.error(f"Initial FRED fetch failed: {e}")
+    
+    # Run initial TIC holdings fetch
+    logger.info("Running initial TIC holdings fetch...")
+    try:
+        db = get_session()
+        result = run_treasury_holdings_fetch(db)
+        logger.info(f"Initial TIC holdings fetch: {result['status']}")
+        db.close()
+    except Exception as e:
+        logger.error(f"Initial TIC holdings fetch failed: {e}")
+    
+    # Run initial stress score calculation
+    logger.info("Running initial stress score calculation...")
+    try:
+        db = get_session()
+        result = run_stress_score_calculation(db)
+        if result['status'] == 'success':
+            logger.info(f"Initial stress score: {result['data']['overall_score']}")
+        db.close()
+    except Exception as e:
+        logger.error(f"Initial stress score calculation failed: {e}")
+    
+    # Start scheduler
+    start_scheduler()
     
     yield
     

@@ -174,3 +174,138 @@ def trigger_fred_fetch(db: Session = Depends(get_db)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/holdings")
+def get_all_holdings(
+    country_iso: Optional[str] = Query(None),
+    date: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Get Treasury holdings data by country.
+    If date not provided, returns latest available date.
+    """
+    metric = db.query(Metric).filter_by(code="TIC_UST_HOLDINGS").first()
+    if not metric:
+        raise HTTPException(status_code=404, detail="Holdings data not yet loaded")
+    
+    query = db.query(
+        Country.iso_code,
+        Country.name,
+        TimeSeries.date,
+        TimeSeries.value
+    ).join(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id != None,
+    )
+    
+    if country_iso:
+        query = query.filter(Country.iso_code == country_iso)
+    
+    if not date:
+        # Get latest date
+        latest_date = db.query(func.max(TimeSeries.date)).filter(
+            TimeSeries.metric_id == metric.id
+        ).scalar()
+        if latest_date:
+            query = query.filter(TimeSeries.date == latest_date)
+    else:
+        query = query.filter(TimeSeries.date == date)
+    
+    results = query.order_by(TimeSeries.value.desc()).all()
+    
+    if not results:
+        raise HTTPException(status_code=404, detail="No holdings data found")
+    
+    total = sum(float(r[3]) for r in results)
+    
+    return {
+        "date": results[0][2].isoformat() if results else None,
+        "total_billions_usd": round(float(total), 2),
+        "holdings": [
+            {
+                "country_code": r[0],
+                "country_name": r[1],
+                "holdings_billions_usd": round(float(r[3]), 2),
+                "percent_of_total": round((float(r[3]) / total) * 100, 1),
+            }
+            for r in results
+        ]
+    }
+
+
+@router.get("/holdings/{country_iso}")
+def get_country_holdings(
+    country_iso: str,
+    start_date: Optional[datetime] = Query(None),
+    end_date: Optional[datetime] = Query(None),
+    db: Session = Depends(get_db)
+):
+    """Get historical Treasury holdings for a specific country."""
+    metric = db.query(Metric).filter_by(code="TIC_UST_HOLDINGS").first()
+    if not metric:
+        raise HTTPException(status_code=404, detail="Holdings data not yet loaded")
+    
+    country = db.query(Country).filter_by(iso_code=country_iso).first()
+    if not country:
+        raise HTTPException(status_code=404, detail=f"Country {country_iso} not found")
+    
+    query = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == country.id,
+    )
+    
+    if not end_date:
+        end_date = datetime.utcnow()
+    if not start_date:
+        start_date = end_date - timedelta(days=730)
+    
+    query = query.filter(
+        TimeSeries.date >= start_date,
+        TimeSeries.date <= end_date,
+    )
+    
+    results = query.order_by(TimeSeries.date.asc()).all()
+    
+    return {
+        "country_code": country_iso,
+        "country_name": country.name,
+        "data_points": len(results),
+        "holdings": [
+            {
+                "date": r.date.isoformat(),
+                "holdings_billions_usd": round(float(r.value), 2),
+            }
+            for r in results
+        ]
+    }
+
+
+@router.get("/stress-score")
+def get_stress_score(db: Session = Depends(get_db)):
+    """
+    Get current macroeconomic stress score.
+    Scale: 0-100, where 0 = low stress, 100 = severe stress.
+    Based on: yield curve spread, holdings concentration, commodity volatility.
+    """
+    from pipelines.stress_score import calculate_stress_score
+    
+    try:
+        result = calculate_stress_score(db)
+        return result
+    except Exception as e:
+        logger.error(f"Stress score calculation failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/fetch/treasury-holdings")
+def trigger_treasury_fetch(db: Session = Depends(get_db)):
+    """Manually trigger Treasury holdings fetch"""
+    from pipelines.treasury_holdings import run_treasury_holdings_fetch
+    
+    try:
+        result = run_treasury_holdings_fetch(db)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
