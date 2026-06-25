@@ -132,6 +132,74 @@ function StressBar({ score, max = 100 }) {
   );
 }
 
+// ── Column Header Tooltip ─────────────────────────────────────────────────────
+// Wraps any table <th> label with a hover tooltip explaining what is measured.
+// Usage: <ColHeader label="MoM %" tip="Month-over-month change…" align="right" />
+// Optional props: sortKey / activeSort / onSort for sortable columns.
+
+function ColHeader({ label, tip, align = "right", sortKey, activeSort, onSort, style = {} }) {
+  const [show, setShow] = useState(false);
+  const isSorted = sortKey && activeSort === sortKey;
+  const baseStyle = {
+    fontFamily: "monospace",
+    fontSize: 10,
+    letterSpacing: "0.1em",
+    color: isSorted ? "#C8A96E" : "#3A4D5C",
+    textTransform: "uppercase",
+    padding: "8px 12px",
+    textAlign: align,
+    borderBottom: "1px solid #1A2530",
+    whiteSpace: "nowrap",
+    cursor: onSort ? "pointer" : "default",
+    userSelect: "none",
+    position: "relative",
+    ...style,
+  };
+
+  return (
+    <th
+      style={baseStyle}
+      onClick={onSort ? () => onSort(sortKey) : undefined}
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {/* label + optional sort arrow */}
+      <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>
+        {label}
+      </span>
+      {isSorted && <span style={{ marginLeft: 4 }}>↓</span>}
+
+      {/* Tooltip bubble */}
+      {show && tip && (
+        <div style={{
+          position: "absolute",
+          bottom: "calc(100% + 6px)",
+          left: align === "left" ? 0 : "auto",
+          right: align === "right" ? 0 : "auto",
+          transform: align === "center" ? "translateX(-50%)" : undefined,
+          zIndex: 9999,
+          background: "#0A1520",
+          border: "1px solid #2A3D50",
+          borderTop: "2px solid #C8A96E",
+          borderRadius: 3,
+          padding: "8px 12px",
+          minWidth: 220,
+          maxWidth: 300,
+          boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
+          pointerEvents: "none",
+        }}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#C8A96E", fontWeight: 700, marginBottom: 4, letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            {label}
+          </div>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", lineHeight: 1.6, textTransform: "none", letterSpacing: 0, fontWeight: 400, textAlign: "left" }}>
+            {tip}
+          </div>
+        </div>
+      )}
+    </th>
+  );
+}
+
 // ── Country Detail (shared between HOLDINGS and COUNTRY tabs) ─────────────────
 
 
@@ -416,22 +484,19 @@ function StressTable({ countries, onSelect, selected }) {
     if (sort === "holdings") return b.latest_holdings_bn - a.latest_holdings_bn;
     return 0;
   });
-  const col = (label, key) => (
-    <th onClick={() => setSort(key)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", color: sort === key ? "#C8A96E" : "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "right", cursor: "pointer", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>
-      {label} {sort === key ? "↓" : ""}
-    </th>
-  );
   return (
     <div style={{ overflowX: "auto" }}>
       <table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead>
           <tr>
-            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Country</th>
-            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Region</th>
-            {col("Holdings $B", "holdings")}
-            {col("MoM %", "mom")}
-            {col("Consec ↓", "consecutive")}
-            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", borderBottom: "1px solid #1A2530", minWidth: 120 }}>Stress</th>
+            <ColHeader label="Country" tip="Foreign sovereign entity holding US Treasury securities, as reported in the TIC (Treasury International Capital) dataset." align="left" />
+            <ColHeader label="Region" tip="Geopolitical region grouping. Used to identify regional stress clusters — e.g. simultaneous selling across Asia or the Middle East." align="left" />
+            <ColHeader label="Holdings $B" tip="Current US Treasury holdings in billions of USD, from the most recent TIC monthly report. Includes notes, bonds, and T-bills." sortKey="holdings" activeSort={sort} onSort={setSort} />
+            <ColHeader label="MoM %" tip="Month-over-month percentage change in Treasury holdings. Negative values (red) indicate selling. Values below −1% over consecutive months are a primary stress signal." sortKey="mom" activeSort={sort} onSort={setSort} />
+            <ColHeader label="Consec ↓" tip="Number of consecutive months with declining Treasury holdings. Persistence matters: a country buying one month and selling the next is noise; 3+ consecutive months of decline is a structural signal." sortKey="consecutive" activeSort={sort} onSort={setSort} />
+            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", borderBottom: "1px solid #1A2530", minWidth: 120 }}>
+              <ColHeader label="Stress Score" tip="Composite score combining MoM decline magnitude (0–30 pts) and consecutive declining months (0–20 pts, capped at 5 months × 4 pts). Higher = more stress. Score ≥25 with 3+ consecutive months triggers an alert." align="right" style={{ padding: 0, border: "none" }} />
+            </th>
           </tr>
         </thead>
         <tbody>
@@ -492,10 +557,8 @@ function HoldingsTab({ onCountrySelect, latestAll = {} }) {
   const asOf = holdings.date ? new Date(holdings.date).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—";
   const top3pct = rows.slice(0, 3).reduce((s, r) => s + r.percent_of_total, 0);
 
-  const col = (label, key) => (
-    <th onClick={() => setSort(key)} style={{ fontFamily: "monospace", fontSize: 10, letterSpacing: "0.1em", color: sort === key ? "#C8A96E" : "#3A4D5C", textTransform: "uppercase", padding: "8px 16px", textAlign: "right", cursor: "pointer", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>
-      {label} {sort === key ? "↓" : ""}
-    </th>
+  const col = (label, key, tip) => (
+    <ColHeader label={label} tip={tip} sortKey={key} activeSort={sort} onSort={setSort} align="right" />
   );
 
   return (
@@ -570,10 +633,10 @@ function HoldingsTab({ onCountrySelect, latestAll = {} }) {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 16px", textAlign: "left", borderBottom: "1px solid #1A2530" }}>Country</th>
-                {col("Holdings ($B)", "holdings")}
-                {col("% of Total", "pct")}
-                <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 16px", borderBottom: "1px solid #1A2530", minWidth: 160 }}>Share</th>
+                <ColHeader label="Country" tip="Foreign sovereign entity holding US Treasuries, per the monthly TIC (Treasury International Capital) report published by the US Treasury." align="left" />
+                {col("Holdings ($B)", "holdings", "Total US Treasury securities held, in billions of USD. Includes T-bills, notes, and bonds. Source: latest TIC monthly snapshot.")}
+                {col("% of Total", "pct", "This country's share of all foreign-held US Treasuries. High concentration in a single holder (e.g. >15%) represents systemic risk — a large sell-off by one country can move the market.")}
+                <ColHeader label="Share" tip="Visual bar showing this country's proportional share of total foreign holdings. Top 3 holders highlighted in gold." align="right" />
               </tr>
             </thead>
             <tbody>
@@ -804,9 +867,12 @@ function USADashboard() {
         {/* Rate table */}
         <table style={{ width:"100%", borderCollapse:"collapse", marginBottom:12 }}>
           <thead>
-            <tr>{["10Y Yield","Annual Interest","% of Revenue","Status"].map(h=>(
-              <th key={h} style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", textTransform:"uppercase", padding:"6px 12px", textAlign:"right", borderBottom:"1px solid #1A2530" }}>{h}</th>
-            ))}</tr>
+            <tr>
+              <ColHeader label="10Y Yield" tip="Hypothetical 10-year Treasury yield scenario. The current live value is highlighted. Each row shows what happens to US debt service costs if the 10Y yield settles at this level." align="right" style={{ padding: "6px 12px" }} />
+              <ColHeader label="Annual Interest" tip="Projected annual interest expense in trillions, calculated as: locked-in cost ($0.55T) + new rollover debt ($6T/yr) × this yield rate. Based on FY2024 actuals and CBO debt maturity estimates." align="right" style={{ padding: "6px 12px" }} />
+              <ColHeader label="% of Revenue" tip="Interest expense as a percentage of projected federal revenue (~$4.9T/yr). The 25% threshold is considered the emerging-market danger zone. Above 35% is Japan-level fiscal stress." align="right" style={{ padding: "6px 12px" }} />
+              <ColHeader label="Status" tip="Risk classification: OK = interest <20% of revenue (manageable); WATCH = 20–25% (monitor closely); DANGER = 25–35% (emerging market threshold crossed); CRISIS = >35% (debt spiral risk, Japan 2024 analog)." align="right" style={{ padding: "6px 12px" }} />
+            </tr>
           </thead>
           <tbody>
             {RATE_TABLE.map(row => {
@@ -1150,9 +1216,14 @@ function CrossAssetTab() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr>
-                    {["Country","Signal","T-Bills MoM","Consec ↓","Gold t","Gold MoM","Non-$ Reserves","Score"].map(h => (
-                      <th key={h} style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", textTransform:"uppercase", padding:"8px 12px", textAlign:h==="Country"||h==="Signal"?"left":"right", borderBottom:"1px solid #1A2530", whiteSpace:"nowrap" }}>{h}</th>
-                    ))}
+                    <ColHeader label="Country" tip="Sovereign entity being analyzed for cross-asset stress. Countries appear here only when they show simultaneous selling pressure across multiple asset classes." align="left" />
+                    <ColHeader label="Signal" tip="Stress classification: DIVERGENCE (2×) = selling gold while spot price rises — forced seller; CROSS-ASSET (1.5×) = selling both T-bills and gold; EXITED = zero US Treasuries held; T-ONLY = reducing Treasury holdings only; Au ONLY = reducing gold reserves only." align="left" />
+                    <ColHeader label="T-Bills MoM" tip="Month-over-month % change in US Treasury holdings. Negative = selling. 'EXITED' means zero holdings — position fully liquidated before TIC reporting window." align="right" />
+                    <ColHeader label="Consec ↓" tip="Consecutive months of declining Treasury holdings. Persistence distinguishes structural de-dollarization from tactical rebalancing. 3+ months = significant signal." align="right" />
+                    <ColHeader label="Gold t" tip="Central bank gold reserves in metric tonnes, from the most recent World Gold Council / IMF IFS quarterly report. Large holdings alongside zero Treasuries indicate deliberate reserve restructuring." align="right" />
+                    <ColHeader label="Gold MoM" tip="Quarter-over-quarter % change in gold reserves. Negative = selling gold. When a country sells gold AND Treasuries simultaneously, cross-asset multiplier (1.5×) activates." align="right" />
+                    <ColHeader label="Non-$ Reserves" tip="Total reserves excluding gold (TRESEG series, FRED). REBUILDING = non-dollar reserves growing >5% YoY — country is building an alternative reserve base. DEPLETING = shrinking >5% YoY — possible forced selling under distress." align="right" />
+                    <ColHeader label="Score" tip="Composite stress score (0–150). Base score from T-bill and gold signals, multiplied by 1.5× if cross-asset or 2.0× if divergence (selling gold into rising price). Higher = more severe de-dollarization stress." align="right" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1298,9 +1369,19 @@ function CompositeTab({ onCountrySelect }) {
               <table style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
                   <tr>
-                    {["Country","Tier","T-Bill MoM","Consec","Gold t","T","G","Spread","P","Mult","Non-$","Score","Active Signals"].map(h => (
-                      <th key={h} style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", textTransform:"uppercase", padding:"6px 8px", textAlign:h==="Country"||h==="Active Signals"||h==="Tier"?"left":"right", borderBottom:"1px solid #1A2530", whiteSpace:"nowrap" }}>{h}</th>
-                    ))}
+                    <ColHeader label="Country" tip="Sovereign entity scored across all five stress dimensions. Click any row to open the full country detail view." align="left" />
+                    <ColHeader label="Tier" tip="Risk classification based on composite score: WATCH (<25), ELEVATED (25–50), STRESSED (50–75), CRISIS (≥75). CRISIS requires all major signals firing plus a multiplier." align="left" />
+                    <ColHeader label="T-Bill MoM" tip="Month-over-month % change in US Treasury holdings. 'ZERO ⚠' means the country has fully exited — holds no US Treasuries. This is the primary Treasury stress input (Dimension 1)." align="right" />
+                    <ColHeader label="Consec" tip="Consecutive months of declining Treasury holdings. Each additional month adds 4 pts to the Treasury score, capped at 5 months (20 pts). Persistence distinguishes strategic selling from noise." align="right" />
+                    <ColHeader label="Gold t" tip="Central bank gold reserves in metric tonnes (latest quarterly report). Context for the gold score: large reserves + selling = higher stress than small reserves + selling." align="right" />
+                    <ColHeader label="T" tip="Treasury dimension score (0–50 pts). Calculated from: MoM decline magnitude (0–30 pts, scaled) + consecutive declining months (0–20 pts). This is the highest-weight stress dimension." align="right" />
+                    <ColHeader label="G" tip="Gold reserves dimension score (0–40 pts). Calculated from: QoQ decline magnitude (0–20 pts) + consecutive declining quarters (0–20 pts). Selling gold alongside Treasuries activates the cross-asset multiplier." align="right" />
+                    <ColHeader label="Spread" tip="Sovereign bond yield spread vs US 10Y, in basis points. >50bps = 5 pts; >100bps = 10 pts; >200bps = 15 pts; +5 pts if widening >30bps in 3 months. High spreads signal elevated country risk premium." align="right" />
+                    <ColHeader label="P" tip="Petrodollar dimension score (0–20 pts). Only fires for oil-dependent nations (Gulf, Russia/CIS, Nigeria, etc.). Brent down >10% over 3M = 5 pts; >20% = 10 pts; >30% = 20 pts. +5 pts if oil falling AND country is selling Treasuries simultaneously." align="right" />
+                    <ColHeader label="Mult" tip="Score multiplier applied to the raw total. 1.5× activates when a country sells both Treasuries and gold (cross-asset stress). 2.0× activates when selling gold into a rising spot price (divergence = forced seller signal)." align="right" />
+                    <ColHeader label="Non-$" tip="Non-dollar reserve trend (TRESEG series). STA = stable; REB = rebuilding (>5% YoY growth, de-dollarization into alternative system); DEP = depleting (>5% YoY decline, possible distress). Only analytically significant for EXITED countries." align="right" />
+                    <ColHeader label="Score" tip="Final composite score after multipliers. WATCH <25 · ELEVATED 25–50 · STRESSED 50–75 · CRISIS ≥75. Maximum possible score is ~150 (all dimensions firing + 2× divergence multiplier)." align="right" />
+                    <ColHeader label="Active Signals" tip="Human-readable summary of the specific signals contributing to this country's score. Each dot-separated entry corresponds to a threshold being crossed in one of the five scoring dimensions." align="left" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1451,9 +1532,12 @@ function GoldReservesTab({ onCountrySelect }) {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["#", "Country", "As Of", "Tonnes", "% of Total", "Share"].map(h => (
-                  <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 16px", textAlign: h === "Country" ? "left" : "right", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
+                <ColHeader label="#" tip="Rank by gold holdings, largest to smallest." align="right" />
+                <ColHeader label="Country" tip="Sovereign nation or monetary authority (e.g. IMF, ECB) reporting central bank gold reserves to the IMF IFS database, as compiled by the World Gold Council." align="left" />
+                <ColHeader label="As Of" tip="Quarter of the most recent data point for this country. Gold reserves are reported quarterly. Some countries lag 1–2 quarters behind due to reporting delays — dates vary by country." align="right" />
+                <ColHeader label="Tonnes" tip="Gold holdings in metric tonnes. 1 metric tonne = 32,150 troy ounces. The US holds ~8,133t — the largest national gold reserve in the world. Russia and China have been the most consistent accumulators since 2014." align="right" />
+                <ColHeader label="% of Total" tip="This country's share of all reported central bank gold holdings worldwide. A rising share indicates active accumulation relative to peers." align="right" />
+                <ColHeader label="Share" tip="Visual bar representing proportional gold holdings. Top 3 holders shown in gold, top 10 in amber, remainder in slate." align="right" />
               </tr>
             </thead>
             <tbody>
@@ -1942,9 +2026,12 @@ function AdminTab() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                {["Pipeline", "Status", "Inserted", "Updated", "Completed", "Error"].map(h => (
-                  <th key={h} style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "6px 16px", textAlign: "left", borderBottom: "1px solid #1A2530", whiteSpace: "nowrap" }}>{h}</th>
-                ))}
+                <ColHeader label="Pipeline" tip="Name of the data ingestion pipeline. FRED = Federal Reserve Economic Data (daily); TIC_Holdings = US Treasury foreign holdings (monthly, ~15th); Gold_Reserves = World Gold Council central bank gold (quarterly, manual); Stress_Score = composite index recalculation." align="left" style={{ padding: "6px 16px" }} />
+                <ColHeader label="Status" tip="Execution result: success = all records processed without errors; partial = some records processed, some skipped or errored; failed = pipeline did not complete. Check the Error column for failure details." align="left" style={{ padding: "6px 16px" }} />
+                <ColHeader label="Inserted" tip="Number of new time-series records added to the database in this run. High counts on first run; near-zero on subsequent runs indicates data is current and no new points were available." align="left" style={{ padding: "6px 16px" }} />
+                <ColHeader label="Updated" tip="Number of existing records updated (e.g. revised values from data providers). FRED occasionally revises historical data; TIC and gold data are generally not revised after publication." align="left" style={{ padding: "6px 16px" }} />
+                <ColHeader label="Completed" tip="UTC timestamp when the pipeline finished (success or failure). Use this to verify that automated runs are executing on schedule — FRED should run daily ~2am, TIC on the 15th of each month." align="left" style={{ padding: "6px 16px" }} />
+                <ColHeader label="Error" tip="Error message if the pipeline failed or partially failed. Common errors: API rate limits (FRED), network timeouts (Fly.io cold starts), missing data (TIC not yet published for the month)." align="left" style={{ padding: "6px 16px" }} />
               </tr>
             </thead>
             <tbody>
