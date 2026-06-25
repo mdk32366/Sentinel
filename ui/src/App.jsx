@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { createPortal } from "react-dom";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from "recharts";
 
 const API = window.location.hostname === "localhost" ? "http://localhost:8000/api" : "/api";
@@ -133,14 +134,35 @@ function StressBar({ score, max = 100 }) {
 }
 
 // ── Column Header Tooltip ─────────────────────────────────────────────────────
-// Wraps any table <th> label with a hover tooltip explaining what is measured.
+// Tooltips inside <table> elements can't use position:absolute on the <th>
+// because ancestor table elements clip overflow. We use a React portal to
+// render the bubble into document.body, positioned via getBoundingClientRect.
+//
 // Usage: <ColHeader label="MoM %" tip="Month-over-month change…" align="right" />
-// Optional props: sortKey / activeSort / onSort for sortable columns.
+// Optional: sortKey / activeSort / onSort for sortable columns.
 
 function ColHeader({ label, tip, align = "right", sortKey, activeSort, onSort, style = {} }) {
   const [show, setShow] = useState(false);
+  const [pos, setPos]   = useState({ top: 0, left: 0 });
+  const thRef = useRef(null);
   const isSorted = sortKey && activeSort === sortKey;
-  const baseStyle = {
+
+  const handleEnter = () => {
+    if (thRef.current) {
+      const r = thRef.current.getBoundingClientRect();
+      // Place bubble above the <th>, aligned left or right edge
+      setPos({
+        top:  r.top + window.scrollY - 8,   // 8px gap above
+        left: align === "left"
+          ? r.left  + window.scrollX
+          : r.right + window.scrollX,        // right-edge anchor for right-aligned cols
+        anchorRight: align !== "left",
+      });
+    }
+    setShow(true);
+  };
+
+  const thStyle = {
     fontFamily: "monospace",
     fontSize: 10,
     letterSpacing: "0.1em",
@@ -152,50 +174,53 @@ function ColHeader({ label, tip, align = "right", sortKey, activeSort, onSort, s
     whiteSpace: "nowrap",
     cursor: onSort ? "pointer" : "default",
     userSelect: "none",
-    position: "relative",
     ...style,
   };
 
+  const tooltip = show && tip && createPortal(
+    <div style={{
+      position:  "absolute",
+      top:       pos.top,
+      // right-aligned cols: pin right edge of bubble to right edge of <th>
+      ...(pos.anchorRight
+        ? { right: `calc(100vw - ${pos.left}px)` }
+        : { left: pos.left }),
+      transform: "translateY(-100%)",
+      zIndex: 99999,
+      background: "#0A1520",
+      border: "1px solid #2A3D50",
+      borderTop: "2px solid #C8A96E",
+      borderRadius: 3,
+      padding: "8px 12px",
+      minWidth: 220,
+      maxWidth: 300,
+      boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
+      pointerEvents: "none",
+    }},
+    <div>
+      <div style={{ fontFamily:"monospace", fontSize:10, color:"#C8A96E", fontWeight:700, marginBottom:4, letterSpacing:"0.1em", textTransform:"uppercase" }}>
+        {label}
+      </div>
+      <div style={{ fontFamily:"monospace", fontSize:11, color:"#8A9BAC", lineHeight:1.6, textTransform:"none", letterSpacing:0, fontWeight:400, textAlign:"left" }}>
+        {tip}
+      </div>
+    </div>,
+    document.body
+  );
+
   return (
     <th
-      style={baseStyle}
+      ref={thRef}
+      style={thStyle}
       onClick={onSort ? () => onSort(sortKey) : undefined}
-      onMouseEnter={() => setShow(true)}
+      onMouseEnter={handleEnter}
       onMouseLeave={() => setShow(false)}
     >
-      {/* label + optional sort arrow */}
       <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>
         {label}
       </span>
       {isSorted && <span style={{ marginLeft: 4 }}>↓</span>}
-
-      {/* Tooltip bubble */}
-      {show && tip && (
-        <div style={{
-          position: "absolute",
-          bottom: "calc(100% + 6px)",
-          left: align === "left" ? 0 : "auto",
-          right: align === "right" ? 0 : "auto",
-          transform: align === "center" ? "translateX(-50%)" : undefined,
-          zIndex: 9999,
-          background: "#0A1520",
-          border: "1px solid #2A3D50",
-          borderTop: "2px solid #C8A96E",
-          borderRadius: 3,
-          padding: "8px 12px",
-          minWidth: 220,
-          maxWidth: 300,
-          boxShadow: "0 4px 20px rgba(0,0,0,0.6)",
-          pointerEvents: "none",
-        }}>
-          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#C8A96E", fontWeight: 700, marginBottom: 4, letterSpacing: "0.1em", textTransform: "uppercase" }}>
-            {label}
-          </div>
-          <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", lineHeight: 1.6, textTransform: "none", letterSpacing: 0, fontWeight: 400, textAlign: "left" }}>
-            {tip}
-          </div>
-        </div>
-      )}
+      {tooltip}
     </th>
   );
 }
