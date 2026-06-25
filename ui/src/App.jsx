@@ -134,93 +134,76 @@ function StressBar({ score, max = 100 }) {
 }
 
 // ── Column Header Tooltip ─────────────────────────────────────────────────────
-// Tooltips inside <table> elements can't use position:absolute on the <th>
-// because ancestor table elements clip overflow. We use a React portal to
-// render the bubble into document.body, positioned via getBoundingClientRect.
-//
-// Usage: <ColHeader label="MoM %" tip="Month-over-month change…" align="right" />
-// Optional: sortKey / activeSort / onSort for sortable columns.
+// Tables clip position:absolute children — we portal the bubble to document.body
+// and use position:fixed so getBoundingClientRect() coords work directly
+// (no scroll offset math needed).
 
 function ColHeader({ label, tip, align = "right", sortKey, activeSort, onSort, style = {} }) {
-  const [show, setShow] = useState(false);
-  const [pos, setPos]   = useState({ top: 0, left: 0 });
+  const [rect, setRect] = useState(null);
   const thRef = useRef(null);
   const isSorted = sortKey && activeSort === sortKey;
 
   const handleEnter = () => {
-    if (thRef.current) {
-      const r = thRef.current.getBoundingClientRect();
-      // Place bubble above the <th>, aligned left or right edge
-      setPos({
-        top:  r.top + window.scrollY - 8,   // 8px gap above
-        left: align === "left"
-          ? r.left  + window.scrollX
-          : r.right + window.scrollX,        // right-edge anchor for right-aligned cols
-        anchorRight: align !== "left",
-      });
-    }
-    setShow(true);
+    if (thRef.current) setRect(thRef.current.getBoundingClientRect());
   };
+  const handleLeave = () => setRect(null);
 
-  const thStyle = {
-    fontFamily: "monospace",
-    fontSize: 10,
-    letterSpacing: "0.1em",
-    color: isSorted ? "#C8A96E" : "#3A4D5C",
-    textTransform: "uppercase",
-    padding: "8px 12px",
-    textAlign: align,
-    borderBottom: "1px solid #1A2530",
-    whiteSpace: "nowrap",
-    cursor: onSort ? "pointer" : "default",
-    userSelect: "none",
-    ...style,
-  };
-
-  const tooltip = show && tip && createPortal(
-    <div style={{
-      position:  "absolute",
-      top:       pos.top,
-      // right-aligned cols: pin right edge of bubble to right edge of <th>
-      ...(pos.anchorRight
-        ? { right: `calc(100vw - ${pos.left}px)` }
-        : { left: pos.left }),
-      transform: "translateY(-100%)",
-      zIndex: 99999,
-      background: "#0A1520",
-      border: "1px solid #2A3D50",
-      borderTop: "2px solid #C8A96E",
-      borderRadius: 3,
-      padding: "8px 12px",
-      minWidth: 220,
-      maxWidth: 300,
-      boxShadow: "0 4px 24px rgba(0,0,0,0.7)",
-      pointerEvents: "none",
-    }},
-    <div>
-      <div style={{ fontFamily:"monospace", fontSize:10, color:"#C8A96E", fontWeight:700, marginBottom:4, letterSpacing:"0.1em", textTransform:"uppercase" }}>
-        {label}
-      </div>
-      <div style={{ fontFamily:"monospace", fontSize:11, color:"#8A9BAC", lineHeight:1.6, textTransform:"none", letterSpacing:0, fontWeight:400, textAlign:"left" }}>
-        {tip}
-      </div>
-    </div>,
-    document.body
-  );
+  // Bubble sits just above the <th>, flush with its left or right edge
+  const bubbleStyle = rect ? {
+    position: "fixed",
+    bottom: window.innerHeight - rect.top + 6,   // 6px gap above the header row
+    ...(align === "left"
+      ? { left: rect.left }
+      : { right: window.innerWidth - rect.right }),
+    zIndex: 99999,
+    background: "#0A1520",
+    border: "1px solid #2A3D50",
+    borderTop: "2px solid #C8A96E",
+    borderRadius: 3,
+    padding: "10px 14px",
+    minWidth: 240,
+    maxWidth: 320,
+    boxShadow: "0 4px 24px rgba(0,0,0,0.8)",
+    pointerEvents: "none",
+  } : null;
 
   return (
     <th
       ref={thRef}
-      style={thStyle}
+      style={{
+        fontFamily: "monospace",
+        fontSize: 10,
+        letterSpacing: "0.1em",
+        color: isSorted ? "#C8A96E" : "#3A4D5C",
+        textTransform: "uppercase",
+        padding: "8px 12px",
+        textAlign: align,
+        borderBottom: "1px solid #1A2530",
+        whiteSpace: "nowrap",
+        cursor: onSort ? "pointer" : "default",
+        userSelect: "none",
+        ...style,
+      }}
       onClick={onSort ? () => onSort(sortKey) : undefined}
       onMouseEnter={handleEnter}
-      onMouseLeave={() => setShow(false)}
+      onMouseLeave={handleLeave}
     >
       <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>
         {label}
       </span>
       {isSorted && <span style={{ marginLeft: 4 }}>↓</span>}
-      {tooltip}
+
+      {rect && tip && createPortal(
+        <div style={bubbleStyle}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#C8A96E", fontWeight: 700, marginBottom: 5, letterSpacing: "0.12em", textTransform: "uppercase" }}>
+            {label}
+          </div>
+          <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", lineHeight: 1.65, textTransform: "none", letterSpacing: 0, fontWeight: 400, textAlign: "left" }}>
+            {tip}
+          </div>
+        </div>,
+        document.body
+      )}
     </th>
   );
 }
@@ -519,9 +502,7 @@ function StressTable({ countries, onSelect, selected }) {
             <ColHeader label="Holdings $B" tip="Current US Treasury holdings in billions of USD, from the most recent TIC monthly report. Includes notes, bonds, and T-bills." sortKey="holdings" activeSort={sort} onSort={setSort} />
             <ColHeader label="MoM %" tip="Month-over-month percentage change in Treasury holdings. Negative values (red) indicate selling. Values below −1% over consecutive months are a primary stress signal." sortKey="mom" activeSort={sort} onSort={setSort} />
             <ColHeader label="Consec ↓" tip="Number of consecutive months with declining Treasury holdings. Persistence matters: a country buying one month and selling the next is noise; 3+ consecutive months of decline is a structural signal." sortKey="consecutive" activeSort={sort} onSort={setSort} />
-            <th style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", textTransform: "uppercase", padding: "8px 12px", borderBottom: "1px solid #1A2530", minWidth: 120 }}>
-              <ColHeader label="Stress Score" tip="Composite score combining MoM decline magnitude (0–30 pts) and consecutive declining months (0–20 pts, capped at 5 months × 4 pts). Higher = more stress. Score ≥25 with 3+ consecutive months triggers an alert." align="right" style={{ padding: 0, border: "none" }} />
-            </th>
+            <ColHeader label="Stress Score" tip="Composite score combining MoM decline magnitude (0–30 pts) and consecutive declining months (0–20 pts, capped at 5 months × 4 pts). Higher = more stress. Score ≥25 with 3+ consecutive months triggers an alert." align="right" sortKey="stress_score" activeSort={sort} onSort={setSort} style={{ minWidth: 120 }} />
           </tr>
         </thead>
         <tbody>
