@@ -296,7 +296,10 @@ def compute_composite_stress(db: Session) -> dict:
     brent = get_brent_trend(db, months=3)
 
     results = []
-    for country in db.query(Country).all():
+    # NOTE: Exclude USA from scoring — it's the issuer of Treasuries, not a holder.
+    # TIC (Treasury International Capital) data tracks *foreign* holdings only.
+    # The US having "zero holdings" is expected and not a stress signal.
+    for country in db.query(Country).filter(Country.iso_code != "USA").all():
         iso = country.iso_code
 
         # ── DIMENSION 1: Treasury ──────────────────────────────────────────
