@@ -1,7 +1,7 @@
 """
 Composite Sovereign Stress Scorer
 ------------------------------------
-Five-dimension scoring system:
+Seven-dimension scoring system:
 
   DIMENSION 1 — Treasury (0-50 pts)
     MoM decline magnitude:    0-30 pts (scaled)
@@ -33,6 +33,21 @@ Five-dimension scoring system:
     Oil-dependent nations: Gulf states, Russia/CIS oil exporters,
     Nigeria, Algeria, Libya, Angola, Mexico, Colombia, Ecuador,
     Venezuela, Norway, Kazakhstan, Azerbaijan.
+
+  DIMENSION 6 — Non-dollar reserves / TRESEG (score multiplier)
+    Reserves-ex-gold trend. REBUILDING (>5% YoY) applies a 1.2x boost
+    for countries that have exited Treasuries; DEPLETING (<-5% YoY)
+    flags distress. Mainly significant when a country holds zero US
+    Treasuries (active de-dollarization into an alternative system).
+
+  DIMENSION 7 — Sovereign CDS (0-20 pts)  ← NEW
+    Market-priced default risk from 5Y/10Y CDS spreads.
+    5Y >100bps:  5 pts  (mild credit risk premium)
+    5Y >250bps: 10 pts  (elevated)
+    5Y >500bps: 15 pts  (significant distress)
+    5Y widening >20% over 3M:       +5 pts (trend component)
+    Inverted term structure (10Y<5Y): +3 pts (acute distress)
+    Degrades gracefully to zero where CDS coverage is absent.
 
 MULTIPLIERS (applied to raw sum):
   Cross-asset (selling both T + gold):    1.5x
@@ -239,6 +254,130 @@ def get_sovereign_spread(db: Session, iso: str, us_10y: float | None) -> dict:
     }
 
 
+# ── DIMENSION 7: Sovereign CDS ────────────────────────────────────────────────
+# CDS metrics are stored with country_id=None; the country is encoded in the
+# metric CODE (e.g. "FRANCE_CDS_5Y"), using country NAMES. The scorer keys on
+# ISO codes, so we map ISO -> the CDS code prefix used by the fetcher.
+# (Codes are the clean, post-migration form: no doubled tenor suffix.)
+CDS_NAME_BY_ISO = {
+    "FRA": "FRANCE", "DEU": "GERMANY", "GRC": "GREECE", "ITA": "ITALY",
+    "ESP": "SPAIN", "CHE": "SWITZERLAND", "RUS": "RUSSIA", "TUR": "TURKEY",
+    "SAU": "SAUDI_ARABIA", "EGY": "EGYPT", "CHN": "CHINA", "JPN": "JAPAN",
+    "KOR": "SOUTH_KOREA", "IND": "INDIA", "IDN": "INDONESIA", "USA": "UNITED_STATES",
+    "CAN": "CANADA", "MEX": "MEXICO", "BRA": "BRAZIL", "AUS": "AUSTRALIA",
+    "ZAF": "SOUTH_AFRICA",
+}
+
+
+def _latest_and_prior(db: Session, code: str, days_back: int = 90):
+    """Return (latest_value, prior_value_or_None) for a global metric code.
+
+    'prior' is the earliest observation within the lookback window, used to
+    measure recent widening. Returns (None, None) if the metric or data is
+    absent, so a missing country simply scores zero on this dimension.
+    """
+    metric = db.query(Metric).filter_by(code=code).first()
+    if not metric:
+        return None, None
+
+    cutoff = datetime.utcnow() - timedelta(days=days_back)
+    history = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == None,
+        TimeSeries.date >= cutoff,
+    ).order_by(TimeSeries.date.asc()).all()
+
+    if not history:
+        # No data in the window — fall back to the single latest point, if any.
+        latest_row = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == metric.id,
+            TimeSeries.country_id == None,
+        ).order_by(TimeSeries.date.desc()).first()
+        return (float(latest_row.value) if latest_row else None), None
+
+    latest = float(history[-1].value)
+    prior = float(history[0].value) if len(history) >= 2 else None
+    return latest, prior
+
+
+def get_cds_score(db: Session, iso: str) -> dict:
+    """
+    Dimension 7 — Sovereign CDS (0-20 pts).
+
+    CDS is the most direct market-priced measure of sovereign default risk
+    in the dataset. Scored as a level band on the 5Y spread plus a widening
+    kicker, mirroring the sovereign-spread dimension. An inverted term
+    structure (10Y < 5Y) — the near term priced as riskier than the far term —
+    is a recognized acute-distress signal and adds a small amount.
+
+        Absolute 5Y level:
+            >100 bps:   5 pts   (mild credit risk premium)
+            >250 bps:  10 pts   (elevated)
+            >500 bps:  15 pts   (significant distress)
+        Widening (5Y up >20% over ~90d):      +5 pts
+        Term-structure inversion (10Y < 5Y):  +3 pts
+
+    Thresholds are intentionally conservative and additive to the existing
+    tier math (no re-normalization). Returns zero cleanly when a country has
+    no CDS coverage, so partial coverage never drops a country from scoring.
+    """
+    name = CDS_NAME_BY_ISO.get(iso)
+    if not name:
+        return {"cds_5y": None, "cds_10y": None, "term_spread": None,
+                "widening_pct": None, "score": 0, "signal": None}
+
+    cds_5y, prior_5y = _latest_and_prior(db, f"{name}_CDS_5Y", days_back=90)
+    cds_10y, _ = _latest_and_prior(db, f"{name}_CDS_10Y", days_back=90)
+
+    if cds_5y is None:
+        return {"cds_5y": None, "cds_10y": cds_10y, "term_spread": None,
+                "widening_pct": None, "score": 0, "signal": None}
+
+    # Level band on 5Y
+    score = 0
+    if cds_5y > 500:
+        score = 15
+    elif cds_5y > 250:
+        score = 10
+    elif cds_5y > 100:
+        score = 5
+
+    # Widening kicker: recent 5Y move relative to the start of the window
+    widening_pct = None
+    if prior_5y and prior_5y > 0:
+        widening_pct = (cds_5y - prior_5y) / prior_5y * 100
+        if widening_pct > 20:
+            score += 5
+
+    # Term-structure inversion: near-term priced riskier than far-term
+    term_spread = None
+    inverted = False
+    if cds_10y is not None:
+        term_spread = cds_10y - cds_5y
+        if term_spread < 0:
+            score += 3
+            inverted = True
+
+    # Human-readable signal for the active-signals list / UI
+    signal = None
+    if score > 0:
+        parts = [f"5Y CDS {cds_5y:.0f}bps"]
+        if widening_pct is not None and widening_pct > 20:
+            parts.append(f"widening +{widening_pct:.0f}% (3M)")
+        if inverted:
+            parts.append(f"inverted term structure ({term_spread:.0f}bps)")
+        signal = " · ".join(parts)
+
+    return {
+        "cds_5y": round(cds_5y, 1),
+        "cds_10y": round(cds_10y, 1) if cds_10y is not None else None,
+        "term_spread": round(term_spread, 1) if term_spread is not None else None,
+        "widening_pct": round(widening_pct, 1) if widening_pct is not None else None,
+        "score": min(score, 20),
+        "signal": signal,
+    }
+
+
 def get_spot_gold_trend(db: Session, months: int = 3) -> dict:
     """Get recent spot gold price trend."""
     gold_metric = db.query(Metric).filter_by(code="GOLD_SPOT_USD").first()
@@ -407,6 +546,10 @@ def compute_composite_stress(db: Session) -> dict:
         oil_dependent = petro_data["oil_dependent"]
         oil_signal = petro_data["oil_signal"]
 
+        # ── DIMENSION 7: Sovereign CDS ─────────────────────────────────────
+        cds_data = get_cds_score(db, iso)
+        cds_score = cds_data["score"]
+
         # ── MULTIPLIERS ────────────────────────────────────────────────────
         cross_asset = selling_tic and selling_gold
         # EXITED + selling gold = structurally equivalent to cross-asset stress
@@ -420,7 +563,7 @@ def compute_composite_stress(db: Session) -> dict:
         else:
             multiplier = 1.0
 
-        raw_score = tic_score + gold_score + monetary_score + spread_score + petro_score
+        raw_score = tic_score + gold_score + monetary_score + spread_score + petro_score + cds_score
         composite_score = raw_score * multiplier
 
         # Don't skip EXITED countries even if raw score is low —
@@ -457,6 +600,8 @@ def compute_composite_stress(db: Session) -> dict:
             signals.append(f"Spread widening: +{spread_widening:.0f}bps (3M)")
         if oil_signal:
             signals.append(f"🛢 {oil_signal}")
+        if cds_data["signal"]:
+            signals.append(f"⚑ {cds_data['signal']}")
         if divergence:
             signals.append("⚡ DIVERGENCE: selling gold into rising price")
         elif cross_asset:
@@ -506,6 +651,12 @@ def compute_composite_stress(db: Session) -> dict:
             "brent_3m_pct": brent.get("change_3m_pct"),
             "brent_price": brent.get("latest_price"),
             "petro_score": round(petro_score, 1),
+            # Sovereign CDS (Dimension 7)
+            "cds_5y": cds_data["cds_5y"],
+            "cds_10y": cds_data["cds_10y"],
+            "cds_term_spread": cds_data["term_spread"],
+            "cds_widening_pct": cds_data["widening_pct"],
+            "cds_score": round(cds_score, 1),
             # Non-dollar reserves (TRESEG)
             "treseg_signal": treseg["signal"],
             "treseg_trend_pct": treseg["trend_pct"],
@@ -551,6 +702,7 @@ def compute_composite_stress(db: Session) -> dict:
             "brent_3m_pct": brent.get("change_3m_pct"),
             "brent_source": brent.get("source"),
             "countries_with_spread_data": len([r for r in results if r["spread_bps"] is not None]),
+            "countries_with_cds_data": len([r for r in results if r["cds_5y"] is not None]),
             "oil_dependent_countries": len([r for r in results if r["oil_dependent"]]),
         },
         "as_of": tic_latest.strftime("%Y-%m") if tic_latest else None,

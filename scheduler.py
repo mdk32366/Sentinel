@@ -5,7 +5,7 @@ from config import settings
 from database.connection import get_session
 from pipelines.fred_fetcher import run_fred_fetch
 from pipelines.treasury_holdings import run_treasury_holdings_fetch
-from pipelines.stress_score import run_stress_score_calculation
+from pipelines.stress_score_v2 import run_stress_score_calculation
 from pipelines.gold_reserves import run_gold_reserves_fetch
 
 logger = logging.getLogger(__name__)

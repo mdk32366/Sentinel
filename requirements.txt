@@ -11,3 +11,8 @@ python-dotenv==1.0.0
 pytz==2023.3
 pandas==2.2.3
 httpx==0.25.1
+
+# CDS pipeline dependencies
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0

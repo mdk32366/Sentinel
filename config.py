@@ -9,21 +9,24 @@ class Settings(BaseSettings):
     # API Keys
     fred_api_key: str = "your_fred_api_key_here"
     anthropic_api_key: str = ""
+    grok_api_key: str = ""
 
     # Basic Auth (set via Fly.io secrets)
     auth_username: str = "sentinel"
-    auth_password: str = "changeme"
+    auth_password: str = "v1g1lant"
 
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8000
+  
 
     # Scheduler
     scheduler_enabled: bool = True
     fred_fetch_hour: int = 2
     treasury_fetch_day: int = 15
     gold_fetch_day: int = 1
-
+    cds_fetch_hour: int = 3
+    
     # Logging
     log_level: str = "INFO"
 

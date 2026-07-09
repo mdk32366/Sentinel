@@ -24,7 +24,7 @@ const RANGES = [
   { label: "5Y",  days: 1825 },
 ];
 
-const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "STRESS", "COUNTRY", "ADMIN", "ABOUT"];
+const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "CDS", "STRESS", "COUNTRY", "ADMIN", "ABOUT"];
 
 function formatDate(d) {
   return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
@@ -244,6 +244,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   const [loading, setLoading] = useState(true);
   const [narrative, setNarrative] = useState(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
+  const [cdsData, setCdsData] = useState({ cds5y: null, cds10y: null, termSpread: null });
 
   useEffect(() => {
     setLoading(true);
@@ -264,26 +265,69 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
       setReservesHistory(reserves);
       setLoading(false);
     });
+
+    // Fetch latest CDS for the coverage tile (independent of narrative generation)
+    fetch(`${API}/cds?country=${iso}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) { setCdsData({ cds5y: null, cds10y: null, termSpread: null }); return; }
+        const c5 = d?.["5Y"]?.value ?? null;
+        const c10 = d?.["10Y"]?.value ?? null;
+        setCdsData({
+          cds5y: c5,
+          cds10y: c10,
+          termSpread: (c5 != null && c10 != null) ? c10 - c5 : null,
+        });
+      })
+      .catch(() => setCdsData({ cds5y: null, cds10y: null, termSpread: null }));
   }, [iso]);
 
   const handleGenerateNarrative = async (ticChart, goldChart, latestTic, ticMom, latestGold) => {
-    setNarrativeLoading(true);
-    setNarrative(null);
+  setNarrativeLoading(true);
+  setNarrative(null);
+
+  try {
+    const yieldCode = SOVEREIGN_YIELD_CODES[iso];
+    const countryYield = yieldCode ? latestAll[yieldCode] : null;
+    const us10y = latestAll["DGS10"];
+    const spreadBps = countryYield != null && us10y != null 
+      ? (countryYield - us10y) * 100 
+      : null;
+
+    // Fetch latest CDS data
+    let cds5y = null;
+    let cds10y = null;
+    let cdsTermSpread = null;
+
     try {
-      const yieldCode = SOVEREIGN_YIELD_CODES[iso];
-      const countryYield = yieldCode ? latestAll[yieldCode] : null;
-      const us10y = latestAll["DGS10"];
-      const spreadBps = countryYield != null && us10y != null ? (countryYield - us10y) * 100 : null;
-      const prompt = `You are a financial analyst writing a concise 200-250 word brief for a sophisticated audience. Analyze ${ticHistory?.country_name ?? iso} (${iso}) based on this data:
+      const cdsRes = await fetch(`${API}/cds?country=${iso}`);
+      if (cdsRes.ok) {
+        const cdsData = await cdsRes.json();
+        cds5y = cdsData?.["5Y"]?.value ?? null;
+        cds10y = cdsData?.["10Y"]?.value ?? null;
+        if (cds5y != null && cds10y != null) {
+          cdsTermSpread = cds10y - cds5y;
+        }
+      }
+    } catch (e) {
+      console.warn("CDS data not available for narrative");
+    }
+
+    const prompt = `You are a financial analyst writing a concise 200-250 word brief for a sophisticated audience. Analyze ${ticHistory?.country_name ?? iso} (${iso}) based on this data:
 
 TREASURY HOLDINGS: ${latestTic ? `$${latestTic.holdings.toFixed(1)}B current` : "no data"}${ticMom != null ? `, MoM ${ticMom > 0 ? "+" : ""}${ticMom.toFixed(2)}%` : ""}, ${ticChart.length} months of history
 GOLD RESERVES: ${latestGold ? `${latestGold.tonnes.toFixed(0)} metric tonnes` : "no data"}
 SOVEREIGN YIELD SPREAD VS US 10Y: ${spreadBps != null ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)} basis points` : "not available"}
 
+SOVEREIGN CDS:
+- 5Y CDS: ${cds5y != null ? `${cds5y} bps` : "not available"}
+- 10Y CDS: ${cds10y != null ? `${cds10y} bps` : "not available"}
+- Term Structure (10Y - 5Y): ${cdsTermSpread != null ? `${cdsTermSpread > 0 ? "+" : ""}${cdsTermSpread} bps` : "not available"}
+
 Write three short sections:
 
 SITUATION
-What is this country doing with its US Treasury holdings and gold reserves? 2-3 plain sentences using the real numbers.
+What is this country doing with its US Treasury holdings and gold reserves? Include CDS levels if available. 2-3 plain sentences using the real numbers.
 
 WHAT TO WATCH
 What trends matter most right now? What would signal a change in posture? 2-3 sentences.
@@ -293,19 +337,21 @@ What are the top 2 risks to monitor? Be specific. 2 sentences.
 
 Use plain English. No markdown formatting. No bullet points.`;
 
-      const r = await fetch(`${API}/analyze/country`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ prompt }),
-      });
-      const data = await r.json();
-      setNarrative(data.text || "Analysis unavailable.");
-    } catch (e) {
-      setNarrative("Failed to generate analysis. Please try again.");
-    }
-    setNarrativeLoading(false);
-  };
+    const r = await fetch(`${API}/analyze/country`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
 
+    const data = await r.json();
+    setNarrative(data.text || "Analysis unavailable.");
+
+  } catch (e) {
+    setNarrative("Failed to generate analysis. Please try again.");
+  }
+
+  setNarrativeLoading(false);
+};
   if (loading) return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
 
   const container = standalone
@@ -382,6 +428,16 @@ Use plain English. No markdown formatting. No bullet points.`;
           { label: "Gold Reserves", val: latestGold ? `${latestGold.tonnes.toFixed(0)}t` : "—", color: "#E8C547" },
           { label: "Sovereign Yield", val: countryYield != null ? `${countryYield.toFixed(2)}%` : "—", color: "#7EB8C9" },
           { label: "Spread vs US 10Y", val: spreadBps != null ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)}bps` : "—", color: spreadColor },
+          {
+            label: "5Y CDS",
+            val: cdsData.cds5y != null ? `${cdsData.cds5y.toFixed(0)}bps` : "No coverage",
+            color: cdsData.cds5y == null ? "#3A4D5C" : cdsData.cds5y > 250 ? "#E07B5A" : cdsData.cds5y > 100 ? "#C8A96E" : "#7EB8C9",
+            sub: cdsData.cds5y == null
+              ? "Not factored into stress score"
+              : (cdsData.termSpread != null
+                  ? `Term ${cdsData.termSpread > 0 ? "+" : ""}${cdsData.termSpread.toFixed(0)}bps${cdsData.termSpread < 0 ? " (inverted)" : ""}`
+                  : null),
+          },
         ].map(s => (
           <div key={s.label} style={{ background: "#0F1923", border: `1px solid ${s.color}22`, borderTop: `2px solid ${s.color}`, borderRadius: 2, padding: "12px 16px", flex: "1 1 120px" }}>
             <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>{s.label}</div>
@@ -1375,7 +1431,7 @@ function CompositeTab({ onCountrySelect }) {
               <table style={{ width:"100%", borderCollapse:"collapse" }}>
                 <thead>
                   <tr>
-                    <ColHeader label="Country" tip="Sovereign entity scored across all five stress dimensions. Click any row to open the full country detail view." align="left" />
+                    <ColHeader label="Country" tip="Sovereign entity scored across all seven stress dimensions. A ◦ marker beside the score means CDS data was unavailable for that country, so the score reflects six dimensions. Click any row to open the full country detail view." align="left" />
                     <ColHeader label="Tier" tip="Risk classification based on composite score: WATCH (<25), ELEVATED (25–50), STRESSED (50–75), CRISIS (≥75). CRISIS requires all major signals firing plus a multiplier." align="left" />
                     <ColHeader label="T-Bill MoM" tip="Month-over-month % change in US Treasury holdings. 'ZERO ⚠' means the country has fully exited — holds no US Treasuries. This is the primary Treasury stress input (Dimension 1)." align="right" />
                     <ColHeader label="Consec" tip="Consecutive months of declining Treasury holdings. Each additional month adds 4 pts to the Treasury score, capped at 5 months (20 pts). Persistence distinguishes strategic selling from noise." align="right" />
@@ -1384,10 +1440,12 @@ function CompositeTab({ onCountrySelect }) {
                     <ColHeader label="G" tip="Gold reserves dimension score (0–40 pts). Calculated from: QoQ decline magnitude (0–20 pts) + consecutive declining quarters (0–20 pts). Selling gold alongside Treasuries activates the cross-asset multiplier." align="right" />
                     <ColHeader label="Spread" tip="Sovereign bond yield spread vs US 10Y, in basis points. >50bps = 5 pts; >100bps = 10 pts; >200bps = 15 pts; +5 pts if widening >30bps in 3 months. High spreads signal elevated country risk premium." align="right" />
                     <ColHeader label="P" tip="Petrodollar dimension score (0–20 pts). Only fires for oil-dependent nations (Gulf, Russia/CIS, Nigeria, etc.). Brent down >10% over 3M = 5 pts; >20% = 10 pts; >30% = 20 pts. +5 pts if oil falling AND country is selling Treasuries simultaneously." align="right" />
+                    <ColHeader label="CDS 5Y" tip="Latest 5-year sovereign CDS spread in basis points — the market price of default protection (Dimension 7). >100bps = 5 pts; >250bps = 10 pts; >500bps = 15 pts; +5 pts if widening >20% over 3M. A dash (—) means no CDS coverage for this country: the dimension contributes 0 and is NOT counted as calm." align="right" />
+                    <ColHeader label="CDS Term" tip="10Y CDS minus 5Y CDS, in basis points. Positive = normal upward slope. Negative = inverted curve (near-term priced riskier than long-term), a sign of acute distress that adds +3 pts. Dash (—) means one or both tenors are unavailable." align="right" />
                     <ColHeader label="Mult" tip="Score multiplier applied to the raw total. 1.5× activates when a country sells both Treasuries and gold (cross-asset stress). 2.0× activates when selling gold into a rising spot price (divergence = forced seller signal)." align="right" />
                     <ColHeader label="Non-$" tip="Non-dollar reserve trend (TRESEG series). STA = stable; REB = rebuilding (>5% YoY growth, de-dollarization into alternative system); DEP = depleting (>5% YoY decline, possible distress). Only analytically significant for EXITED countries." align="right" />
                     <ColHeader label="Score" tip="Final composite score after multipliers. WATCH <25 · ELEVATED 25–50 · STRESSED 50–75 · CRISIS ≥75. Maximum possible score is ~150 (all dimensions firing + 2× divergence multiplier)." align="right" />
-                    <ColHeader label="Active Signals" tip="Human-readable summary of the specific signals contributing to this country's score. Each dot-separated entry corresponds to a threshold being crossed in one of the five scoring dimensions." align="left" />
+                    <ColHeader label="Active Signals" tip="Human-readable summary of the specific signals contributing to this country's score. Each dot-separated entry corresponds to a threshold being crossed in one of the seven scoring dimensions." align="left" />
                   </tr>
                 </thead>
                 <tbody>
@@ -1424,6 +1482,12 @@ function CompositeTab({ onCountrySelect }) {
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.petro_score??0)>0?"#E07B5A":"#3A4D5C" }}>
                           {c.oil_dependent?(c.petro_score>0?c.petro_score:"🛢"):"—"}
                         </td>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.cds_5y!=null?(c.cds_5y>250?"#E07B5A":c.cds_5y>100?"#C8A96E":"#7EB8C9"):"#3A4D5C" }}>
+                          {c.cds_5y!=null?`${c.cds_5y.toFixed(0)}`:<span style={{ color:"#3A4D5C" }} title="No CDS coverage — dimension scores 0">—</span>}
+                        </td>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.cds_term_spread!=null&&c.cds_term_spread<0?"#FF4444":c.cds_term_spread!=null?"#5A6878":"#3A4D5C" }}>
+                          {c.cds_term_spread!=null?`${c.cds_term_spread>0?"+":""}${c.cds_term_spread.toFixed(0)}`:"—"}
+                        </td>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.multiplier??1)>1?"#FF4444":"#3A4D5C" }}>
                           {(c.multiplier??1)>1?`${c.multiplier}×`:"—"}
                         </td>
@@ -1436,6 +1500,10 @@ function CompositeTab({ onCountrySelect }) {
                               <div style={{ width:`${Math.min(100,c.composite_score)}%`, background:tc, height:"100%", borderRadius:2 }} />
                             </div>
                             <span style={{ fontFamily:"monospace", fontSize:11, color:tc, minWidth:28, textAlign:"right", fontWeight:700 }}>{c.composite_score?.toFixed(0)??0}</span>
+                            {c.cds_5y==null && (
+                              <span title="Score computed without CDS input — no sovereign CDS coverage for this country"
+                                style={{ fontSize:9, color:"#5A6878", cursor:"help", marginLeft:1 }}>◦</span>
+                            )}
                           </div>
                         </td>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, color:"#5A6878", maxWidth:240 }}>
@@ -1775,6 +1843,7 @@ setLatestAll({ latest, month30 });
         {tab === "CROSS-ASSET" && <CrossAssetTab />}
         {tab === "GOLD" && <GoldReservesTab onCountrySelect={handleCountrySelect} />}
         {tab === "COMPOSITE" && <CompositeTab onCountrySelect={handleCountrySelect} />}
+        {tab === "CDS" && <CDSTab onCountrySelect={handleCountrySelect} />}
         {tab === "STRESS" && <StressScoreTab />}
         {tab === "COUNTRY" && (
           <CountryTab
@@ -1902,6 +1971,146 @@ function StressScoreTab() {
     </div>
   );
 }
+function CDSTab({ onCountrySelect }) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [sort, setSort] = useState("cds5y");
+
+  useEffect(() => {
+    fetch(`${API}/cds/all`)
+      .then(r => r.json())
+      .then(d => {
+        setData(d);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  if (loading) {
+    return <div style={{ padding: 40, fontFamily: "monospace", color: "#3A4D5C" }}>Loading CDS data...</div>;
+  }
+
+  if (!data || data.length === 0) {
+    return (
+      <div style={{ padding: 40, fontFamily: "monospace", color: "#E07B5A" }}>
+        No CDS data available yet.<br />
+        Run <code>python run_cds_fetch.py</code> to populate data.
+      </div>
+    );
+  }
+
+  // Sorting
+  const sortedData = [...data].sort((a, b) => {
+    if (sort === "cds5y") return (b.cds_5y || 0) - (a.cds_5y || 0);
+    if (sort === "term") return (b.cds_term_spread || 0) - (a.cds_term_spread || 0);
+    if (sort === "country") return a.country_name.localeCompare(b.country_name);
+    return 0;
+  });
+
+  return (
+    <div>
+      <div style={{ marginBottom: 20 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 22, color: "#C8A96E", fontWeight: 700 }}>
+          Sovereign CDS Monitor
+        </div>
+        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#5A6878", marginTop: 4 }}>
+          5Y &amp; 10Y Credit Default Swap spreads • High values + inverted curves signal elevated sovereign stress
+        </div>
+      </div>
+
+      {/* Summary Cards */}
+      <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
+        {[
+          { label: "Countries with CDS", val: data.length },
+          { label: "Highest 5Y CDS", val: `${Math.max(...data.map(d => d.cds_5y || 0))} bps` },
+          { label: "Inverted Curves", val: data.filter(d => (d.cds_term_spread || 0) < 0).length },
+          { label: "Very High (>300 bps)", val: data.filter(d => (d.cds_5y || 0) > 300).length },
+        ].map((s, i) => (
+          <div key={i} style={{ background: "#0F1923", border: "1px solid #1A2530", borderTop: "2px solid #C8A96E", borderRadius: 2, padding: "14px 20px", flex: "1 1 150px" }}>
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>{s.label}</div>
+            <div style={{ fontFamily: "monospace", fontSize: 22, fontWeight: 700, color: "#E8E0D0" }}>{s.val}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* CDS Table */}
+      <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0" }}>
+        <div style={{ padding: "0 20px 16px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
+          CDS LEADERBOARD — Click row to view country details
+        </div>
+
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <ColHeader label="Country" align="left" />
+                <ColHeader label="5Y CDS" tip="5-year sovereign CDS spread (basis points)" sortKey="cds5y" activeSort={sort} onSort={setSort} align="right" />
+                <ColHeader label="10Y CDS" tip="10-year sovereign CDS spread (basis points)" align="right" />
+                <ColHeader 
+  label="Term Structure" 
+  tip="10Y CDS − 5Y CDS. Negative = inverted curve (often a sign of acute sovereign stress)" 
+  sortKey="term" 
+  activeSort={sort} 
+  onSort={setSort} 
+  align="right" 
+/>
+                <ColHeader label="Signal" align="left" />
+              </tr>
+            </thead>
+            <tbody>
+              {sortedData.map((c, i) => {
+                const isHigh = (c.cds_5y || 0) > 300;
+                const isInverted = (c.cds_term_spread || 0) < 0;
+                return (
+                  <tr 
+                    key={i} 
+                    onClick={() => onCountrySelect && onCountrySelect(c.country_iso)}
+                    style={{ 
+                      borderBottom: "1px solid #0F1923", 
+                      cursor: onCountrySelect ? "pointer" : "default" 
+                    }}
+                    onMouseEnter={e => e.currentTarget.style.background = "#0D1820"}
+                    onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                  >
+                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0" }}>
+                      {c.country_name} <span style={{ color: "#3A4D5C", fontSize: 10 }}>{c.country_iso}</span>
+                    </td>
+                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: isHigh ? "#E07B5A" : "#8A9BAC", fontWeight: isHigh ? 600 : 400 }}>
+                      {c.cds_5y ? `${c.cds_5y} bps` : "—"}
+                    </td>
+                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: "#8A9BAC" }}>
+                      {c.cds_10y ? `${c.cds_10y} bps` : "—"}
+                    </td>
+                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: isInverted ? "#FF4444" : "#8A9BAC", fontWeight: isInverted ? 600 : 400 }}>
+                      {c.cds_term_spread != null ? `${c.cds_term_spread > 0 ? "+" : ""}${c.cds_term_spread} bps` : "—"}
+                    </td>
+                    <td style={{ padding: "10px 16px" }}>
+                      {isInverted && (
+                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#FF4444", background: "#FF444418", border: "1px solid #FF444444", borderRadius: 2, padding: "1px 6px" }}>
+                          INVERTED
+                        </span>
+                      )}
+                      {isHigh && !isInverted && (
+                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#E07B5A", background: "#E07B5A18", border: "1px solid #E07B5A44", borderRadius: 2, padding: "1px 6px" }}>
+                          HIGH
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>
+        Data source: Investing.com via Sentinel CDS pipeline
+      </div>
+    </div>
+  );
+}
+
 
 function AdminTab() {
   const [logs, setLogs] = useState([]);
@@ -2037,212 +2246,3 @@ function AdminTab() {
                 <ColHeader label="Inserted" tip="Number of new time-series records added to the database in this run. High counts on first run; near-zero on subsequent runs indicates data is current and no new points were available." align="left" style={{ padding: "6px 16px" }} />
                 <ColHeader label="Updated" tip="Number of existing records updated (e.g. revised values from data providers). FRED occasionally revises historical data; TIC and gold data are generally not revised after publication." align="left" style={{ padding: "6px 16px" }} />
                 <ColHeader label="Completed" tip="UTC timestamp when the pipeline finished (success or failure). Use this to verify that automated runs are executing on schedule — FRED should run daily ~2am, TIC on the 15th of each month." align="left" style={{ padding: "6px 16px" }} />
-                <ColHeader label="Error" tip="Error message if the pipeline failed or partially failed. Common errors: API rate limits (FRED), network timeouts (Fly.io cold starts), missing data (TIC not yet published for the month)." align="left" style={{ padding: "6px 16px" }} />
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map((log, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #080E14" }}>
-                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#E8E0D0" }}>{log.pipeline_name}</td>
-                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: log.status === "success" ? "#5DB87A" : log.status === "partial" ? "#E8C547" : "#E07B5A" }}>{log.status}</td>
-                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{log.records_inserted?.toLocaleString()}</td>
-                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{log.records_updated?.toLocaleString()}</td>
-                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#5A6878", whiteSpace: "nowrap" }}>
-                    {log.completed_at ? new Date(log.completed_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
-                  </td>
-                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 11, color: "#E07B5A", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.error_message || ""}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AboutTab() {
-  const SOURCES = [
-    {
-      name: "FRED — Federal Reserve Economic Data",
-      url: "https://fred.stlouisfed.org",
-      update: "Daily (auto)",
-      lag: "1 day",
-      coverage: "US only",
-      metrics: ["10Y/5Y/2Y Treasury yields", "Fed Funds Rate", "Real Yield (TIPS)", "WTI Crude Oil", "Dollar Index (DXY)", "CPI", "M2 Money Supply"],
-      notes: "Free API, no auth required. Key stored in .env as FRED_API_KEY. Runs automatically at 2am daily.",
-      manual: false,
-    },
-    {
-      name: "TIC — Treasury International Capital",
-      url: "https://ticdata.treasury.gov",
-      update: "Monthly (auto)",
-      lag: "~45 days after month-end",
-      coverage: "48 countries",
-      metrics: ["Foreign holdings of US Treasury securities by country (monthly, in $B)"],
-      notes: "Free, no auth. Parsed from mfhhis01.txt — tab-delimited historical file. Runs automatically on 15th of each month. Data as far back as 2016 for most countries.",
-      manual: false,
-    },
-    {
-      name: "World Gold Council — Gold Reserves",
-      url: "https://www.gold.org/goldhub/data/gold-reserves-by-country",
-      update: "Monthly (MANUAL)",
-      lag: "~2 months after quarter-end",
-      coverage: "120+ countries",
-      metrics: ["Central bank gold reserves in tonnes (quarterly, back to Q4 2000)"],
-      notes: "Requires free WGC account login. Download the historical CSV monthly and replace C:\\projects\\sentinel\\data\\gold_reserves.csv, then run POST /api/fetch/gold.",
-      manual: true,
-    },
-    {
-      name: "World Bank — Broad Money Growth",
-      url: "https://api.worldbank.org/v2/country/all/indicator/FM.LBL.BMNY.ZG",
-      update: "Annual (MANUAL)",
-      lag: "~1 year",
-      coverage: "48 countries",
-      metrics: ["Annual % growth in broad money supply (M2/M3), back to 1961"],
-      notes: "Free API, no auth. Download via curl and save to C:\\projects\\sentinel\\data\\money_supply.json, then run POST /api/fetch/money-supply. Re-download annually. Thresholds: >15% elevated, >30% significant debasement, >50% crisis-level.",
-      manual: true,
-    },
-    {
-      name: "World Gold Council — Spot Gold Price",
-      url: "https://www.gold.org/goldhub/data/gold-prices",
-      update: "Monthly (MANUAL)",
-      lag: "1 month",
-      coverage: "Global",
-      metrics: ["Gold spot price USD/troy oz (monthly, back to January 1978)"],
-      notes: "Download from WGC when logged in. Replace C:\\projects\\sentinel\\data\\gold_prices.csv and run POST /api/fetch/gold-price. Update quarterly is sufficient.",
-      manual: true,
-    },
-  ];
-
-  const SIGNALS = [
-    {
-      name: "Sovereign Stress Score",
-      tier: 1,
-      color: "#E8C547",
-      formula: "MoM decline magnitude (0–40pts) + consecutive declining months (0–30pts) + acceleration (0–20pts)",
-      threshold: "Alert: score ≥ 25 OR 3+ consecutive declining months",
-      interpretation: "A country reducing treasury holdings. Could be strategic repositioning or liquidity need. Watch for persistence.",
-    },
-    {
-      name: "Cross-Asset Stress (1.5×)",
-      tier: 2,
-      color: "#E07B5A",
-      formula: "Treasury stress score × 1.5 when country is ALSO reducing gold reserves",
-      threshold: "Fires when selling_treasuries AND selling_gold simultaneously",
-      interpretation: "Selling both assets = more than repositioning. Reduced optionality. Country is drawing down its strategic reserve base.",
-    },
-    {
-      name: "Divergence Signal (2×)",
-      tier: 3,
-      color: "#FF4444",
-      formula: "Cross-asset score × 2 when spot gold is rising (>2% over 3 months)",
-      threshold: "Fires when cross-asset AND spot_gold_rising",
-      interpretation: "Selling gold INTO a rising gold price. This is the forced seller signal. A country only does this if it desperately needs USD liquidity. Maximum distress indicator.",
-    },
-  ];
-
-  const FUTURE = [
-    { name: "Country M2 / Broad Money Growth", why: "Sharp M2 expansion signals monetary debasement. When a country is selling reserves AND printing money, currency crisis typically follows. Best source: World Bank API (annual data free, monthly requires subscription)." },
-    { name: "Currency Exchange Rates", why: "USD/local currency depreciation confirms reserve selling thesis. FRED has some pairs; full coverage needs a forex API." },
-    { name: "CDS Spreads", why: "Sovereign credit default swap spreads are the market's own stress signal. Spikes often precede reserve selling. Requires Bloomberg or Markit data." },
-    { name: "IMF Reserve Adequacy", why: "Ratio of reserves to short-term external debt. When this falls below 1.0, the country is vulnerable. IMF publishes annually." },
-  ];
-
-  return (
-    <div>
-      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 28, lineHeight: 1.8, maxWidth: 800 }}>
-        Project Sentinel monitors sovereign stress signals in global treasury markets. The core thesis: countries that are
-        <span style={{ color: "#C8A96E" }}> forced sellers</span> of US Treasuries reveal themselves through the data before it becomes news.
-        The highest-conviction signal is simultaneous selling of both treasuries and gold — especially into a rising gold price.
-      </div>
-
-      {/* Data Sources */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>DATA SOURCES</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {SOURCES.map(s => (
-            <div key={s.name} style={{ background: "#0A1520", border: `1px solid ${s.manual ? "#E8C54733" : "#1A2530"}`, borderLeft: `3px solid ${s.manual ? "#E8C547" : "#1A2530"}`, borderRadius: 2, padding: "16px 20px" }}>
-              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-                    <span style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", fontWeight: 600 }}>{s.name}</span>
-                    <span style={{ fontFamily: "monospace", fontSize: 10, color: s.manual ? "#E8C547" : "#5DB87A", background: s.manual ? "#E8C54718" : "#5DB87A18", border: `1px solid ${s.manual ? "#E8C54744" : "#5DB87A44"}`, borderRadius: 2, padding: "1px 6px" }}>
-                      {s.manual ? "⚠ MANUAL UPDATE" : "● AUTO"}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", gap: 24, marginBottom: 8, flexWrap: "wrap" }}>
-                    {[["Update", s.update], ["Lag", s.lag], ["Coverage", s.coverage]].map(([l, v]) => (
-                      <div key={l}>
-                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>{l}: </span>
-                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#8A9BAC" }}>{v}</span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 8 }}>
-                    {s.metrics.map((m, i) => <div key={i}>· {m}</div>)}
-                  </div>
-                  <div style={{ fontFamily: "monospace", fontSize: 11, color: s.manual ? "#E8C547" : "#3A4D5C", lineHeight: 1.6 }}>{s.notes}</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Manual Update Checklist */}
-      <div style={{ background: "#0A1520", border: "1px solid #E8C54744", borderLeft: "3px solid #E8C547", borderRadius: 2, padding: "16px 20px", marginBottom: 32 }}>
-        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginBottom: 12, letterSpacing: "0.1em" }}>⚠ MONTHLY MANUAL UPDATE CHECKLIST</div>
-        {[
-          { task: "Download WGC gold reserves CSV (quarterly)", url: "https://www.gold.org/goldhub/data/gold-reserves-by-country", action: "Save as data/gold_reserves.csv in repo → commit → deploy OR run POST /api/fetch/gold-reserves" },
-          { task: "Verify TIC auto-refresh ran (15th of month)", url: null, action: "Check GET /api/health — last_treasury_update should be recent" },
-          { task: "Verify FRED auto-refresh ran (daily)", url: null, action: "Check GET /api/health — last_fred_update should be within 24 hrs" },
-          { task: "Verify stress score recalculated", url: null, action: "GET /api/stress-score — timestamp should be today" },
-        ].map((item, i) => (
-          <div key={i} style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "flex-start" }}>
-            <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginTop: 1 }}>□</span>
-            <div>
-              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8E0D0" }}>{item.task}</div>
-              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginTop: 2 }}>{item.action}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Signal Methodology */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>SIGNAL METHODOLOGY</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {SIGNALS.map(s => (
-            <div key={s.name} style={{ background: "#0A1520", border: `1px solid ${s.color}33`, borderLeft: `3px solid ${s.color}`, borderRadius: 2, padding: "16px 20px" }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-                <span style={{ fontFamily: "monospace", fontSize: 10, color: s.color, background: `${s.color}18`, border: `1px solid ${s.color}44`, borderRadius: 2, padding: "1px 6px" }}>TIER {s.tier}</span>
-                <span style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", fontWeight: 600 }}>{s.name}</span>
-              </div>
-              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 6 }}>Formula: {s.formula}</div>
-              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 6 }}>Threshold: {s.threshold}</div>
-              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", lineHeight: 1.6 }}>{s.interpretation}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Future Pipelines */}
-      <div style={{ marginBottom: 32 }}>
-        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>PLANNED PIPELINES</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {FUTURE.map(f => (
-            <div key={f.name} style={{ background: "#0A1520", border: "1px solid #1A2530", borderLeft: "3px solid #1E2D3D", borderRadius: 2, padding: "14px 20px" }}>
-              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", fontWeight: 600, marginBottom: 4 }}>{f.name}</div>
-              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", lineHeight: 1.6 }}>{f.why}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#1E2D3D", borderTop: "1px solid #1A2530", paddingTop: 16 }}>
-        Project Sentinel · Built with FastAPI + PostgreSQL + React · Data: FRED, TIC, WGC
-      </div>
-    </div>
-  );
-}

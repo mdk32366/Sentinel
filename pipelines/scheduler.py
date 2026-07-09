@@ -5,7 +5,7 @@ from config import settings
 from database.connection import get_session
 from pipelines.fred_fetcher import run_fred_fetch
 from pipelines.treasury_holdings import run_treasury_holdings_fetch
-from pipelines.stress_score import run_stress_score_calculation
+from pipelines.stress_score_v2 import run_stress_score_calculation
 from pipelines.gold_reserves import run_gold_reserves_fetch
 
 logger = logging.getLogger(__name__)
@@ -22,6 +22,22 @@ def scheduled_fred_fetch():
     finally:
         db.close()
 
+# === CDS Multi-Tenor Sovereign Stress Pipeline ===
+from pipelines.cds_fetcher import run_cds_fetch
+import os
+
+cds_hour = int(os.getenv("CDS_FETCH_HOUR", "3"))  # After FRED at 2 AM
+
+scheduler.add_job(
+    func=lambda: run_cds_fetch(get_session()),
+    trigger="cron",
+    hour=cds_hour,
+    minute=0,
+    id="cds_multi_tenor_job",
+    replace_existing=True,
+    misfire_grace_time=3600,
+)
+logger.info(f"CDS Multi-Tenor pipeline scheduled daily at {cds_hour}:00 UTC")
 
 def scheduled_treasury_fetch():
     try:

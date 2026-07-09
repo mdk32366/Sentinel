@@ -87,7 +87,7 @@ async def lifespan(app: FastAPI):
 
     logger.info("Running initial stress score calculation...")
     try:
-        from pipelines.stress_score import run_stress_score_calculation
+        from pipelines.stress_score_v2 import run_stress_score_calculation
         db = get_session()
         result = run_stress_score_calculation(db)
         if result['status'] == 'success':

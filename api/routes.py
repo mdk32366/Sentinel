@@ -1,3 +1,4 @@
+import httpx
 from pipelines.fred_fetcher import run_fred_fetch
 from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
@@ -324,7 +325,7 @@ def get_stress_score(db: Session = Depends(get_db)):
     Scale: 0-100, where 0 = low stress, 100 = severe stress.
     Based on: yield curve spread, holdings concentration, commodity volatility.
     """
-    from pipelines.stress_score import calculate_stress_score_v2 as calculate_stress_score
+    from pipelines.stress_score_v2 import calculate_stress_score_v2 as calculate_stress_score
     
     try:
         result = calculate_stress_score(db)
@@ -485,45 +486,90 @@ def trigger_gold_fetch(db: Session = Depends(get_db)):
 
 
 @router.post("/analyze/country")
-def analyze_country(payload: dict, db: Session = Depends(get_db)):
+async def analyze_country(payload: dict, db: Session = Depends(get_db)):
     """
-    Generate AI narrative for a country using Anthropic API.
+    Generate sovereign analysis using Grok (replaces Claude).
     Expects: { "prompt": "..." }
     Returns: { "text": "..." }
     """
-    import requests as req
-    from config import settings
-
-    if not settings.anthropic_api_key:
-        raise HTTPException(status_code=503, detail="Anthropic API key not configured")
+    if not settings.grok_api_key:
+        raise HTTPException(status_code=503, detail="GROK_API_KEY not configured")
 
     prompt = payload.get("prompt", "")
     if not prompt:
         raise HTTPException(status_code=400, detail="prompt required")
 
-    try:
-        response = req.post(
-            "https://api.anthropic.com/v1/messages",
-            headers={
-                "x-api-key": settings.anthropic_api_key,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": "claude-haiku-4-5-20251001",
-                "max_tokens": 1024,
-                "messages": [{"role": "user", "content": prompt}],
-            },
-            timeout=30,
-        )
-        response.raise_for_status()
-        data = response.json()
-        text = data["content"][0]["text"] if data.get("content") else ""
-        return {"text": text}
-    except Exception as e:
-        logger.error(f"Anthropic API call failed: {e}")
-        raise HTTPException(status_code=502, detail=f"AI analysis failed: {str(e)}")
+    system_prompt = (
+        "You are a brutally honest sovereign risk analyst. "
+        "No sugarcoating. Focus on maximal truth and structural realities. "
+        "Be direct and specific with numbers and implications."
+    )
 
+    payload_data = {
+        "model": "grok-2-latest",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.35,
+        "max_tokens": 750,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {settings.grok_api_key}",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=75.0) as client:
+            response = await client.post(
+                "https://api.x.ai/v1/chat/completions",
+                json=payload_data,
+                headers=headers
+            )
+            response.raise_for_status()
+            data = response.json()
+            text = data["choices"][0]["message"]["content"].strip()
+            return {"text": text}
+    except Exception as e:
+        logger.error(f"Grok API call failed: {e}")
+        raise HTTPException(status_code=502, detail=f"Grok analysis failed: {str(e)}")
+
+
+@router.get("/cds/all")
+async def get_all_cds(db: Session = Depends(get_db)):
+    """
+    Returns latest 5Y and 10Y CDS for all countries that have data.
+    Used by the CDS Tab.
+    """
+    from sqlalchemy import func as sqlfunc
+
+    cds5y_metrics = db.query(Metric).filter(
+        Metric.code.like("%_CDS_5Y")
+    ).all()
+
+    results = []
+
+    for metric5y in cds5y_metrics:
+        country_code = metric5y.code.replace("_CDS_5Y", "")
+
+        cds5y = get_latest_metric_value(db, metric5y.code)
+        cds10y = get_latest_metric_value(db, f"{country_code}_CDS_10Y")
+
+        term_spread = None
+        if cds5y is not None and cds10y is not None:
+            term_spread = round(cds10y - cds5y, 1)
+
+        results.append({
+            "country_iso": country_code,
+            "country_name": country_code,
+            "cds_5y": cds5y,
+            "cds_10y": cds10y,
+            "cds_term_spread": term_spread
+        })
+
+    results.sort(key=lambda x: (x["cds_5y"] or 0), reverse=True)
+    return results
 
 @router.get("/stress/composite")
 def get_composite_stress(db: Session = Depends(get_db)):
@@ -591,4 +637,47 @@ def get_country_tic_history(
             "months": len(rows),
         },
         "history": history,
+    }
+from fastapi import Query
+from typing import Optional
+
+@router.get("/cds")
+async def get_latest_cds(country: str = Query(..., description="Country ISO code (e.g. TUR, MEX, BRA)"), db: Session = Depends(get_db)):
+    """
+    Returns the latest 5Y and 10Y CDS values for a country.
+    Used by the frontend to enrich Grok analysis prompts.
+    """
+    country_upper = country.upper()
+
+    cds5y_code = f"{country_upper}_CDS_5Y"
+    cds10y_code = f"{country_upper}_CDS_10Y"
+
+    cds5y = get_latest_metric_value(db, cds5y_code)
+    cds10y = get_latest_metric_value(db, cds10y_code)
+
+    if cds5y is None and cds10y is None:
+        return {
+            "country": country_upper,
+            "5Y": None,
+            "10Y": None,
+            "term_spread": None,
+            "message": "No CDS data available for this country"
+        }
+
+    term_spread = None
+    if cds5y is not None and cds10y is not None:
+        term_spread = round(cds10y - cds5y, 1)
+
+    return {
+        "country": country_upper,
+        "5Y": {
+            "value": cds5y,
+            "unit": "bps"
+        } if cds5y is not None else None,
+        "10Y": {
+            "value": cds10y,
+            "unit": "bps"
+        } if cds10y is not None else None,
+        "term_spread": term_spread
+        
     }
