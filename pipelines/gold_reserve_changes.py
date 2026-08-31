@@ -50,7 +50,7 @@ CHANGES_METRIC = {
     ),
 }
 
-# Name variants in the IFS workbook -> ISO3. Mapping is not an insert.
+# IFS Monthly col A/B labels -> ISO3. Mapping is not an insert.
 IFS_COUNTRY_MAP = {
     "Afghanistan, Islamic Republic of": "AFG",
     "Afghanistan, Islamic Rep. of": "AFG",
@@ -90,8 +90,6 @@ IFS_COUNTRY_MAP = {
     "Chile": "CHL",
     "Hong Kong Special Administrative Region, People's Republic of China": "HKG",
     "Hong Kong SAR": "HKG",
-    "Macao Special Administrative Region, People's Republic of China": "MAC",
-    "China, P.R.: Macao": "MAC",
     "China, People's Republic of": "CHN",
     "China, P.R.: Mainland": "CHN",
     "Colombia": "COL",
@@ -252,7 +250,43 @@ IFS_COUNTRY_MAP = {
     "Zimbabwe": "ZWE",
 }
 
-# Not sovereign countries, or a duplicate Turkey series (gross vs official).
+# Display-name aliases (WGC / colloquial) that differ from IFS Monthly labels.
+# Mapper resolves these to ISO3; countries are still never inserted here.
+IFS_NAME_ALIASES = {
+    "China": "CHN",
+    "China, Mainland": "CHN",
+    "United States of America": "USA",
+    "Taiwan, China": "TWN",
+    "Taiwan": "TWN",
+    "Egypt": "EGY",
+    "Poland": "POL",
+    "South Korea": "KOR",
+    "Czechia": "CZE",
+    "Russia": "RUS",
+    "Hong Kong": "HKG",
+    "Venezuela": "VEN",
+    "Syria": "SYR",
+    "Laos": "LAO",
+    "Slovakia": "SVK",
+    "Kyrgyzstan": "KGZ",
+    "North Macedonia": "MKD",
+    "Armenia": "ARM",
+    "Azerbaijan": "AZE",
+    "Belarus": "BLR",
+    "Kazakhstan": "KAZ",
+    "Uzbekistan": "UZB",
+    "Serbia": "SRB",
+    "Estonia": "EST",
+    "Slovenia": "SVN",
+    "Tajikistan": "TJK",
+    "Afghanistan": "AFG",
+    "Bahrain": "BHR",
+    "Ethiopia": "ETH",
+    "Kosovo": "XKX",
+}
+
+# Euro Area / SOFAZ / Macao have no ISO in WGC_COUNTRY_MAP — do not invent.
+# Turkey* is the gross duplicate; official Turkey -> TUR is kept.
 SKIP_NAMES = {
     "euro area (ea)",
     "euro area",
@@ -260,6 +294,11 @@ SKIP_NAMES = {
     "türkiye, republic of",
     "turkiye, republic of",
     "turkey*",
+    "macao special administrative region, people's republic of china",
+    "china, p.r.: macao",
+    "macao",
+    "macau",
+    "china, p.r.: macau",
 }
 
 
@@ -271,14 +310,20 @@ def _norm_name(name) -> str:
 
 
 def resolve_iso(name) -> str | None:
-    """Map an IFS country label to ISO3, or None to skip."""
+    """Map an IFS country label to ISO3, or None to skip.
+
+    Exact match on Monthly col A/B (IFS_COUNTRY_MAP) or display aliases
+    (IFS_NAME_ALIASES). Does not insert countries.
+    """
     raw = _norm_name(name)
     if not raw:
         return None
-    if raw.lower() in SKIP_NAMES:
+    if raw.casefold() in SKIP_NAMES:
         return None
     if raw in IFS_COUNTRY_MAP:
         return IFS_COUNTRY_MAP[raw]
+    if raw in IFS_NAME_ALIASES:
+        return IFS_NAME_ALIASES[raw]
     return None
 
 
@@ -371,10 +416,10 @@ def parse_monthly_sheet(xlsx_path: Path) -> dict:
 
         iso = resolve_iso(short) or resolve_iso(lookup)
         if iso is None:
-            lowered = {lookup.lower(), short.lower(), label.lower()}
+            folded = {lookup.casefold(), short.casefold(), label.casefold()}
             reason = (
                 "not a country series"
-                if lowered & SKIP_NAMES
+                if folded & SKIP_NAMES
                 else "unmapped name"
             )
             note_skip(label, reason)
