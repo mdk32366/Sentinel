@@ -1,10 +1,12 @@
 import logging
 import secrets
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi import FastAPI, status
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import PlainTextResponse
 from contextlib import asynccontextmanager
+import base64
 import sys
 
 logging.basicConfig(
@@ -25,27 +27,6 @@ from pipelines.fred_fetcher import run_fred_fetch
 from pipelines.treasury_holdings import run_treasury_holdings_fetch
 
 # ── Basic Auth ────────────────────────────────────────────────────────────────
-
-security = HTTPBasic()
-
-def require_auth(credentials: HTTPBasicCredentials = Depends(security)):
-    """Verify HTTP Basic Auth credentials against env vars."""
-    correct_username = secrets.compare_digest(
-        credentials.username.encode("utf-8"),
-        settings.auth_username.encode("utf-8"),
-    )
-    correct_password = secrets.compare_digest(
-        credentials.password.encode("utf-8"),
-        settings.auth_password.encode("utf-8"),
-    )
-    if not (correct_username and correct_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized",
-            headers={"WWW-Authenticate": "Basic"},
-        )
-    return credentials.username
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -119,10 +100,45 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Apply auth to all API routes
-app.include_router(router, dependencies=[Depends(require_auth)])
+# Static frontend + API: HTTP Basic Auth so the browser prompts on GET /
+# /api/health stays open for Docker/Fly probes.
+OPEN_PATHS = {"/api/health"}
 
-# Static frontend — protected by browser Basic Auth prompt
+class BasicAuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path in OPEN_PATHS:
+            return await call_next(request)
+        header = request.headers.get("authorization", "")
+        if not _credentials_ok(header):
+            return PlainTextResponse(
+                "Unauthorized",
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                headers={"WWW-Authenticate": "Basic"},
+            )
+        return await call_next(request)
+
+
+def _credentials_ok(header: str) -> bool:
+    if not header.lower().startswith("basic "):
+        return False
+    try:
+        decoded = base64.b64decode(header.split(" ", 1)[1]).decode("utf-8")
+        username, password = decoded.split(":", 1)
+    except Exception:
+        return False
+    user_ok = secrets.compare_digest(
+        username.encode("utf-8"),
+        settings.auth_username.encode("utf-8"),
+    )
+    pass_ok = secrets.compare_digest(
+        password.encode("utf-8"),
+        settings.auth_password.encode("utf-8"),
+    )
+    return bool(user_ok and pass_ok)
+
+
+app.add_middleware(BasicAuthMiddleware)
+app.include_router(router)
 app.mount("/", StaticFiles(directory="api/static", html=True), name="static")
 
 if __name__ == "__main__":
