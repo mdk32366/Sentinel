@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
 
 FRED_METRICS = [
+    {"code": "DGS30",             "name": "30-Year Treasury Yield",         "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 30-year constant maturity"},
     {"code": "DGS10",             "name": "10-Year Treasury Yield",         "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 10-year constant maturity"},
     {"code": "DGS5",              "name": "5-Year Treasury Yield",          "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 5-year constant maturity"},
     {"code": "DGS2",              "name": "2-Year Treasury Yield",          "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 2-year constant maturity"},
