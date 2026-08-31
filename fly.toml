@@ -14,6 +14,13 @@ auto_stop_machines = false
 auto_start_machines = true
 min_machines_running = 1
 
+[[http_service.checks]]
+grace_period = '30s'
+interval = '15s'
+method = 'GET'
+timeout = '5s'
+path = '/api/health'
+
 [[processes]]
 type = 'app'
 cmd = 'python -m uvicorn main:app --host 0.0.0.0 --port 8000'
