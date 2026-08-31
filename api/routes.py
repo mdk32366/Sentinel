@@ -484,6 +484,16 @@ def trigger_gold_fetch(db: Session = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/fetch/gold-reserve-changes")
+def trigger_gold_changes_fetch(db: Session = Depends(get_db)):
+    """Manually trigger IFS gold-holdings changes import"""
+    from pipelines.gold_reserve_changes import run_gold_reserve_changes_fetch
+    try:
+        result = run_gold_reserve_changes_fetch(db)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 @router.post("/analyze/country")
 async def analyze_country(payload: dict, db: Session = Depends(get_db)):
