@@ -6,6 +6,8 @@ A comprehensive system for tracking US Treasury bonds, oil prices, gold holdings
 
 **Phase 1 (ACTIVE):** FRED data integration - Treasury yields (10Y, 5Y, 2Y) and WTI crude oil prices
 
+Does pull/display DGS30. Does not use DGS30 or 30Y–10Y in stress_score_v2.
+
 **Phase 2 (Pending):** US Treasury TIC holdings by country
 
 **Phase 3 (Pending):** Gold reserves by country

@@ -5,6 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 const API = window.location.hostname === "localhost" ? "http://localhost:8000/api" : "/api";
 
 const METRICS = [
+  { code: "DGS30",      label: "30Y Treasury",  color: "#D4B06A", unit: "%" },
   { code: "DGS10",      label: "10Y Treasury",  color: "#C8A96E", unit: "%" },
   { code: "DGS5",       label: "5Y Treasury",   color: "#7EB8C9", unit: "%" },
   { code: "DGS2",       label: "2Y Treasury",   color: "#9B8EC4", unit: "%" },
@@ -746,7 +747,7 @@ function USADashboard() {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - range);
-    const codes = "DGS10,DGS2,DGS5,FEDFUNDS,DFII10,DTWEXBGS,CPIAUCSL,M2SL";
+    const codes = "DGS30,DGS10,DGS2,DGS5,FEDFUNDS,DFII10,DTWEXBGS,CPIAUCSL,M2SL";
     fetch(`${API}/timeseries?metric_codes=${codes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then(r => r.json())
       .then(raw => {
@@ -831,6 +832,7 @@ function USADashboard() {
   // Build chart data
   const yieldData = (data["DGS10"]||[]).map((d,i) => ({
     date: d.date, "10Y": d.value,
+    "30Y": data["DGS30"]?.[i]?.value,
     "2Y": data["DGS2"]?.[i]?.value,
     "Fed Funds": data["FEDFUNDS"]?.[i]?.value,
     "Real Yield": data["DFII10"]?.[i]?.value,
@@ -976,6 +978,7 @@ function USADashboard() {
               <ReferenceLine y={0} stroke="#2A3540" strokeDasharray="3 3" />
               <Tooltip contentStyle={{ background:"#0A1520", border:"1px solid #1E2D3D", borderRadius:2, fontFamily:"monospace", fontSize:11 }} labelStyle={{ color:"#5A6878" }} labelFormatter={formatDate} formatter={(v,n)=>[`${v?.toFixed(2)}%`,n]} />
               <Legend wrapperStyle={{ fontFamily:"monospace", fontSize:10, color:"#5A6878", paddingTop:12 }} />
+              <Line type="monotone" dataKey="30Y" stroke="#D4B06A" strokeWidth={1.5} dot={false} connectNulls />
               <Line type="monotone" dataKey="10Y" stroke="#C8A96E" strokeWidth={1.5} dot={false} connectNulls />
               <Line type="monotone" dataKey="2Y" stroke="#9B8EC4" strokeWidth={1.5} dot={false} connectNulls />
               <Line type="monotone" dataKey="Fed Funds" stroke="#5DB87A" strokeWidth={1.5} dot={false} connectNulls />
@@ -1819,6 +1822,7 @@ setLatestAll({ latest, month30 });
               <div style={{ marginTop: 12, background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "14px 28px", display: "flex", gap: 32, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C", letterSpacing: "0.1em" }}>SPREAD</span>
                 {[
+                  { label: "30Y–10Y", val: latest["DGS30"] != null ? latest["DGS30"] - latest["DGS10"] : null },
                   { label: "10Y–2Y", val: latest["DGS10"] - latest["DGS2"] },
                   { label: "10Y–5Y", val: latest["DGS5"] != null ? latest["DGS10"] - latest["DGS5"] : null },
                   { label: "5Y–2Y", val: latest["DGS5"] != null ? latest["DGS5"] - latest["DGS2"] : null },
@@ -2246,3 +2250,212 @@ function AdminTab() {
                 <ColHeader label="Inserted" tip="Number of new time-series records added to the database in this run. High counts on first run; near-zero on subsequent runs indicates data is current and no new points were available." align="left" style={{ padding: "6px 16px" }} />
                 <ColHeader label="Updated" tip="Number of existing records updated (e.g. revised values from data providers). FRED occasionally revises historical data; TIC and gold data are generally not revised after publication." align="left" style={{ padding: "6px 16px" }} />
                 <ColHeader label="Completed" tip="UTC timestamp when the pipeline finished (success or failure). Use this to verify that automated runs are executing on schedule — FRED should run daily ~2am, TIC on the 15th of each month." align="left" style={{ padding: "6px 16px" }} />
+                <ColHeader label="Error" tip="Error message if the pipeline failed or partially failed. Common errors: API rate limits (FRED), network timeouts (Fly.io cold starts), missing data (TIC not yet published for the month)." align="left" style={{ padding: "6px 16px" }} />
+              </tr>
+            </thead>
+            <tbody>
+              {logs.map((log, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #080E14" }}>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#E8E0D0" }}>{log.pipeline_name}</td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: log.status === "success" ? "#5DB87A" : log.status === "partial" ? "#E8C547" : "#E07B5A" }}>{log.status}</td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{log.records_inserted?.toLocaleString()}</td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC" }}>{log.records_updated?.toLocaleString()}</td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#5A6878", whiteSpace: "nowrap" }}>
+                    {log.completed_at ? new Date(log.completed_at).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "—"}
+                  </td>
+                  <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 11, color: "#E07B5A", maxWidth: 300, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{log.error_message || ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AboutTab() {
+  const SOURCES = [
+    {
+      name: "FRED — Federal Reserve Economic Data",
+      url: "https://fred.stlouisfed.org",
+      update: "Daily (auto)",
+      lag: "1 day",
+      coverage: "US only",
+      metrics: ["10Y/5Y/2Y Treasury yields", "Fed Funds Rate", "Real Yield (TIPS)", "WTI Crude Oil", "Dollar Index (DXY)", "CPI", "M2 Money Supply"],
+      notes: "Free API, no auth required. Key stored in .env as FRED_API_KEY. Runs automatically at 2am daily.",
+      manual: false,
+    },
+    {
+      name: "TIC — Treasury International Capital",
+      url: "https://ticdata.treasury.gov",
+      update: "Monthly (auto)",
+      lag: "~45 days after month-end",
+      coverage: "48 countries",
+      metrics: ["Foreign holdings of US Treasury securities by country (monthly, in $B)"],
+      notes: "Free, no auth. Parsed from mfhhis01.txt — tab-delimited historical file. Runs automatically on 15th of each month. Data as far back as 2016 for most countries.",
+      manual: false,
+    },
+    {
+      name: "World Gold Council — Gold Reserves",
+      url: "https://www.gold.org/goldhub/data/gold-reserves-by-country",
+      update: "Monthly (MANUAL)",
+      lag: "~2 months after quarter-end",
+      coverage: "120+ countries",
+      metrics: ["Central bank gold reserves in tonnes (quarterly, back to Q4 2000)"],
+      notes: "Requires free WGC account login. Download the historical CSV monthly and replace C:\\projects\\sentinel\\data\\gold_reserves.csv, then run POST /api/fetch/gold.",
+      manual: true,
+    },
+    {
+      name: "World Bank — Broad Money Growth",
+      url: "https://api.worldbank.org/v2/country/all/indicator/FM.LBL.BMNY.ZG",
+      update: "Annual (MANUAL)",
+      lag: "~1 year",
+      coverage: "48 countries",
+      metrics: ["Annual % growth in broad money supply (M2/M3), back to 1961"],
+      notes: "Free API, no auth. Download via curl and save to C:\\projects\\sentinel\\data\\money_supply.json, then run POST /api/fetch/money-supply. Re-download annually. Thresholds: >15% elevated, >30% significant debasement, >50% crisis-level.",
+      manual: true,
+    },
+    {
+      name: "World Gold Council — Spot Gold Price",
+      url: "https://www.gold.org/goldhub/data/gold-prices",
+      update: "Monthly (MANUAL)",
+      lag: "1 month",
+      coverage: "Global",
+      metrics: ["Gold spot price USD/troy oz (monthly, back to January 1978)"],
+      notes: "Download from WGC when logged in. Replace C:\\projects\\sentinel\\data\\gold_prices.csv and run POST /api/fetch/gold-price. Update quarterly is sufficient.",
+      manual: true,
+    },
+  ];
+
+  const SIGNALS = [
+    {
+      name: "Sovereign Stress Score",
+      tier: 1,
+      color: "#E8C547",
+      formula: "MoM decline magnitude (0–40pts) + consecutive declining months (0–30pts) + acceleration (0–20pts)",
+      threshold: "Alert: score ≥ 25 OR 3+ consecutive declining months",
+      interpretation: "A country reducing treasury holdings. Could be strategic repositioning or liquidity need. Watch for persistence.",
+    },
+    {
+      name: "Cross-Asset Stress (1.5×)",
+      tier: 2,
+      color: "#E07B5A",
+      formula: "Treasury stress score × 1.5 when country is ALSO reducing gold reserves",
+      threshold: "Fires when selling_treasuries AND selling_gold simultaneously",
+      interpretation: "Selling both assets = more than repositioning. Reduced optionality. Country is drawing down its strategic reserve base.",
+    },
+    {
+      name: "Divergence Signal (2×)",
+      tier: 3,
+      color: "#FF4444",
+      formula: "Cross-asset score × 2 when spot gold is rising (>2% over 3 months)",
+      threshold: "Fires when cross-asset AND spot_gold_rising",
+      interpretation: "Selling gold INTO a rising gold price. This is the forced seller signal. A country only does this if it desperately needs USD liquidity. Maximum distress indicator.",
+    },
+  ];
+
+  const FUTURE = [
+    { name: "Country M2 / Broad Money Growth", why: "Sharp M2 expansion signals monetary debasement. When a country is selling reserves AND printing money, currency crisis typically follows. Best source: World Bank API (annual data free, monthly requires subscription)." },
+    { name: "Currency Exchange Rates", why: "USD/local currency depreciation confirms reserve selling thesis. FRED has some pairs; full coverage needs a forex API." },
+    { name: "CDS Spreads", why: "Sovereign credit default swap spreads are the market's own stress signal. Spikes often precede reserve selling. Requires Bloomberg or Markit data." },
+    { name: "IMF Reserve Adequacy", why: "Ratio of reserves to short-term external debt. When this falls below 1.0, the country is vulnerable. IMF publishes annually." },
+  ];
+
+  return (
+    <div>
+      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 28, lineHeight: 1.8, maxWidth: 800 }}>
+        Project Sentinel monitors sovereign stress signals in global treasury markets. The core thesis: countries that are
+        <span style={{ color: "#C8A96E" }}> forced sellers</span> of US Treasuries reveal themselves through the data before it becomes news.
+        The highest-conviction signal is simultaneous selling of both treasuries and gold — especially into a rising gold price.
+      </div>
+
+      {/* Data Sources */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>DATA SOURCES</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {SOURCES.map(s => (
+            <div key={s.name} style={{ background: "#0A1520", border: `1px solid ${s.manual ? "#E8C54733" : "#1A2530"}`, borderLeft: `3px solid ${s.manual ? "#E8C547" : "#1A2530"}`, borderRadius: 2, padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", fontWeight: 600 }}>{s.name}</span>
+                    <span style={{ fontFamily: "monospace", fontSize: 10, color: s.manual ? "#E8C547" : "#5DB87A", background: s.manual ? "#E8C54718" : "#5DB87A18", border: `1px solid ${s.manual ? "#E8C54744" : "#5DB87A44"}`, borderRadius: 2, padding: "1px 6px" }}>
+                      {s.manual ? "⚠ MANUAL UPDATE" : "● AUTO"}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: 24, marginBottom: 8, flexWrap: "wrap" }}>
+                    {[["Update", s.update], ["Lag", s.lag], ["Coverage", s.coverage]].map(([l, v]) => (
+                      <div key={l}>
+                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>{l}: </span>
+                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#8A9BAC" }}>{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 8 }}>
+                    {s.metrics.map((m, i) => <div key={i}>· {m}</div>)}
+                  </div>
+                  <div style={{ fontFamily: "monospace", fontSize: 11, color: s.manual ? "#E8C547" : "#3A4D5C", lineHeight: 1.6 }}>{s.notes}</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Manual Update Checklist */}
+      <div style={{ background: "#0A1520", border: "1px solid #E8C54744", borderLeft: "3px solid #E8C547", borderRadius: 2, padding: "16px 20px", marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginBottom: 12, letterSpacing: "0.1em" }}>⚠ MONTHLY MANUAL UPDATE CHECKLIST</div>
+        {[
+          { task: "Download WGC gold reserves CSV (quarterly)", url: "https://www.gold.org/goldhub/data/gold-reserves-by-country", action: "Save as data/gold_reserves.csv in repo → commit → deploy OR run POST /api/fetch/gold-reserves" },
+          { task: "Verify TIC auto-refresh ran (15th of month)", url: null, action: "Check GET /api/health — last_treasury_update should be recent" },
+          { task: "Verify FRED auto-refresh ran (daily)", url: null, action: "Check GET /api/health — last_fred_update should be within 24 hrs" },
+          { task: "Verify stress score recalculated", url: null, action: "GET /api/stress-score — timestamp should be today" },
+        ].map((item, i) => (
+          <div key={i} style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "flex-start" }}>
+            <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginTop: 1 }}>□</span>
+            <div>
+              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8E0D0" }}>{item.task}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginTop: 2 }}>{item.action}</div>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Signal Methodology */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>SIGNAL METHODOLOGY</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          {SIGNALS.map(s => (
+            <div key={s.name} style={{ background: "#0A1520", border: `1px solid ${s.color}33`, borderLeft: `3px solid ${s.color}`, borderRadius: 2, padding: "16px 20px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+                <span style={{ fontFamily: "monospace", fontSize: 10, color: s.color, background: `${s.color}18`, border: `1px solid ${s.color}44`, borderRadius: 2, padding: "1px 6px" }}>TIER {s.tier}</span>
+                <span style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", fontWeight: 600 }}>{s.name}</span>
+              </div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 6 }}>Formula: {s.formula}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 6 }}>Threshold: {s.threshold}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", lineHeight: 1.6 }}>{s.interpretation}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Future Pipelines */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>PLANNED PIPELINES</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {FUTURE.map(f => (
+            <div key={f.name} style={{ background: "#0A1520", border: "1px solid #1A2530", borderLeft: "3px solid #1E2D3D", borderRadius: 2, padding: "14px 20px" }}>
+              <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", fontWeight: 600, marginBottom: 4 }}>{f.name}</div>
+              <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", lineHeight: 1.6 }}>{f.why}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#1E2D3D", borderTop: "1px solid #1A2530", paddingTop: 16 }}>
+        Project Sentinel · Built with FastAPI + PostgreSQL + React · Data: FRED, TIC, WGC
+      </div>
+    </div>
+  );
+}
