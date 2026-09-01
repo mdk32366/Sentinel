@@ -2,10 +2,14 @@
 
 T-0015 / T-0016 are meant to go red if DGS30 is missing from FRED_METRICS
 or if calculate_yield_curve_stress starts reading a 30Y level.
+
+T-0017 is meant to go red if About or README Phase 1 still name yields
+as 10Y/5Y/2Y without 30Y.
 """
 import unittest
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -72,6 +76,21 @@ class T0016YieldCurveIgnoresDgs30(unittest.TestCase):
             self.assertEqual(without, with_dgs30)
         finally:
             db.close()
+
+
+class T0017AboutReadmeNameDgs30(unittest.TestCase):
+    def test_t0017_about_and_readme_phase1_name_30y(self):
+        root = Path(__file__).resolve().parents[1]
+        app = (root / "ui" / "src" / "App.jsx").read_text(encoding="utf-8")
+        readme = (root / "README.md").read_text(encoding="utf-8")
+
+        # AboutTab FRED metrics: stale "10Y/5Y/2Y Treasury yields" without 30Y fails.
+        self.assertNotRegex(app, r"(?<!30Y/)10Y/5Y/2Y Treasury yields")
+        self.assertIn("30Y/10Y/5Y/2Y Treasury yields", app)
+
+        # README Phase 1 must list 30Y first (long-to-short).
+        self.assertIn("Treasury yields (30Y, 10Y, 5Y, 2Y)", readme)
+        self.assertNotIn("Treasury yields (10Y, 5Y, 2Y)", readme)
 
 
 if __name__ == "__main__":

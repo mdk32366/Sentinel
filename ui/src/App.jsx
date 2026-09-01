@@ -2282,7 +2282,7 @@ function AboutTab() {
       update: "Daily (auto)",
       lag: "1 day",
       coverage: "US only",
-      metrics: ["10Y/5Y/2Y Treasury yields", "Fed Funds Rate", "Real Yield (TIPS)", "WTI Crude Oil", "Dollar Index (DXY)", "CPI", "M2 Money Supply"],
+      metrics: ["30Y/10Y/5Y/2Y Treasury yields", "Fed Funds Rate", "Real Yield (TIPS)", "WTI Crude Oil", "Dollar Index (DXY)", "CPI", "M2 Money Supply"],
       notes: "Free API, no auth required. Key stored in .env as FRED_API_KEY. Runs automatically at 2am daily.",
       manual: false,
     },
