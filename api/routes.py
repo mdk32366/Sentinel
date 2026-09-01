@@ -16,8 +16,13 @@ from api.schemas import (
     HealthResponse,
 )
 from pipelines.scheduler import scheduler
-from pipelines.cds_fetcher import run_cds_fetch, get_cds_coverage
-from pipelines.stress_score_v2 import get_latest_metric_value
+from pipelines.cds_fetcher import (
+    run_cds_fetch,
+    get_cds_coverage,
+    latest_cds_observation,
+    pair_cds_tenors,
+    cds_country_for_code,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -551,11 +556,9 @@ async def analyze_country(payload: dict, db: Session = Depends(get_db)):
 @router.get("/cds/all")
 async def get_all_cds(db: Session = Depends(get_db)):
     """
-    Returns latest 5Y and 10Y CDS for all countries that have data.
-    Used by the CDS Tab.
+    Returns latest 5Y (and same-source/same-as-of 10Y) CDS for countries with data.
+    10Y and term structure stay blank unless both tenors share source and as-of.
     """
-    from sqlalchemy import func as sqlfunc
-
     cds5y_metrics = db.query(Metric).filter(
         Metric.code.like("%_CDS_5Y")
     ).all()
@@ -564,20 +567,29 @@ async def get_all_cds(db: Session = Depends(get_db)):
 
     for metric5y in cds5y_metrics:
         country_code = metric5y.code.replace("_CDS_5Y", "")
+        obs5 = latest_cds_observation(db, metric5y.code)
+        obs10 = latest_cds_observation(db, f"{country_code}_CDS_10Y")
+        cds5y, cds10y, term_spread = pair_cds_tenors(obs5, obs10)
+        if cds5y is None and cds10y is None:
+            continue
 
-        cds5y = get_latest_metric_value(db, metric5y.code)
-        cds10y = get_latest_metric_value(db, f"{country_code}_CDS_10Y")
-
-        term_spread = None
-        if cds5y is not None and cds10y is not None:
-            term_spread = round(cds10y - cds5y, 1)
+        as_of = None
+        source = None
+        if obs5:
+            as_of = obs5["date"].isoformat() if obs5.get("date") else None
+            source = obs5.get("source")
+        elif obs10:
+            as_of = obs10["date"].isoformat() if obs10.get("date") else None
+            source = obs10.get("source")
 
         results.append({
             "country_iso": country_code,
-            "country_name": country_code,
+            "country_name": cds_country_for_code(metric5y.code),
             "cds_5y": cds5y,
             "cds_10y": cds10y,
-            "cds_term_spread": term_spread
+            "cds_term_spread": term_spread,
+            "as_of": as_of,
+            "source": source,
         })
 
     results.sort(key=lambda x: (x["cds_5y"] or 0), reverse=True)
@@ -689,8 +701,9 @@ async def get_latest_cds(country: str = Query(..., description="Country ISO code
     cds5y_code = f"{country_upper}_CDS_5Y"
     cds10y_code = f"{country_upper}_CDS_10Y"
 
-    cds5y = get_latest_metric_value(db, cds5y_code)
-    cds10y = get_latest_metric_value(db, cds10y_code)
+    obs5 = latest_cds_observation(db, cds5y_code)
+    obs10 = latest_cds_observation(db, cds10y_code)
+    cds5y, cds10y, term_spread = pair_cds_tenors(obs5, obs10)
 
     if cds5y is None and cds10y is None:
         return {
@@ -701,20 +714,25 @@ async def get_latest_cds(country: str = Query(..., description="Country ISO code
             "message": "No CDS data available for this country"
         }
 
-    term_spread = None
-    if cds5y is not None and cds10y is not None:
-        term_spread = round(cds10y - cds5y, 1)
+    as_of = None
+    source = None
+    if obs5:
+        as_of = obs5["date"].isoformat() if obs5.get("date") else None
+        source = obs5.get("source")
 
     return {
         "country": country_upper,
         "5Y": {
             "value": cds5y,
-            "unit": "bps"
+            "unit": "bps",
+            "as_of": as_of,
+            "source": source,
         } if cds5y is not None else None,
         "10Y": {
             "value": cds10y,
-            "unit": "bps"
+            "unit": "bps",
         } if cds10y is not None else None,
-        "term_spread": term_spread
-        
+        "term_spread": term_spread,
+        "as_of": as_of,
+        "source": source,
     }

@@ -2113,7 +2113,7 @@ function CDSTab({ onCountrySelect }) {
             Sovereign CDS Monitor
           </div>
           <div style={{ fontFamily: "monospace", fontSize: 12, color: "#5A6878", marginTop: 4 }}>
-            5Y &amp; 10Y Credit Default Swap spreads • High values + inverted curves signal elevated sovereign stress
+            5Y conventional/par CDS spreads (not the ISDA coupon) • 10Y only when same source and as-of as 5Y
           </div>
         </div>
         <CDSCoverageBanner coverage={coverage} fetching={fetching} fetchResult={fetchResult} onFetch={runFetch} />
@@ -2136,7 +2136,7 @@ function CDSTab({ onCountrySelect }) {
           Sovereign CDS Monitor
         </div>
         <div style={{ fontFamily: "monospace", fontSize: 12, color: "#5A6878", marginTop: 4 }}>
-          5Y &amp; 10Y Credit Default Swap spreads • High values + inverted curves signal elevated sovereign stress
+          5Y conventional/par CDS spreads (not the ISDA coupon) • 10Y only when same source and as-of as 5Y
         </div>
       </div>
 
@@ -2231,7 +2231,8 @@ function CDSTab({ onCountrySelect }) {
       </div>
 
       <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>
-        Data source: Investing.com via Sentinel CDS pipeline
+        Data source: {data.find(d => d.source)?.source || "World Government Bonds"} (indicative USD mid) · 5Y is the conventional/par spread, not the coupon
+        {data.find(d => d.as_of)?.as_of ? ` · as-of ${data.find(d => d.as_of).as_of}` : ""}
       </div>
     </div>
   );
