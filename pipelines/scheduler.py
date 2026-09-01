@@ -37,7 +37,8 @@ def scheduled_cds_fetch():
         db = get_session()
         result = run_cds_fetch(db)
         logger.info(
-            f"CDS fetch: {result['status']} - {result['inserted']} inserted, "
+            f"CDS fetch: {result['status']} source={result.get('source')} "
+            f"as-of={result.get('as_of')} - {result['inserted']} inserted, "
             f"{result['updated']} updated (ok={result.get('ok')}/{result.get('attempted')})"
         )
     except Exception as e:

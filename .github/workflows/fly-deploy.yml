@@ -38,7 +38,7 @@ jobs:
       - name: Initialize database schema
         run: python -c "from database.connection import init_db; init_db()"
       - name: Run frontend auth, cold-start, and CDS coverage tests
-        run: python -m unittest tests.test_frontend_auth tests.test_lifespan_cold_start tests.test_cds_coverage -v
+        run: python -m unittest tests.test_frontend_auth tests.test_lifespan_cold_start tests.test_cds_coverage tests.test_cds_parser -v
 
   deploy:
     name: Deploy app
