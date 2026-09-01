@@ -1360,13 +1360,13 @@ function CompositeTab({ onCountrySelect }) {
     : allResults;
 
   const TIER_COLORS = { CRISIS:"#FF4444", STRESSED:"#E07B5A", ELEVATED:"#E8C547", WATCH:"#5A6878" };
-  const compactHead = { padding: "8px 5px", whiteSpace: "normal" };
+  const compactHead = { padding: "8px 4px", whiteSpace: "normal", lineHeight: 1.25 };
   const activitySticky = {
     position: "sticky",
     right: 0,
     background: "#0A1520",
     zIndex: 2,
-    boxShadow: "-6px 0 8px -6px rgba(0,0,0,0.7)",
+    boxShadow: "-8px 0 10px -8px rgba(0,0,0,0.75)",
   };
 
   return (
@@ -1441,21 +1441,21 @@ function CompositeTab({ onCountrySelect }) {
             <div style={{ overflowX:"auto" }}>
               <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}>
                 <colgroup>
-                  <col style={{ width:"10%" }} />
-                  <col style={{ width:"8%" }} />
-                  <col style={{ width:"6.5%" }} />
-                  <col style={{ width:"4.5%" }} />
-                  <col style={{ width:"5%" }} />
-                  <col style={{ width:"3.5%" }} />
-                  <col style={{ width:"3.5%" }} />
-                  <col style={{ width:"5%" }} />
-                  <col style={{ width:"3.5%" }} />
-                  <col style={{ width:"5%" }} />
-                  <col style={{ width:"5.5%" }} />
-                  <col style={{ width:"3.5%" }} />
-                  <col style={{ width:"5.5%" }} />
-                  <col style={{ width:"9%" }} />
-                  <col style={{ width:"22%" }} />
+                  <col style={{ width: 108 }} />
+                  <col style={{ width: 78 }} />
+                  <col style={{ width: 70 }} />
+                  <col style={{ width: 50 }} />
+                  <col style={{ width: 54 }} />
+                  <col style={{ width: 36 }} />
+                  <col style={{ width: 36 }} />
+                  <col style={{ width: 54 }} />
+                  <col style={{ width: 36 }} />
+                  <col style={{ width: 54 }} />
+                  <col style={{ width: 62 }} />
+                  <col style={{ width: 42 }} />
+                  <col style={{ width: 62 }} />
+                  <col style={{ width: 86 }} />
+                  <col />
                 </colgroup>
                 <thead>
                   <tr>
@@ -1543,7 +1543,7 @@ function CompositeTab({ onCountrySelect }) {
                             )}
                           </div>
                         </td>
-                        <td style={{ padding:"7px 8px 7px 10px", fontFamily:"monospace", fontSize:11, color:"#5A6878", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word", lineHeight:1.45, ...activitySticky }}
+                        <td style={{ padding:"7px 10px", fontFamily:"monospace", fontSize:11, color:"#5A6878", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word", wordBreak:"break-word", lineHeight:1.45, minWidth:260, ...activitySticky }}
                           title={(c.active_signals||[]).join(" · ") || undefined}>
                           {(c.active_signals||[]).join(" · ") || "—"}
                         </td>
