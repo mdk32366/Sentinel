@@ -220,6 +220,90 @@ CDS_INSTRUMENTS = {
 }
 
 
+CDS_PIPELINE_NAME = "CDS_MultiTenor"
+CDS_ERROR_TRUNCATE = 500
+
+
+def cds_instrument_codes() -> List[str]:
+    """All configured CDS metric codes (one per tenor in CDS_INSTRUMENTS)."""
+    codes: List[str] = []
+    for tenors in CDS_INSTRUMENTS.values():
+        for info in tenors.values():
+            codes.append(info["code"])
+    return codes
+
+
+def cds_fetch_status(attempted: int, ok: int) -> str:
+    """Pipeline status: failed if every attempt missed, partial if mixed, else success."""
+    if attempted > 0 and ok == 0:
+        return "failed"
+    if ok < attempted:
+        return "partial"
+    return "success"
+
+
+def _truncate_error(message: Optional[str], limit: int = CDS_ERROR_TRUNCATE) -> Optional[str]:
+    if not message:
+        return None
+    if len(message) <= limit:
+        return message
+    if limit <= 3:
+        return message[:limit]
+    return message[: limit - 3] + "..."
+
+
+def get_cds_coverage(db: Session, error_truncate: int = CDS_ERROR_TRUNCATE) -> dict:
+    """Coverage of configured CDS instruments vs latest TimeSeries points."""
+    codes = cds_instrument_codes()
+    configured = len(codes)
+
+    metrics = {
+        m.code: m
+        for m in db.query(Metric).filter(Metric.code.in_(codes)).all()
+    } if codes else {}
+    metric_ids = [m.id for m in metrics.values()]
+
+    have_data_ids = set()
+    if metric_ids:
+        latest_rows = db.query(TimeSeries.metric_id).filter(
+            TimeSeries.metric_id.in_(metric_ids),
+        ).distinct().all()
+        have_data_ids = {row[0] for row in latest_rows}
+
+    missing_codes = []
+    with_data = 0
+    for code in codes:
+        metric = metrics.get(code)
+        if metric is not None and metric.id in have_data_ids:
+            with_data += 1
+        else:
+            missing_codes.append(code)
+
+    log = (
+        db.query(UpdateLog)
+        .filter_by(pipeline_name=CDS_PIPELINE_NAME)
+        .order_by(UpdateLog.completed_at.desc())
+        .first()
+    )
+    last_pipeline = None
+    if log:
+        last_pipeline = {
+            "status": log.status,
+            "started_at": log.started_at.isoformat() if log.started_at else None,
+            "inserted": log.records_inserted,
+            "updated": log.records_updated,
+            "error_message": _truncate_error(log.error_message, error_truncate),
+        }
+
+    return {
+        "configured": configured,
+        "with_data": with_data,
+        "without_data": configured - with_data,
+        "missing_codes": missing_codes,
+        "last_pipeline": last_pipeline,
+    }
+
+
 def ensure_metric(db: Session, code: str, name: str, description: str = "") -> Metric:
     metric = db.query(Metric).filter_by(code=code).first()
     if not metric:
@@ -301,12 +385,15 @@ def run_cds_fetch(db: Session) -> dict:
     start_time = datetime.utcnow()
     total_inserted = 0
     total_updated = 0
+    attempted = 0
+    ok = 0
     errors = []
 
     today = datetime.utcnow().date()
 
     for country, tenors in CDS_INSTRUMENTS.items():
         for tenor, info in tenors.items():
+            attempted += 1
             try:
                 # info['code'] already includes the tenor (e.g. "FRANCE_CDS_5Y"),
                 # so use it directly. Previously this appended "_{tenor}" again,
@@ -344,20 +431,21 @@ def run_cds_fetch(db: Session) -> dict:
                     total_inserted += 1
 
                 db.commit()
+                ok += 1
                 logger.info(f"CDS {metric_name}: {value} bps")
 
             except Exception as e:
                 logger.error(f"Error processing {country} {tenor}: {e}")
                 errors.append(f"{country} {tenor}: {str(e)}")
 
-    status = "success" if not errors else "partial"
+    status = cds_fetch_status(attempted, ok)
 
     db.add(UpdateLog(
-        pipeline_name="CDS_MultiTenor",
+        pipeline_name=CDS_PIPELINE_NAME,
         status=status,
         records_inserted=total_inserted,
         records_updated=total_updated,
-        error_message="; ".join(errors) if errors else None,
+        error_message=_truncate_error("; ".join(errors) if errors else None),
         started_at=start_time,
         completed_at=datetime.utcnow(),
     ))
@@ -367,5 +455,7 @@ def run_cds_fetch(db: Session) -> dict:
         "status": status,
         "inserted": total_inserted,
         "updated": total_updated,
+        "attempted": attempted,
+        "ok": ok,
         "errors": errors,
     }

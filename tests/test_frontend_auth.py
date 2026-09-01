@@ -51,6 +51,16 @@ class FrontendAuthTests(unittest.IsolatedAsyncioTestCase):
             response = await client.get('/api/health')
         self.assertNotEqual(response.status_code, 401)
 
+    async def test_cds_coverage_requires_auth(self):
+        async with _client() as client:
+            response = await client.get('/api/cds/coverage')
+        self.assertEqual(response.status_code, 401)
+
+    async def test_cds_fetch_requires_auth(self):
+        async with _client() as client:
+            response = await client.post('/api/cds/fetch')
+        self.assertEqual(response.status_code, 401)
+
 
 if __name__ == '__main__':
     unittest.main()
