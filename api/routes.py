@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from typing import List, Optional
-from database.connection import get_db
+from database.connection import get_db, get_session
 from database.models import Metric, TimeSeries, UpdateLog, Country
 from api.schemas import (
     MetricResponse,
@@ -16,6 +16,8 @@ from api.schemas import (
     HealthResponse,
 )
 from pipelines.scheduler import scheduler
+from pipelines.cds_fetcher import run_cds_fetch, get_cds_coverage
+from pipelines.stress_score_v2 import get_latest_metric_value
 import logging
 
 logger = logging.getLogger(__name__)
@@ -580,6 +582,31 @@ async def get_all_cds(db: Session = Depends(get_db)):
 
     results.sort(key=lambda x: (x["cds_5y"] or 0), reverse=True)
     return results
+
+
+@router.get("/cds/coverage")
+def cds_coverage(db: Session = Depends(get_db)):
+    """
+    CDS instrument coverage vs latest TimeSeries points, plus last CDS_MultiTenor log.
+    Auth: same Basic Auth as other /api routes (not /api/health).
+    """
+    return get_cds_coverage(db)
+
+
+@router.post("/cds/fetch")
+def trigger_cds_fetch():
+    """Manually run the CDS multi-tenor scrape once. Always close the session."""
+    db = None
+    try:
+        db = get_session()
+        return run_cds_fetch(db)
+    except Exception as e:
+        logger.error(f"CDS fetch failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        if db is not None:
+            db.close()
+
 
 @router.get("/stress/composite")
 def get_composite_stress(db: Session = Depends(get_db)):

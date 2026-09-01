@@ -44,19 +44,34 @@ class TestLifespanDoesNotBlockOnFred(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("run_cds_fetch", source)
 
 
+def _job_ids_after_start(mock_sched):
+    """Job ids queued after scheduler.start() (one-shots must not precede ready)."""
+    ids = []
+    seen_start = False
+    for name, _args, kwargs in mock_sched.method_calls:
+        if name == "start":
+            seen_start = True
+            continue
+        if seen_start and name == "add_job":
+            ids.append(kwargs.get("id"))
+    return ids, seen_start
+
+
 class TestStartupFetchJob(unittest.TestCase):
     def test_start_scheduler_queues_immediate_startup_job_after_start(self):
         with patch.object(sched.settings, "scheduler_enabled", True), \
              patch.object(sched, "scheduler") as mock_sched:
             sched.start_scheduler()
 
-            names = [name for name, _, _ in mock_sched.method_calls]
-            self.assertEqual(names[-2], "start")
-            self.assertEqual(names[-1], "add_job")
+            post_start_ids, started = _job_ids_after_start(mock_sched)
+            self.assertTrue(started)
+            self.assertIn("startup_fetches", post_start_ids)
 
-            startup = mock_sched.add_job.call_args_list[-1]
+            startup = next(
+                c for c in mock_sched.add_job.call_args_list
+                if c.kwargs.get("id") == "startup_fetches"
+            )
             self.assertIs(startup.args[0], sched.scheduled_startup_fetches)
-            self.assertEqual(startup.kwargs.get("id"), "startup_fetches")
             self.assertIsNotNone(startup.kwargs.get("next_run_time"))
 
     def test_startup_fetches_continue_after_fred_failure(self):
