@@ -20,11 +20,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 from config import settings
-from database.connection import init_db, get_session
+from database.connection import init_db
 from pipelines.scheduler import start_scheduler, stop_scheduler
 from api.routes import router
-from pipelines.fred_fetcher import run_fred_fetch
-from pipelines.treasury_holdings import run_treasury_holdings_fetch
 
 # ── Basic Auth ────────────────────────────────────────────────────────────────
 
@@ -38,45 +36,8 @@ async def lifespan(app: FastAPI):
         logger.error(f"Database initialization failed: {e}")
         raise
 
-    logger.info("Running initial FRED fetch...")
-    try:
-        db = get_session()
-        result = run_fred_fetch(db)
-        logger.info(f"FRED fetch: {result['status']} - {result['inserted']} inserted, {result['updated']} updated")
-        db.close()
-    except Exception as e:
-        logger.error(f"Initial FRED fetch failed: {e}")
-
-    logger.info("Running initial TIC holdings fetch...")
-    try:
-        db = get_session()
-        result = run_treasury_holdings_fetch(db)
-        logger.info(f"TIC holdings fetch: {result['status']}")
-        db.close()
-    except Exception as e:
-        logger.error(f"Initial TIC holdings fetch failed: {e}")
-
-    logger.info("Running initial gold reserves fetch...")
-    try:
-        from pipelines.gold_reserves import run_gold_reserves_fetch
-        db = get_session()
-        result = run_gold_reserves_fetch(db)
-        logger.info(f"Gold reserves fetch: {result['status']} - {result.get('countries', 0)} countries")
-        db.close()
-    except Exception as e:
-        logger.error(f"Initial gold reserves fetch failed: {e}")
-
-    logger.info("Running initial stress score calculation...")
-    try:
-        from pipelines.stress_score_v2 import run_stress_score_calculation
-        db = get_session()
-        result = run_stress_score_calculation(db)
-        if result['status'] == 'success':
-            logger.info(f"Stress score: {result['data']['overall_score']}")
-        db.close()
-    except Exception as e:
-        logger.error(f"Initial stress score calculation failed: {e}")
-
+    # Heavy FRED/TIC/gold/stress work is a one-shot APScheduler job inside
+    # start_scheduler(); do not block /api/health on it (D-0019 / AT-0012).
     start_scheduler()
     yield
 

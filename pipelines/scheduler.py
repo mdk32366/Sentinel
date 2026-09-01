@@ -1,4 +1,6 @@
 ﻿import logging
+from datetime import datetime
+
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from config import settings
@@ -28,8 +30,24 @@ import os
 
 cds_hour = int(os.getenv("CDS_FETCH_HOUR", "3"))  # After FRED at 2 AM
 
+
+def scheduled_cds_fetch():
+    db = None
+    try:
+        db = get_session()
+        result = run_cds_fetch(db)
+        logger.info(
+            f"CDS fetch: {result['status']} - {result['inserted']} inserted, {result['updated']} updated"
+        )
+    except Exception as e:
+        logger.error(f"Scheduled CDS fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
 scheduler.add_job(
-    func=lambda: run_cds_fetch(get_session()),
+    func=scheduled_cds_fetch,
     trigger="cron",
     hour=cds_hour,
     minute=0,
@@ -75,6 +93,21 @@ def scheduled_stress_score():
         db.close()
 
 
+def scheduled_startup_fetches():
+    """One-shot cold-start FRED → TIC → gold → stress. Must not raise."""
+    logger.info("Running startup FRED/TIC/gold/stress fetches in background")
+    for name, func in (
+        ("FRED", scheduled_fred_fetch),
+        ("TIC", scheduled_treasury_fetch),
+        ("gold", scheduled_gold_fetch),
+        ("stress", scheduled_stress_score),
+    ):
+        try:
+            func()
+        except Exception as e:
+            logger.error(f"Startup {name} fetch failed: {e}", exc_info=True)
+
+
 def start_scheduler():
     if not settings.scheduler_enabled:
         logger.info("Scheduler disabled in config")
@@ -110,6 +143,16 @@ def start_scheduler():
 
     scheduler.start()
     logger.info("Scheduler started")
+
+    scheduler.add_job(
+        scheduled_startup_fetches,
+        id="startup_fetches",
+        name="Startup FRED/TIC/gold/stress fetches",
+        next_run_time=datetime.now(),
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+    logger.info("Queued one-shot startup FRED/TIC/gold/stress fetches (non-blocking)")
 
 
 def stop_scheduler():
