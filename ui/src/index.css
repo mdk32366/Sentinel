@@ -52,17 +52,19 @@
 
 body {
   margin: 0;
+  background: #060D14;
 }
 
+/* Leftover Vite template styles (#root width: 1126px; text-align: center)
+   capped the SPA and centered table cells. Let App.jsx own layout
+   (content maxWidth 1400) so the composite leaderboard can use the viewport. */
 #root {
-  width: 1126px;
+  width: 100%;
   max-width: 100%;
-  margin: 0 auto;
-  text-align: center;
-  border-inline: 1px solid var(--border);
+  margin: 0;
+  text-align: left;
   min-height: 100svh;
-  display: flex;
-  flex-direction: column;
+  display: block;
   box-sizing: border-box;
 }
 
