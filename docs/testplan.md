@@ -169,3 +169,28 @@ not rediscovered a fourth time.
 `GROK_API_KEY` and an outbound call, and `F-0033` means this path has never
 once succeeded in production, so there is no prior behaviour to compare
 against. It must be watched working before `D-0031` is considered shipped.
+
+### T — The deploy gate blocked a real defect (OBSERVED 2026-09-26)
+
+Not a designed trip. PR #11's first CI run failed and `Deploy app` reported
+`skipping`, so a broken build could not reach production.
+
+**Cause.** `F-0009` removed the default for `auth_password`, so `Settings()`
+raises without `AUTH_PASSWORD`. The workflow's `env` block set only
+`DATABASE_URL`, and `.env` is gitignored and therefore absent from a CI
+checkout. The failure surfaced at `Initialize database schema`, the first step
+that imports `config`.
+
+**Artifact.** Run 36249412542:
+`pydantic_core.ValidationError: 1 validation error for Settings / auth_password
+Field required`, raised from `config.py:40` via `database/connection.py:4`.
+
+**Why it is recorded.** KEEL Step 14 asks you to break something and watch the
+gate block it. Here the gate blocked something nobody meant to break, which is
+the same proof arriving unplanned — and it caught the exact class of defect that
+`D-0019`'s blood line describes: a credential correct in one environment and
+absent in another. `AUTH_PASSWORD` was verified `Deployed` on Fly before the
+merge was attempted, so production would have booted; CI would not have.
+
+**Fix.** Throwaway `AUTH_USERNAME` / `AUTH_PASSWORD` added to the workflow env.
+They are not credentials - the CI database is an ephemeral container.
