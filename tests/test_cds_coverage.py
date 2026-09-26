@@ -14,6 +14,7 @@ from database.models import Base, Metric, TimeSeries, UpdateLog
 from pipelines.cds_fetcher import (
     CDS_INSTRUMENTS,
     CDS_PIPELINE_NAME,
+    CDS_SOURCE,
     cds_fetch_status,
     cds_instrument_codes,
     get_cds_coverage,
@@ -67,7 +68,7 @@ class TestCdsCoverageHelper(unittest.TestCase):
                 name="France 5Y CDS",
                 category="sovereign_cds",
                 unit="bps",
-                source="Investing.com",
+                source=CDS_SOURCE,
             )
             db.add(metric)
             db.flush()
@@ -110,7 +111,10 @@ class TestRunCdsFetchAllNoneFailed(unittest.TestCase):
     def test_all_none_persists_failed_updatelog(self):
         db = _session()
         try:
-            with patch("pipelines.cds_fetcher.fetch_cds_value", return_value=None):
+            with patch(
+                "pipelines.cds_fetcher.fetch_wgb_cds_board",
+                return_value={"success": True, "table": "<table></table>"},
+            ):
                 result = run_cds_fetch(db)
 
             self.assertGreater(result["attempted"], 0)
@@ -140,13 +144,22 @@ class TestRunCdsFetchAllNoneFailed(unittest.TestCase):
     def test_partial_when_one_slug_returns_value(self):
         db = _session()
 
-        def fake_fetch(slug, timeout=20):
-            if slug.startswith("france"):
-                return Decimal("80")
-            return None
+        france_row = (
+            "<table><thead><tr><th></th><th>Country</th><th>S&P</th>"
+            "<th>5Y CDS</th><th>Var 1m</th><th>Var 6m</th><th>PD</th>"
+            "<th>Date</th></tr></thead><tbody>"
+            '<tr><td></td><td sorttable_customkey="France">France</td>'
+            '<td>AA</td><td sorttable_customkey="32.73">32.73</td>'
+            "<td></td><td></td><td></td>"
+            '<td sorttable_customkey="2026-09-01">1 Sep</td></tr>'
+            "</tbody></table>"
+        )
 
         try:
-            with patch("pipelines.cds_fetcher.fetch_cds_value", side_effect=fake_fetch):
+            with patch(
+                "pipelines.cds_fetcher.fetch_wgb_cds_board",
+                return_value={"success": True, "table": france_row},
+            ):
                 result = run_cds_fetch(db)
             self.assertEqual(result["ok"], 1)
             self.assertEqual(result["status"], "partial")

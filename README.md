@@ -19,6 +19,8 @@ Does pull/display DGS30. Does not use DGS30 or 30Y–10Y in stress_score_v2.
 - **Scheduler:** APScheduler for automated data fetching
 - **Data Sources:** FRED (Federal Reserve Economic Data), TIC (Treasury International Capital), IMF/World Gold Council
 
+Sovereign CDS 5Y is the conventional/par spread from World Government Bonds (indicative USD mid); it is not the ISDA running coupon. Fly deploys stay gated on Matt.
+
 ## Prerequisites
 
 - Python 3.10+

@@ -594,3 +594,40 @@ people learn to scroll past - Principle 9.
 identical whether the name is wrong or the code path has never executed.
 
 **Status.** Open. Does not block installation; the report is otherwise correct.
+
+### F-0037 — The 2026-09-26 snapshot was taken from a stale master; ORDER-03 reviewed an incomplete tree
+
+**Claim.** The local repository was one merged pull request behind `origin`
+throughout the session. The snapshot handed to the Planner at 06:16, and
+therefore the whole of ORDER-03's codebase review, was taken against a tree
+missing PR #10.
+
+**Artifact.** Local `master` sat at `378352f` (PR #9). `git fetch` on
+2026-09-26 at 07:45 returned `378352f..792c1f7`, bringing PR #10, merged
+2026-09-01T20:27Z: *"Fix sovereign CDS 5Y ingest: conventional spread from WGB,
+not the 500 coupon."* It changed 13 files and 818 lines, including
+`pipelines/cds_fetcher.py` (659 lines), `api/routes.py`, `ui/src/App.jsx`, the
+CI workflow, and a new `tests/test_cds_parser.py` with 15 tests that the
+Builder's own test runs never executed.
+
+**Sample size.** One fetch, one missed merge, covering 25 days.
+
+**Consequence.** Every "there is no X" in ORDER-03 was evaluated against a tree
+that was 818 lines short. Nothing in the order proved wrong as a result — the
+overlap was three files and all conflicts resolved cleanly — but that is luck,
+not method. The CI test command had also changed on `master`, so the Builder's
+statement in `F-0006` about which tests the gate runs was correct for the stale
+copy and already out of date: the gate now runs four modules, not three, and
+still omits `test_dgs30_d0016` and `test_gold_reserve_changes`.
+
+**Why it is recorded.** This is the Planner's characteristic failure — reasoning
+from a copy that went stale — committed by the Builder, which is supposed to be
+the one player that can see the live tree. The Builder had `git status` and
+`git log` available all day and never ran `git fetch`, so a clean working tree
+and a matching `git log` read as "current" when they only meant "unchanged
+locally". `git status` reports divergence from `origin/master` only after a
+fetch; without one, being 25 days behind looks identical to being up to date.
+
+**Closing it.** `git fetch` before taking any snapshot for the Planner, and
+before branching. Nothing in this repository enforces that, which makes it the
+owner's seam in exactly the sense the doctrine describes.

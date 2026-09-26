@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Standalone runner for the Multi-Tenor CDS pipeline (5Y + 10Y).
+Standalone runner for the sovereign CDS pipeline (5Y conventional/par spread).
 Usage: python run_cds_fetch.py
 """
 

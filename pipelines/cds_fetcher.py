@@ -1,14 +1,19 @@
 """
-CDS Data Pipeline - Multi-Tenor + Flexible URL Handling
--------------------------------------------------------
-Handles both "5-year" and "5-years" URL variations on Investing.com.
+Sovereign CDS pipeline — World Government Bonds 5Y conventional/par spreads.
+
+One POST to the WGB board JSON endpoint returns every name. We parse the 5Y
+column's structured `sorttable_customkey` (not a regex over the whole page),
+so the ISDA running coupon (25/100/500/1000) is not mistaken for the spread.
+10Y is only stored/shown when it comes from this same source on the same as-of
+date; WGB's 5Y board has no paired 10Y, so term structure stays blank.
 """
 
 import logging
 import re
-from datetime import datetime
-from decimal import Decimal
-from typing import Dict, Optional, List
+from dataclasses import dataclass
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Dict, List, Optional, Tuple
 
 import requests
 from bs4 import BeautifulSoup
@@ -20,217 +25,78 @@ logger = logging.getLogger(__name__)
 
 
 # ============================================================
-# CDS INSTRUMENTS
+# CDS INSTRUMENTS (5Y conventional spread)
 # ============================================================
 CDS_INSTRUMENTS = {
-    "France": {
-        "5Y": {
-            "slug": "france-cds-5-years-usd",
-            "code": "FRANCE_CDS_5Y",
-        },
-    },
-    "Germany": {
-        "5Y": {
-            "slug": "germany-cds-5-year-usd",
-            "code": "GERMANY_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "germany-cds-10-year-usd",
-            "code": "GERMANY_CDS_10Y",
-        },
-    },
-    "Greece": {
-        "5Y": {
-            "slug": "greece-cds-5-years-usd",
-            "code": "GREECE_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "greece-cds-10-years-usd",
-            "code": "GREECE_CDS_10Y",
-        },
-    },
-    "Italy": {
-        "5Y": {
-            "slug": "italy-cds-5-years-usd",
-            "code": "ITALY_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "italy-cds-10-years-usd",
-            "code": "ITALY_CDS_10Y",
-        },
-    },
-    "Spain": {
-        "5Y": {
-            "slug": "spain-cds-5-years-usd",
-            "code": "SPAIN_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "spain-cds-10-years-usd",
-            "code": "SPAIN_CDS_10Y",
-        },
-    },
-    "Switzerland": {
-        "5Y": {
-            "slug": "switzerland-cds-5-year-usd",
-            "code": "SWITZERLAND_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "switzerland-cds-10-year-usd",
-            "code": "SWITZERLAND_CDS_10Y",
-        },
-    },
-    "Russia": {
-        "5Y": {
-            "slug": "russia-cds-5-years-usd",
-            "code": "RUSSIA_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "russia-cds-10-years-usd",
-            "code": "RUSSIA_CDS_10Y",
-        },
-    },
-    "Turkey": {
-        "5Y": {
-            "slug": "turkey-cds-5-year-usd",
-            "code": "TURKEY_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "turkey-cds-10-years-usd",
-            "code": "TURKEY_CDS_10Y",
-        },
-    },
-    "Saudi Arabia": {
-        "5Y": {
-            "slug": "saudi-arabia-cds-5-year-usd",
-            "code": "SAUDI_ARABIA_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "saudi-arabia-cds-10-year-usd",
-            "code": "SAUDI_ARABIA_CDS_10Y",
-        },
-    },
-    "Egypt": {
-        "5Y": {
-            "slug": "egypt-cds-5-years-usd",
-            "code": "EGYPT_CDS_5Y",
-        },
-    },
-    "China": {
-        "5Y": {
-            "slug": "china-cds-5-years-usd",
-            "code": "CHINA_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "china-cds-10-year-usd",
-            "code": "CHINA_CDS_10Y",
-        },
-    },
-    "Japan": {
-        "5Y": {
-            "slug": "japan-cds-5-year-usd",
-            "code": "JAPAN_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "japan-cds-10-year-usd",
-            "code": "JAPAN_CDS_10Y",
-        },
-    },
-    "South Korea": {
-        "5Y": {
-            "slug": "south-korea-cds-5-year-usd",
-            "code": "SOUTH_KOREA_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "south-korea-cds-10-year-usd",
-            "code": "SOUTH_KOREA_CDS_10Y",
-        },
-    },
-    "India": {
-        "5Y": {
-            "slug": "india-cds-5-year-usd",
-            "code": "INDIA_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "india-cds-10-year-usd",
-            "code": "INDIA_CDS_10Y",
-        },
-    },
-    "Indonesia": {
-        "5Y": {
-            "slug": "indonesia-cds-5-years-usd",
-            "code": "INDONESIA_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "indonesia-cds-10-year-usd",
-            "code": "INDONESIA_CDS_10Y",
-        },
-    },
-    "United States": {
-        "5Y": {
-            "slug": "united-states-cds-5-years-usd",
-            "code": "UNITED_STATES_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "united-states-cds-10-years-usd",
-            "code": "UNITED_STATES_CDS_10Y",
-        },
-    },
-    "Canada": {
-        "5Y": {
-            "slug": "canada-cds-5-years-usd",
-            "code": "CANADA_CDS_5Y",
-        },
-    },
-    "Mexico": {
-        "5Y": {
-            "slug": "mexico-cds-5-years-usd",
-            "code": "MEXICO_CDS_5Y",
-        },
-    },
-    "Brazil": {
-        "5Y": {
-            "slug": "brazil-cds-5-years-usd",
-            "code": "BRAZIL_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "brazil-cds-10-years-usd",
-            "code": "BRAZIL_CDS_10Y",
-        },
-    },
-    "Australia": {
-        "5Y": {
-            "slug": "australia-cds-5-years-usd",
-            "code": "AUSTRALIA_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "australia-cds-10-years-usd",
-            "code": "AUSTRALIA_CDS_10Y",
-        },
-    },
-    "South Africa": {
-        "5Y": {
-            "slug": "south-africa-cds-5-year-usd",
-            "code": "SOUTH_AFRICA_CDS_5Y",
-        },
-        "10Y": {
-            "slug": "south-africa-cds-10-year-usd",
-            "code": "SOUTH_AFRICA_CDS_10Y",
-        },
-    },
+    "France": {"5Y": {"code": "FRANCE_CDS_5Y"}},
+    "Germany": {"5Y": {"code": "GERMANY_CDS_5Y"}},
+    "Greece": {"5Y": {"code": "GREECE_CDS_5Y"}},
+    "Italy": {"5Y": {"code": "ITALY_CDS_5Y"}},
+    "Spain": {"5Y": {"code": "SPAIN_CDS_5Y"}},
+    "Switzerland": {"5Y": {"code": "SWITZERLAND_CDS_5Y"}},
+    "Russia": {"5Y": {"code": "RUSSIA_CDS_5Y"}},
+    "Turkey": {"5Y": {"code": "TURKEY_CDS_5Y"}},
+    "Saudi Arabia": {"5Y": {"code": "SAUDI_ARABIA_CDS_5Y"}},
+    "Egypt": {"5Y": {"code": "EGYPT_CDS_5Y"}},
+    "China": {"5Y": {"code": "CHINA_CDS_5Y"}},
+    "Japan": {"5Y": {"code": "JAPAN_CDS_5Y"}},
+    "South Korea": {"5Y": {"code": "SOUTH_KOREA_CDS_5Y"}},
+    "India": {"5Y": {"code": "INDIA_CDS_5Y"}},
+    "Indonesia": {"5Y": {"code": "INDONESIA_CDS_5Y"}},
+    "United States": {"5Y": {"code": "UNITED_STATES_CDS_5Y"}},
+    "Canada": {"5Y": {"code": "CANADA_CDS_5Y"}},
+    "Mexico": {"5Y": {"code": "MEXICO_CDS_5Y"}},
+    "Brazil": {"5Y": {"code": "BRAZIL_CDS_5Y"}},
+    "Australia": {"5Y": {"code": "AUSTRALIA_CDS_5Y"}},
+    "South Africa": {"5Y": {"code": "SOUTH_AFRICA_CDS_5Y"}},
 }
 
 
 CDS_PIPELINE_NAME = "CDS_MultiTenor"
 CDS_ERROR_TRUNCATE = 500
+CDS_SOURCE = "World Government Bonds"
+CDS_SOURCE_URL = "https://www.worldgovernmentbonds.com/sovereign-cds/"
+WGB_CDS_MAIN_URL = "https://www.worldgovernmentbonds.com/wp-json/cds/v1/main"
+
+# Real IG prints can be single-digit bps. Distressed names can exceed 10,000.
+CDS_MIN_BPS = Decimal("0.01")
+CDS_MAX_BPS = Decimal("50000")
+# ISDA standard running coupons — never use these as a floor/ceiling filter,
+# but a whole board collapsing to one of them is a parse failure, not a market.
+ISDA_RUNNING_COUPONS = frozenset({Decimal("25"), Decimal("100"), Decimal("500"), Decimal("1000")})
+
+_HEADER_COUNTRY = re.compile(r"country", re.I)
+_HEADER_5Y = re.compile(r"5\s*y(?:ear)?s?\s*cds|5\s*years?\s*credit\s*default", re.I)
+_HEADER_DATE = re.compile(r"^date$", re.I)
+_ISO_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+@dataclass(frozen=True)
+class CdsQuote:
+    country: str
+    spread_bps: Decimal
+    as_of: date
+    tenor: str = "5Y"
+    source: str = CDS_SOURCE
 
 
 def cds_instrument_codes() -> List[str]:
-    """All configured CDS metric codes (one per tenor in CDS_INSTRUMENTS)."""
+    """All configured CDS metric codes (5Y conventional spread)."""
     codes: List[str] = []
     for tenors in CDS_INSTRUMENTS.values():
         for info in tenors.values():
             codes.append(info["code"])
     return codes
+
+
+def cds_country_for_code(code: str) -> str:
+    """Human country name for a metric code, else a cleaned prefix."""
+    for name, tenors in CDS_INSTRUMENTS.items():
+        for info in tenors.values():
+            if info["code"] == code:
+                return name
+    prefix = code.replace("_CDS_5Y", "").replace("_CDS_10Y", "")
+    return prefix.replace("_", " ").title()
 
 
 def cds_fetch_status(attempted: int, ok: int) -> str:
@@ -312,73 +178,229 @@ def ensure_metric(db: Session, code: str, name: str, description: str = "") -> M
             name=name,
             category="sovereign_cds",
             unit="bps",
-            source="Investing.com",
+            source=CDS_SOURCE,
             description=description,
         )
         db.add(metric)
         db.commit()
         logger.info(f"Created CDS metric: {code}")
+        return metric
+    changed = False
+    if metric.source != CDS_SOURCE:
+        metric.source = CDS_SOURCE
+        changed = True
+    if description and metric.description != description:
+        metric.description = description
+        changed = True
+    if changed:
+        db.commit()
     return metric
 
 
-def fetch_cds_value(slug: str, timeout: int = 20) -> Optional[Decimal]:
-    """
-    Try the given slug first.
-    If it 404s, automatically try the alternative ("year" <-> "years").
-    """
-    base_url = "https://www.investing.com/rates-bonds/"
+def _parse_bps(raw) -> Optional[Decimal]:
+    if raw is None:
+        return None
+    text = str(raw).strip().replace(",", "").replace("\xa0", " ")
+    text = text.replace("bps", "").replace("bp", "").strip()
+    if not text:
+        return None
+    try:
+        val = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+    if val.is_nan() or val.is_infinite():
+        return None
+    if not (CDS_MIN_BPS <= val <= CDS_MAX_BPS):
+        return None
+    return val
 
-    # Generate both possible URL variations
-    if "year-usd" in slug:
-        alternatives = [slug, slug.replace("year-usd", "years-usd")]
-    elif "years-usd" in slug:
-        alternatives = [slug, slug.replace("years-usd", "year-usd")]
-    else:
-        alternatives = [slug]
 
+def _parse_as_of(raw) -> Optional[date]:
+    if raw is None:
+        return None
+    if isinstance(raw, date) and not isinstance(raw, datetime):
+        return raw
+    if isinstance(raw, datetime):
+        return raw.date()
+    text = str(raw).strip()
+    match = _ISO_DATE.search(text)
+    if not match:
+        return None
+    try:
+        return date.fromisoformat(match.group(1))
+    except ValueError:
+        return None
+
+
+def _cell_key(cell) -> str:
+    if cell is None:
+        return ""
+    key = cell.get("sorttable_customkey")
+    if key is not None and str(key).strip():
+        return str(key).strip()
+    return cell.get_text(" ", strip=True)
+
+
+def _header_labels(table) -> List[str]:
+    """Flatten the last header row; fall back to first row of th cells."""
+    thead = table.find("thead")
+    rows = thead.find_all("tr") if thead else table.find_all("tr")[:2]
+    if not rows:
+        return []
+    last = rows[-1]
+    return [th.get_text(" ", strip=True) for th in last.find_all("th")]
+
+
+def _column_index(labels: List[str], pattern: re.Pattern, default: Optional[int] = None) -> Optional[int]:
+    for i, label in enumerate(labels):
+        if pattern.search(label or ""):
+            return i
+    return default
+
+
+def parse_wgb_cds_table(html: str) -> List[CdsQuote]:
+    """
+    Extract 5Y conventional/par spreads from a WGB board table.
+
+    Reads the 5Y CDS and Date columns' `sorttable_customkey` attributes — the
+    structured fields the page already uses for sorting — not a scan of every
+    number on the page (which includes the ISDA coupon).
+    """
+    if not html:
+        return []
+    soup = BeautifulSoup(html, "html.parser")
+    table = soup.find("table")
+    if table is None:
+        return []
+
+    labels = _header_labels(table)
+    country_idx = _column_index(labels, _HEADER_COUNTRY, default=1)
+    cds5_idx = _column_index(labels, _HEADER_5Y, default=3)
+    date_idx = _column_index(labels, _HEADER_DATE, default=len(labels) - 1 if labels else None)
+    if country_idx is None or cds5_idx is None or date_idx is None:
+        logger.warning("WGB CDS table: could not identify Country / 5Y CDS / Date columns")
+        return []
+
+    tbody = table.find("tbody") or table
+    quotes: List[CdsQuote] = []
+    seen = set()
+    for row in tbody.find_all("tr"):
+        cells = row.find_all("td")
+        if len(cells) <= max(country_idx, cds5_idx, date_idx):
+            continue
+        country = _cell_key(cells[country_idx])
+        spread = _parse_bps(_cell_key(cells[cds5_idx]))
+        as_of = _parse_as_of(_cell_key(cells[date_idx]))
+        if not country or spread is None or as_of is None:
+            continue
+        key = country.casefold()
+        if key in seen:
+            continue
+        seen.add(key)
+        quotes.append(CdsQuote(country=country, spread_bps=spread, as_of=as_of))
+    return quotes
+
+
+def parse_wgb_cds_payload(payload) -> List[CdsQuote]:
+    """Accept the WGB JSON envelope `{success, table}` or a raw table HTML string."""
+    if payload is None:
+        return []
+    if isinstance(payload, str):
+        return parse_wgb_cds_table(payload)
+    if isinstance(payload, dict):
+        table = payload.get("table")
+        if isinstance(table, str):
+            return parse_wgb_cds_table(table)
+    return []
+
+
+def board_looks_like_coupon_collapse(quotes: List[CdsQuote], min_names: int = 5) -> bool:
+    """True when many names share one ISDA coupon — the old Investing.com failure mode."""
+    if len(quotes) < min_names:
+        return False
+    values = {q.spread_bps for q in quotes}
+    return len(values) == 1 and next(iter(values)) in ISDA_RUNNING_COUPONS
+
+
+def fetch_wgb_cds_board(timeout: int = 20) -> dict:
+    """POST the WGB sovereign-CDS board endpoint (same call the public page makes)."""
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+            "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+        ),
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Origin": "https://www.worldgovernmentbonds.com",
+        "Referer": CDS_SOURCE_URL,
+        "Content-Type": "application/json; charset=UTF-8",
+    }
+    resp = requests.post(
+        WGB_CDS_MAIN_URL,
+        headers=headers,
+        json={"DUMMY": None},
+        timeout=timeout,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    if not isinstance(data, dict):
+        raise ValueError("WGB CDS board did not return a JSON object")
+    return data
+
+
+def _as_of_date(value) -> Optional[date]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return None
+
+
+def latest_cds_observation(db: Session, code: str) -> Optional[dict]:
+    """Latest TimeSeries point for a CDS metric, with as-of date and metric source."""
+    metric = db.query(Metric).filter_by(code=code).first()
+    if not metric:
+        return None
+    row = (
+        db.query(TimeSeries)
+        .filter(TimeSeries.metric_id == metric.id, TimeSeries.country_id == None)
+        .order_by(TimeSeries.date.desc())
+        .first()
+    )
+    if not row:
+        return None
+    return {
+        "value": float(row.value),
+        "date": _as_of_date(row.date),
+        "source": metric.source,
+        "code": code,
     }
 
-    for candidate in alternatives:
-        url = f"{base_url}{candidate}"
-        try:
-            resp = requests.get(url, headers=headers, timeout=timeout)
-            if resp.status_code == 404:
-                continue  # Try the other variation
 
-            resp.raise_for_status()
-            soup = BeautifulSoup(resp.text, "html.parser")
-            page_text = soup.get_text(separator=" ", strip=True)
+def pair_cds_tenors(
+    obs_5y: Optional[dict],
+    obs_10y: Optional[dict],
+) -> Tuple[Optional[float], Optional[float], Optional[float]]:
+    """
+    5Y always wins when present. 10Y and 10Y−5Y only when both points share
+    the same source and the same as-of date. Do not mix a live 5Y with a stale 10Y.
+    """
+    if not obs_5y:
+        return None, None, None
+    cds5 = obs_5y["value"]
+    if not obs_10y:
+        return cds5, None, None
+    same_source = (obs_5y.get("source") or "") == (obs_10y.get("source") or "")
+    same_as_of = obs_5y.get("date") is not None and obs_5y.get("date") == obs_10y.get("date")
+    if not (same_source and same_as_of):
+        return cds5, None, None
+    cds10 = obs_10y["value"]
+    return cds5, cds10, round(cds10 - cds5, 1)
 
-            # Primary pattern: price + daily change
-            pattern = r'(\d{2,4}(?:\.\d{1,2})?)\s*[\+\-]?\d+\s*\([+\-]?\d+\.?\d*\%\)'
-            matches = re.findall(pattern, page_text)
-            for m in matches:
-                try:
-                    val = Decimal(m)
-                    if 50 < val < 3000:
-                        return val
-                except Exception:
-                    continue
 
-            # Fallback
-            numbers = re.findall(r'\b(\d{2,4}(?:\.\d{1,2})?)\b', page_text[:6000])
-            for n in numbers:
-                try:
-                    val = Decimal(n)
-                    if 100 < val < 800:
-                        return val
-                except Exception:
-                    continue
-
-        except Exception as e:
-            logger.debug(f"Error fetching {candidate}: {e}")
-            continue
-
-    logger.warning(f"Could not fetch valid CDS value for slug: {slug}")
-    return None
+def _quotes_by_country(quotes: List[CdsQuote]) -> Dict[str, CdsQuote]:
+    return {q.country.casefold(): q for q in quotes}
 
 
 def run_cds_fetch(db: Session) -> dict:
@@ -388,55 +410,87 @@ def run_cds_fetch(db: Session) -> dict:
     attempted = 0
     ok = 0
     errors = []
+    as_of_seen: Optional[date] = None
 
-    today = datetime.utcnow().date()
+    try:
+        payload = fetch_wgb_cds_board()
+        quotes = parse_wgb_cds_payload(payload)
+    except Exception as e:
+        logger.error(f"WGB CDS board fetch failed: {e}", exc_info=True)
+        quotes = []
+        errors.append(f"board fetch: {e}")
+
+    if quotes and board_looks_like_coupon_collapse(quotes):
+        logger.error(
+            "WGB CDS board collapsed to a single ISDA coupon (%s) — refusing to persist",
+            quotes[0].spread_bps,
+        )
+        errors.append(f"coupon-collapse: all {len(quotes)} names at {quotes[0].spread_bps}")
+        quotes = []
+
+    by_country = _quotes_by_country(quotes)
+    if quotes:
+        as_of_seen = quotes[0].as_of
+        logger.info(
+            "CDS board source=%s as-of=%s names=%s url=%s",
+            CDS_SOURCE,
+            as_of_seen.isoformat(),
+            len(quotes),
+            CDS_SOURCE_URL,
+        )
 
     for country, tenors in CDS_INSTRUMENTS.items():
-        for tenor, info in tenors.items():
-            attempted += 1
-            try:
-                # info['code'] already includes the tenor (e.g. "FRANCE_CDS_5Y"),
-                # so use it directly. Previously this appended "_{tenor}" again,
-                # producing doubled codes like "FRANCE_CDS_5Y_5Y".
-                metric_name = info['code']
-                metric = ensure_metric(
-                    db,
-                    code=metric_name,
-                    name=f"{country} {tenor} CDS Spread",
-                    description=f"{country} {tenor} Sovereign CDS from Investing.com",
-                )
+        info = tenors["5Y"]
+        attempted += 1
+        metric_name = info["code"]
+        try:
+            quote = by_country.get(country.casefold())
+            if quote is None:
+                errors.append(f"{metric_name}: not on {CDS_SOURCE} 5Y board")
+                continue
 
-                value = fetch_cds_value(info["slug"])
-                if value is None:
-                    errors.append(f"{metric_name}: fetch returned None")
-                    continue
+            metric = ensure_metric(
+                db,
+                code=metric_name,
+                name=f"{country} 5Y CDS Spread",
+                description=(
+                    f"{country} 5Y sovereign CDS conventional/par spread from "
+                    f"{CDS_SOURCE} (not the ISDA running coupon)"
+                ),
+            )
 
-                existing = db.query(TimeSeries).filter(
-                    TimeSeries.metric_id == metric.id,
-                    TimeSeries.date == today,
-                    TimeSeries.country_id == None,
-                ).first()
+            as_of_dt = datetime.combine(quote.as_of, datetime.min.time())
+            existing = db.query(TimeSeries).filter(
+                TimeSeries.metric_id == metric.id,
+                TimeSeries.date == as_of_dt,
+                TimeSeries.country_id == None,
+            ).first()
 
-                if existing:
-                    existing.value = value
-                    existing.updated_at = datetime.utcnow()
-                    total_updated += 1
-                else:
-                    db.add(TimeSeries(
-                        metric_id=metric.id,
-                        country_id=None,
-                        date=today,
-                        value=value,
-                    ))
-                    total_inserted += 1
+            if existing:
+                existing.value = quote.spread_bps
+                existing.updated_at = datetime.utcnow()
+                total_updated += 1
+            else:
+                db.add(TimeSeries(
+                    metric_id=metric.id,
+                    country_id=None,
+                    date=as_of_dt,
+                    value=quote.spread_bps,
+                ))
+                total_inserted += 1
 
-                db.commit()
-                ok += 1
-                logger.info(f"CDS {metric_name}: {value} bps")
-
-            except Exception as e:
-                logger.error(f"Error processing {country} {tenor}: {e}")
-                errors.append(f"{country} {tenor}: {str(e)}")
+            db.commit()
+            ok += 1
+            logger.info(
+                "CDS %s: %s bps source=%s as-of=%s",
+                metric_name,
+                quote.spread_bps,
+                quote.source,
+                quote.as_of.isoformat(),
+            )
+        except Exception as e:
+            logger.error(f"Error processing {country} 5Y: {e}")
+            errors.append(f"{country} 5Y: {str(e)}")
 
     status = cds_fetch_status(attempted, ok)
 
@@ -458,4 +512,7 @@ def run_cds_fetch(db: Session) -> dict:
         "attempted": attempted,
         "ok": ok,
         "errors": errors,
+        "source": CDS_SOURCE,
+        "as_of": as_of_seen.isoformat() if as_of_seen else None,
+        "source_url": CDS_SOURCE_URL,
     }
