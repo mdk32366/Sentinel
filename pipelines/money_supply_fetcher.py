@@ -21,10 +21,11 @@ from decimal import Decimal
 from pathlib import Path
 from sqlalchemy.orm import Session
 from database.models import Metric, TimeSeries, Country, UpdateLog
+from pipelines.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-JSON_PATH = Path(__file__).parent.parent / "data" / "money_supply.json"
+JSON_PATH = DATA_DIR / "money_supply.json"
 
 MONEY_METRIC = {
     "code": "BROAD_MONEY_GROWTH",

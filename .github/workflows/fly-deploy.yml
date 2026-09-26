@@ -28,6 +28,11 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/treasury_monitor
+      # F-0009: auth_password has no default, so the app refuses to start
+      # without it. These are throwaway values for the ephemeral CI container,
+      # never a real credential - the deployed password is the Fly secret.
+      AUTH_USERNAME: ci
+      AUTH_PASSWORD: ci-not-a-real-password
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5

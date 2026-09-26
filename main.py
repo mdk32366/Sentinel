@@ -2,7 +2,6 @@ import logging
 import secrets
 from fastapi import FastAPI, status
 from fastapi.staticfiles import StaticFiles
-from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import PlainTextResponse
 from contextlib import asynccontextmanager
@@ -12,9 +11,10 @@ import sys
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    # ORDER-03 A5 / F-0028: no FileHandler. The file was unbounded, ephemeral,
+    # never read, and held the live FRED key eight times. Fly captures stdout.
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler('treasury_monitor.log'),
     ]
 )
 logger = logging.getLogger(__name__)
@@ -53,13 +53,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# ORDER-03 A4 / F-0029: CORS middleware removed. `allow_origins=["*"]` with
+# `allow_credentials=True` is invalid per the CORS spec and was silently
+# ignored by browsers. The UI is served from api/static by this same app, so
+# every request is same-origin and no cross-origin access is intended.
 
 # Static frontend + API: HTTP Basic Auth so the browser prompts on GET /
 # /api/health stays open for Docker/Fly probes.

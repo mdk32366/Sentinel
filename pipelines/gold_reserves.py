@@ -7,7 +7,7 @@ CSV format: Country × Quarter (Q4 00 → present), values in tonnes
 Source: https://www.gold.org/goldhub/data/gold-reserves-by-country
 Local path: data/gold_reserves.csv  (re-download monthly to keep current)
 
-This wrapper delegates to the proven experimental/gold_fetcher.py implementation.
+This wrapper delegates to the proven gold_fetcher.py implementation.
 """
 
 import logging
@@ -15,10 +15,11 @@ from datetime import datetime
 from pathlib import Path
 from sqlalchemy.orm import Session
 from database.models import UpdateLog
+from pipelines.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-CSV_PATH = Path(__file__).parent.parent / "data" / "gold_reserves.csv"
+CSV_PATH = DATA_DIR / "gold_reserves.csv"
 
 
 def run_gold_reserves_fetch(db: Session) -> dict:
@@ -36,10 +37,12 @@ def run_gold_reserves_fetch(db: Session) -> dict:
             "Download from https://www.gold.org/goldhub/data/gold-reserves-by-country "
             "and save as data/gold_reserves.csv"
         )
-        logger.warning(msg)
+        # D-0027: a missing source file is a failure, not a quiet "partial".
+        # A guard that stands aside is how a dangerous thing comes to look harmless.
+        logger.error(msg)
         db.add(UpdateLog(
             pipeline_name="Gold_Reserves",
-            status="partial",
+            status="failed",
             records_inserted=0,
             records_updated=0,
             error_message=msg,
@@ -47,11 +50,10 @@ def run_gold_reserves_fetch(db: Session) -> dict:
             completed_at=datetime.utcnow(),
         ))
         db.commit()
-        return {"status": "partial", "countries": 0, "inserted": 0, "updated": 0, "errors": [msg]}
+        raise FileNotFoundError(msg)
 
     try:
         # Delegate to the proven gold_fetcher implementation
-        from pipelines.experimental.gold_fetcher import import_wgc_csv
         result = import_wgc_csv(db, csv_path=CSV_PATH)
 
         db.add(UpdateLog(
