@@ -283,66 +283,29 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
       .catch(() => setCdsData({ cds5y: null, cds10y: null, termSpread: null }));
   }, [iso]);
 
-  const handleGenerateNarrative = async (ticChart, goldChart, latestTic, ticMom, latestGold) => {
+  // ORDER-03 A2 / F-0013: the brief's prompt is assembled server-side from the
+  // database. This sends a country code and nothing else - the endpoint rejects
+  // a free-form `prompt` with 422.
+  const handleGenerateNarrative = async () => {
   setNarrativeLoading(true);
   setNarrative(null);
 
   try {
-    const yieldCode = SOVEREIGN_YIELD_CODES[iso];
-    const countryYield = yieldCode ? latestAll[yieldCode] : null;
-    const us10y = latestAll["DGS10"];
-    const spreadBps = countryYield != null && us10y != null 
-      ? (countryYield - us10y) * 100 
-      : null;
-
-    // Fetch latest CDS data
-    let cds5y = null;
-    let cds10y = null;
-    let cdsTermSpread = null;
-
-    try {
-      const cdsRes = await fetch(`${API}/cds?country=${iso}`);
-      if (cdsRes.ok) {
-        const cdsData = await cdsRes.json();
-        cds5y = cdsData?.["5Y"]?.value ?? null;
-        cds10y = cdsData?.["10Y"]?.value ?? null;
-        if (cds5y != null && cds10y != null) {
-          cdsTermSpread = cds10y - cds5y;
-        }
-      }
-    } catch (e) {
-      console.warn("CDS data not available for narrative");
-    }
-
-    const prompt = `You are a financial analyst writing a concise 200-250 word brief for a sophisticated audience. Analyze ${ticHistory?.country_name ?? iso} (${iso}) based on this data:
-
-TREASURY HOLDINGS: ${latestTic ? `$${latestTic.holdings.toFixed(1)}B current` : "no data"}${ticMom != null ? `, MoM ${ticMom > 0 ? "+" : ""}${ticMom.toFixed(2)}%` : ""}, ${ticChart.length} months of history
-GOLD RESERVES: ${latestGold ? `${latestGold.tonnes.toFixed(0)} metric tonnes` : "no data"}
-SOVEREIGN YIELD SPREAD VS US 10Y: ${spreadBps != null ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)} basis points` : "not available"}
-
-SOVEREIGN CDS:
-- 5Y CDS: ${cds5y != null ? `${cds5y} bps` : "not available"}
-- 10Y CDS: ${cds10y != null ? `${cds10y} bps` : "not available"}
-- Term Structure (10Y - 5Y): ${cdsTermSpread != null ? `${cdsTermSpread > 0 ? "+" : ""}${cdsTermSpread} bps` : "not available"}
-
-Write three short sections:
-
-SITUATION
-What is this country doing with its US Treasury holdings and gold reserves? Include CDS levels if available. 2-3 plain sentences using the real numbers.
-
-WHAT TO WATCH
-What trends matter most right now? What would signal a change in posture? 2-3 sentences.
-
-RISK FACTORS
-What are the top 2 risks to monitor? Be specific. 2 sentences.
-
-Use plain English. No markdown formatting. No bullet points.`;
-
     const r = await fetch(`${API}/analyze/country`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ country: iso }),
     });
+
+    if (!r.ok) {
+      setNarrative(
+        r.status === 429
+          ? "Brief limit reached. Try again later."
+          : "Analysis unavailable."
+      );
+      setNarrativeLoading(false);
+      return;
+    }
 
     const data = await r.json();
     setNarrative(data.text || "Analysis unavailable.");
@@ -512,7 +475,7 @@ Use plain English. No markdown formatting. No bullet points.`;
               {!narrative && !narrativeLoading && <div style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C" }}>AI-generated analysis using treasury, gold, and yield spread data</div>}
             </div>
             <button
-              onClick={() => handleGenerateNarrative(ticChart, goldChart, latestTic, ticMom, latestGold)}
+              onClick={() => handleGenerateNarrative()}
               disabled={narrativeLoading}
               style={{ background: narrativeLoading ? "#0F1923" : "#C8A96E18", border: `1px solid ${narrativeLoading ? "#1E2D3D" : "#C8A96E"}`, color: narrativeLoading ? "#3A4D5C" : "#C8A96E", borderRadius: 2, padding: "8px 16px", cursor: narrativeLoading ? "not-allowed" : "pointer", fontFamily: "monospace", fontSize: 12, whiteSpace: "nowrap" }}>
               {narrativeLoading ? "⟳ Generating..." : narrative ? "↻ Regenerate" : "▶ Generate Analysis"}
@@ -2530,8 +2493,8 @@ function AboutTab() {
         <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginBottom: 12, letterSpacing: "0.1em" }}>⚠ MONTHLY MANUAL UPDATE CHECKLIST</div>
         {[
           { task: "Download WGC gold reserves CSV (quarterly)", url: "https://www.gold.org/goldhub/data/gold-reserves-by-country", action: "Save as data/gold_reserves.csv in repo → commit → deploy OR run POST /api/fetch/gold-reserves" },
-          { task: "Verify TIC auto-refresh ran (15th of month)", url: null, action: "Check GET /api/health — last_treasury_update should be recent" },
-          { task: "Verify FRED auto-refresh ran (daily)", url: null, action: "Check GET /api/health — last_fred_update should be within 24 hrs" },
+          { task: "Verify TIC auto-refresh ran (15th of month)", url: null, action: "Check GET /api/pipeline-status — last_treasury_update should be recent" },
+          { task: "Verify FRED auto-refresh ran (daily)", url: null, action: "Check GET /api/pipeline-status — last_fred_update should be within 24 hrs" },
           { task: "Verify stress score recalculated", url: null, action: "GET /api/stress-score — timestamp should be today" },
         ].map((item, i) => (
           <div key={i} style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "flex-start" }}>

@@ -57,3 +57,7 @@ Thumbs.db
 
 # ENV
 .env
+
+# D-0025 / F-0004: shadow data dir that shadowed data/ via a miscomputed root.
+# Pipelines resolve data through pipelines/paths.py DATA_DIR. Do not recreate.
+pipelines/data/

@@ -17,10 +17,18 @@ from decimal import Decimal
 from pathlib import Path
 from sqlalchemy.orm import Session
 from database.models import Metric, TimeSeries, UpdateLog
+from pipelines.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-CSV_PATH = Path(__file__).parent.parent / "data" / "gold_prices.csv"
+CSV_PATH = DATA_DIR / "gold_prices.csv"
+
+# D-0027: the WGC series is month-end, normalised to day=1 on write.
+# On 2026-09-26 a fully current file is already 56 days old by that measure,
+# and reaches ~65 just before the next publication. 70 is the first value that
+# does not fire on healthy data. A present-but-frozen file is the failure that
+# actually occurred; a missing-file check would never have caught it.
+MAX_SOURCE_AGE_DAYS = 70
 
 SPOT_GOLD_METRIC = {
     "code": "GOLD_SPOT_USD",
@@ -61,6 +69,7 @@ def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
 
     metric = ensure_spot_metric(db)
     inserted = updated = skipped = 0
+    newest_source_date = None
 
     with open(csv_path, newline='', encoding='utf-8-sig') as f:
         reader = csv.reader(f)
@@ -97,6 +106,9 @@ def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
             skipped += 1
             continue
 
+        if newest_source_date is None or date > newest_source_date:
+            newest_source_date = date
+
         # Spot gold has no country
         existing = db.query(TimeSeries).filter(
             TimeSeries.metric_id == metric.id,
@@ -117,6 +129,25 @@ def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
             ))
             inserted += 1
 
+    # D-0027: refuse a present-but-frozen file. This is the case that
+    # actually occurred and ran undetected for three months.
+    if newest_source_date is None:
+        db.rollback()
+        raise ValueError(
+            f"Gold price CSV at {csv_path} yielded no parseable rows "
+            f"({skipped} rows skipped). Refusing to report success."
+        )
+
+    age_days = (datetime.utcnow() - newest_source_date).days
+    if age_days > MAX_SOURCE_AGE_DAYS:
+        db.rollback()
+        raise ValueError(
+            f"Gold price CSV at {csv_path} is stale: newest row "
+            f"{newest_source_date.date()} is {age_days} days old, limit is "
+            f"{MAX_SOURCE_AGE_DAYS}. The file is present but frozen - refresh it "
+            f"from https://www.gold.org/goldhub/data/gold-prices"
+        )
+
     db.commit()
     logger.info(f"Gold price import: {inserted} inserted, {updated} updated, {skipped} skipped")
     return {
@@ -125,6 +156,8 @@ def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
         "updated": updated,
         "skipped": skipped,
         "series": "GOLD_SPOT_USD",
+        "source_latest": newest_source_date.date().isoformat(),
+        "source_age_days": age_days,
     }
 
 

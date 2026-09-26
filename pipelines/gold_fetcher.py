@@ -27,10 +27,12 @@ from pathlib import Path
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database.models import Metric, TimeSeries, Country, UpdateLog
+from pipelines.composite_stress import get_treseg_signal
+from pipelines.paths import DATA_DIR
 
 logger = logging.getLogger(__name__)
 
-CSV_PATH = Path(__file__).parent.parent / "data" / "gold_reserves.csv"
+CSV_PATH = DATA_DIR / "gold_reserves.csv"
 
 GOLD_METRIC = {
     "code": "GOLD_RESERVES",
@@ -312,7 +314,6 @@ def compute_cross_asset_stress(db: Session) -> list:
 
             # ── TRESEG: non-dollar reserve trend for EXITED countries ─────
             try:
-                from pipelines.experimental.composite_stress import get_treseg_signal
                 treseg = get_treseg_signal(db, country.iso_code, True)
             except Exception:
                 treseg = {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}
@@ -391,7 +392,6 @@ def compute_cross_asset_stress(db: Session) -> list:
 
         # ── TRESEG: non-dollar reserve trend ──────────────────────────────
         try:
-            from pipelines.experimental.composite_stress import get_treseg_signal
             treseg = get_treseg_signal(db, country.iso_code, False)
         except Exception:
             treseg = {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}

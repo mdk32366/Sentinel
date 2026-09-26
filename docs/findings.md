@@ -1,0 +1,596 @@
+# Findings — Sentinel
+
+> How do we know? Every claim names the artefact it came from and carries its
+> sample size. If you cannot name the artefact, you are recording a belief.
+
+---
+
+### F-0001 — Treasury yields are current to their upstream source; the pipeline has zero lag
+
+**Claim.** On 2026-09-26 the database held `DGS10` through 2026-09-24 and FRED's
+API also ended 2026-09-24. The apparent three-day staleness was FRED's
+one-business-day publication lag, observed on a Saturday.
+
+**Artifact.** FRED API call for `DGS10` from `observation_start=2026-09-22`
+returned three observations: 09-22 `4.96`, 09-23 `5.11`, 09-24 `5.18`. Database
+`MAX(date)` returned 2026-09-24 for all four `DGS` series.
+
+**Sample size.** One query, one series, one moment. The one-day lag is inferred
+from a single observation plus FRED's stated next-release date, not measured.
+
+### F-0002 — The scheduler fires reliably; the misfire hypothesis was wrong
+
+**Claim.** Ten consecutive nightly FRED runs started within 250ms of 02:00 UTC,
+each completing in 2–3 minutes. No misfires, no overruns, no skips.
+
+**Artifact.** `update_logs` rows 624–683, `started_at` / `completed_at`.
+
+**Note against the Planner.** The leading hypothesis was a silent APScheduler
+misfire, argued from the genuine absence of `misfire_grace_time`. Fluent, and
+wrong. Reading the code produced a plausible mechanism; reading the logs
+produced the answer.
+
+### F-0003 — FRED returns intermittent 502s affecting one random series per run
+
+**Claim.** Five of ten runs returned `partial`, each losing exactly one series
+to a 502. Different series each time: DFII10, IRLTLT01AUM156N, DGS10, DGS2,
+DGS30. Self-healing via the 1825-day window.
+
+**Artifact.** Same rows. Blast radius confirmed arithmetically: successful runs
+update ~11,700 rows; runs losing a daily series ~10,450 (delta ~1,250 ≈ five
+years of business days); the run losing a monthly series updated 11,628 (delta
+~76 ≈ five years of months).
+
+**Sample size.** 10 runs. A 50% partial rate measured over ten nights, not
+established as steady state.
+
+### F-0004 — The gold price importer reads a shadow copy; the data has been on disk since August
+
+**Claim.** `pipelines/experimental/gold_price_import.py:23` computes
+`Path(__file__).parent.parent / "data" / "gold_prices.csv"`. From
+`pipelines/experimental/` that resolves to `pipelines/data/`, not the repository
+root. The module was written one directory shallower and the path followed it
+when it moved.
+
+**Artifact.** Snapshot `378352f`: `data/gold_prices.csv` ends `8/31/2026`;
+`pipelines/data/gold_prices.csv` ends `7/31/2026`;
+`data/gold_prices.csv.bak-2026-08-31` ends `7/31/2026`; database
+`GOLD_SPOT_USD` latest `2026-07-01`. The importer applies `date.replace(day=1)`,
+so `7/31/2026` stores as `2026-07-01` — the database is exactly in sync with the
+file it actually reads.
+
+**Consequence, direction stated.** Divergence is scored on selling gold into a
+*rising* price. A frozen price understates rising-price detection, so the bias
+is toward **under-scoring** divergence: countries look calmer than they are.
+The magnitude is unknown until the re-score in ORDER-02 A7.
+
+**Why it survived.** Nothing errored. The `partial` branch never fired because
+the file it looked for was present. Right shape, right provenance, right date,
+plausible number — Principle 11 exactly.
+
+### F-0005 — `pipelines/data/` is a second canonical copy created to satisfy a broken path
+
+**Claim.** `pipelines/data/` is untracked and holds `gold_prices.csv` and
+`money_supply.json`. It exists because the miscomputed path needed something to
+find. From its creation, the human updated one tree and the pipeline read
+another.
+
+**Artifact.** `git status` shows `?? pipelines/data/`. Both files are present
+and readable.
+
+**Latent, not yet active, in money supply.** `money_supply_fetcher.py:27` has
+the identical defect, but the two JSON copies are currently identical — 1,380
+rows, 1996–2025. It diverges the first time the root copy is refreshed.
+
+### F-0006 — Two tests exist that cannot block a deploy
+
+**Claim.** `fly-deploy.yml` runs `test_frontend_auth`,
+`test_lifespan_cold_start` and `test_cds_coverage`. `test_dgs30_d0016` and
+`test_gold_reserve_changes` are named in neither the workflow nor any other
+runner.
+
+**Artifact.** `.github/workflows/fly-deploy.yml`, the `Run frontend auth,
+cold-start, and CDS coverage tests` step, against `ls tests/`.
+
+**Why it matters.** A red X nobody must obey is decoration. A test nobody runs
+is a step past that — it looks like coverage and provides none. Both tests cite
+decision numbers, which makes them read as deliberate.
+
+### F-0007 — `App.jsx` plots Fed Funds against the wrong dates
+
+**Claim.** `yieldData` (~line 806) zips series by array index, not date.
+`FEDFUNDS` is monthly (~60 points over five years) mapped onto the daily
+`DGS10` axis (~1,250 points), so the line covers ~5% of the chart against
+incorrect dates and is null thereafter. `DGS2` drifts wherever the two series
+have differing missing days.
+
+**Artifact.** `ui/src/App.jsx` lines ~806–811 at `378352f`.
+
+**Status.** Open, deferred to the V2 frontend decomposition. Adding a 7Y line
+would inherit it.
+
+### F-0008 — The test suite poses no truncation risk today, and the guard that would keep it that way does not exist
+
+**Claim.** The three DB-touching tests each build their own
+`sqlite:///:memory:` engine. No test calls `drop_all` or truncates. There is
+no positive-identity guard anywhere in `tests/`, and no `conftest.py`.
+
+**Artifact.** `create_engine("sqlite:///:memory:")` at
+`test_cds_coverage.py:26`, `test_dgs30_d0016.py:23`,
+`test_gold_reserve_changes.py:195`. `grep -riE "canary|disposable|refuse"
+tests/` returns nothing.
+
+**The exposure.** `database/connection.py` instantiates a pooled engine against
+`settings.database_url` at import time, and `test_frontend_auth` imports
+`main`. Nothing writes through it today. One fixture that does, and the
+configuration is identical to the one that truncated production twice.
+
+### F-0009 — `config.py` carries a working password as a source default
+
+**Claim.** `config.py:20` — `auth_password: str = "v1g1lant"` — in a public
+repository. A missing `AUTH_PASSWORD` secret does not fail startup; it falls
+back to a published credential.
+
+**Artifact.** `config.py:20` at `378352f`.
+
+### F-0010 — The FRED API key is in production logs and served over HTTP
+
+**Claim.** `fetch_fred_series` passes the key as a query parameter;
+`raise_for_status()` embeds the URL in the exception; the text is written to
+`update_logs.error_message`; `/api/pipeline-logs` serves it.
+
+**Artifact.** Five of ten sampled `update_logs` rows contain `api_key=` and the
+live key, retrieved over HTTP from the running application.
+`treasury_monitor.log` holds it eight more times.
+
+### F-0011 — A planning claim of absence was made from a stale copy and was wrong
+
+**Claim.** The Planner stated neither `DGS7` nor `DGS30` was tracked. `DGS30`
+was live, from decision D-0016. The claim came from a project-attached copy of
+`fred_fetcher.py` predating the deployed version.
+
+**Artifact.** `SELECT code FROM metrics WHERE code LIKE 'DGS%'` returned DGS2,
+DGS5, DGS10, DGS30. Independently corroborated by a sentence in the repository
+README naming DGS30 as pulled and displayed.
+
+**Why recorded.** A Step C6 false absence, produced in the session that wrote
+the orders acting on it. The general defect — the Planner's copy behind the
+working copy — is the one the V2 refactoring plan opened with on 2026-06-30,
+unresolved until the snapshot on 2026-09-26.
+
+---
+
+### F-0017 — `.dockerignore` excludes five patterns; `.env` is not one of them
+
+**Claim.** `.dockerignore` contains exactly `fly.toml`, `.git/`, `__pycache__/`,
+`.envrc`, `.venv/`. The Dockerfile does `COPY . .`. Any `.env` present at build
+time is baked into the production image. `node_modules/`, `venv/` (the
+convention actually used; only `.venv/` is listed), `ui/`, `data/incoming/` and
+`*.log` are likewise included in the build context.
+
+**Artifact.** `.dockerignore` and `Dockerfile` at `378352f`.
+
+**Status.** UNVERIFIED IN PRODUCTION. `cat /app/.env` in a running container
+settles it — see `A-0007`. Recorded as a finding about the configuration, which
+is certain; the consequence is an assumption until checked.
+
+**Second consequence.** An unbounded build context is the twenty-gigabyte
+seven-hour rebuild already recorded in KEEL Principle 3's blood line.
+`node_modules/` has never been excluded.
+
+### F-0018 — `/api/analyze/country` forwards a client-supplied prompt with the server's key
+
+**Claim.** `routes.py:500` reads `payload["prompt"]` and posts it verbatim to
+`https://api.x.ai/v1/chat/completions` with `settings.grok_api_key`,
+`max_tokens: 750`, no rate limit and no content constraint. The prompt is
+assembled in `App.jsx`, so the server never sees what it is paying for until it
+has paid.
+
+**Artifact.** `api/routes.py:500–548`.
+
+**Second defect, same handler.** `db: Session = Depends(get_db)` is injected
+and never used, while the handler awaits an HTTP call with `timeout=75.0`.
+`connection.py` sets `pool_size=10`, so ten concurrent briefs exhaust the pool
+and block every other endpoint.
+
+**Third, minor.** The docstring says "using Grok (replaces Claude)"; the
+project's architecture notes still describe this as a Claude integration.
+
+### F-0019 — `/api/health` is unauthenticated
+
+**Claim.** `main.py:64` declares `OPEN_PATHS = {"/api/health"}` and
+`BasicAuthMiddleware.dispatch` returns early for it. Every other path,
+including all of `/api/*` and the SPA, requires Basic auth.
+
+**Artifact.** `main.py:64–77`.
+
+**Why recorded.** The exemption is correct — the probes need it. It is recorded
+because it is invisible from `routes.py`, where `/health` looks like every
+other endpoint, and because ORDER-01 B6 was written against that appearance and
+would have published freshness data on it. See `D-0033`.
+
+**Correction to an earlier finding.** `F-0010` stated the FRED key in
+`update_logs` was "served by `/api/pipeline-logs`". Accurate, but that endpoint
+*is* behind auth. The exposure is to anyone holding the shared password — which,
+given `F-0009`, may be a published default. Narrower than first stated, not
+closed.
+
+### F-0020 — `pipelines/experimental/` holds 1,938 lines of production code, imported inside function bodies
+
+**Claim.** Five modules totalling 1,938 lines — 21% of the project's Python —
+live in a directory named `experimental` and are load-bearing:
+`composite_stress.py` (769, serves `/stress/composite`), `gold_fetcher.py`
+(462, serves `/holdings/cross-asset-stress` and is the real WGC importer),
+`tic_fetcher.py` (406), `money_supply_fetcher.py` (142),
+`gold_price_import.py` (159).
+
+**Artifact.** `wc -l pipelines/experimental/*.py`; imports at
+`api/routes.py:249`, `api/routes.py:622`, `pipelines/gold_reserves.py:54` —
+all **inside function bodies**, not at module level.
+
+**Why it matters beyond naming.** Function-level imports hide the dependency
+from any static read of the file header, which is how the directory stayed
+"experimental" while becoming production. The extra directory level is also the
+direct cause of `F-0004`.
+
+### F-0021 — Root `scheduler.py` is dead code
+
+**Claim.** `./scheduler.py` (120 lines) is imported by nothing. `main.py`,
+`api/routes.py`, `tests/test_cds_coverage.py` and
+`tests/test_lifespan_cold_start.py` all import `pipelines.scheduler` (171
+lines).
+
+**Artifact.** `grep -rn "from scheduler import\|^import scheduler"
+--include=*.py .` returns nothing.
+
+**Consequence already realised.** This is the copy the Planner reviewed across
+three sessions, producing the misfire hypothesis in `F-0002`. A second
+canonical copy cost real diagnostic time before anyone noticed it was dead.
+
+### F-0022 — Alembic is pinned and has never been initialized
+
+**Claim.** `requirements.txt` pins `alembic==1.12.1`. There is no
+`alembic.ini` and no `versions/` directory anywhere in the tree. Schema is
+created by `Base.metadata.create_all()` in `database/connection.py:25`, which
+creates missing tables and silently ignores changed columns.
+
+**Artifact.** `requirements.txt`; `find . -name alembic.ini -o -name versions`
+returns nothing.
+
+**Concrete consequence.** The `error_message varchar(500)` overflow behind
+`A-0003` cannot be fixed by editing `models.py`. It requires hand-written DDL
+against production, and nothing in the system says so.
+
+### F-0023 — The composite scorer issues roughly 400 queries per HTTP request
+
+**Claim.** `compute_composite_stress` loops
+`for country in db.query(Country).filter(Country.iso_code != "USA").all()` at
+`composite_stress.py:441`. Inside the loop: TIC history (445), gold history
+(486), M2 row (521), plus each dimension helper re-resolving its metric by code
+— `db.query(Metric).filter_by(code=...).first()` at 127, 216, 279, 739 — once
+per country per dimension. `/stress/composite` recomputes on every tab click
+with no caching.
+
+**Artifact.** `grep -c "db.query" pipelines/experimental/composite_stress.py`
+returns 22; the loop at line 441.
+
+**Sample size.** Query count estimated from code structure and country count,
+**not measured**. ORDER-03 D2 requires the measured before/after.
+
+### F-0024 — Six of twenty-four endpoints declare a response model
+
+**Claim.** `api/routes.py` defines 24 routes; 6 carry `response_model`.
+`api/schemas.py` is 92 lines, mostly unused. The remaining 18 assemble raw
+dicts inline.
+
+**Artifact.** `grep -c "@router" api/routes.py` → 24;
+`grep -c "response_model" api/routes.py` → 6.
+
+**Consequence.** `/docs` documents almost nothing, and `App.jsx` is the only
+specification of the API contract. A field rename produces an empty tile, not
+an error.
+
+### F-0025 — `App.jsx` grew 15% while flagged as the top structural priority
+
+**Claim.** The June 2026 V2 plan recorded `App.jsx` at 2,248 lines and named
+decomposing it the highest-leverage structural fix. At `378352f` it is **2,583
+lines**, with 23 `fetch()` calls, 53 `useState`, 14 `useEffect`, and 15
+components in one file.
+
+**Artifact.** `wc -l ui/src/App.jsx`; the V2 plan, section 2.3.
+
+**Why recorded as a finding rather than a task.** The number is evidence about
+sequencing, not about the file. A structural fix that is scheduled and not done
+gets more expensive at a measurable rate. See `D-0028`.
+
+### F-0026 — Deployed Python version does not match the recorded decision
+
+**Claim.** `Dockerfile` uses `python:3.11-slim`; `.github/workflows/fly-deploy.yml`
+sets `python-version: '3.11'`. The project's recorded decision chose Python
+3.13 with 3.13-pinned wheels.
+
+**Artifact.** `Dockerfile:1`, `fly-deploy.yml` setup-python step.
+
+**Status.** Nothing is broken. The environment the tests pass in is not the one
+the decision describes, which means one of the two is wrong and nobody knows
+which.
+
+### F-0027 — No frontend build stage; the bundle is committed
+
+**Claim.** The Dockerfile has a Python builder stage and no Node stage.
+`api/static/index.html` is committed (dated 2026-09-01) and reaches the image
+via `COPY . .`. `.gitignore` ignores a bare `dist/` but not `api/static/`.
+
+**Artifact.** `Dockerfile`; `ls api/static/`; `.gitignore:17`.
+
+**Consequence.** A deploy that forgets `npm run build` ships a stale UI against
+a new API with no signal of any kind. Flagged as Phase 0 in the June plan;
+still open.
+
+### F-0028 — The application writes an unbounded log file inside the container
+
+**Claim.** `main.py:17` attaches `logging.FileHandler('treasury_monitor.log')`.
+The file grows until the machine restarts, is never read, and is the file that
+holds the FRED API key eight times.
+
+**Artifact.** `main.py:12–19`; the snapshot exclusion note recording eight
+occurrences of the key.
+
+### F-0029 — CORS remains wildcard-plus-credentials
+
+**Claim.** `main.py:57–60` sets `allow_origins=["*"]` with
+`allow_credentials=True` — an invalid combination browsers reject for
+credentialed requests. Flagged in the June plan, unchanged.
+
+**Artifact.** `main.py:57–60`.
+
+**Why it survived.** Everything is same-origin behind middleware, so the
+invalid config has no observable effect — which is precisely why it will sit
+there indefinitely.
+
+---
+
+### F-0012 — `127.0.0.1:5432` is a native Windows PostgreSQL, not the Docker container and not a tunnel
+
+**Claim.** The local `DATABASE_URL` target is PostgreSQL 18.3 on
+`x86_64-windows`, a separate database from production.
+
+**Artifact.** `SELECT version()` returned `PostgreSQL 18.3 on x86_64-windows,
+compiled by msvc-19.44.35`, 2026-09-26. `docker-compose.yaml` declares
+`postgres:15`, a Linux image, so this is not that container; Fly runs Linux, so
+it is not a tunnel to production. Row counts: timeseries 37,923 - metrics 79 -
+countries 45 - update_logs 18. Production `update_logs` runs to id 683
+(`F-0003`), so the two are demonstrably different databases.
+
+**Sample size.** One query at one moment. This identifies the database; it is
+**not** the positive-identity guard required by Step 12, which does not exist.
+See `A-0006`.
+
+**Note against the Planner.** The V2 order inferred "local Docker" from
+`docker-compose.yaml` matching `.env`. The inference reached the right
+conclusion — local, not production — by reading a file rather than the running
+server, and the file it read describes a container that is not what is running.
+
+### F-0013 — The freshness watchdog names four pipelines that do not exist, and its gold threshold fires on healthy data
+
+**Claim.** In `freshness_watchdog.py` as delivered, four of ten `CHECKS` groups
+reference `pipeline_name` values that no pipeline writes, so `_last_success`
+can never resolve them. Separately, `gold_price` carries `max_age_days: 45`
+against a series that is 56 days old when fully current.
+
+**Artifact.** `CHECKS` expects `GoldPrice` / `TIC` / `Treasury` / `MoneySupply`
+/ `CDS`. A `grep` over `pipelines/` and `SELECT DISTINCT pipeline_name FROM
+update_logs` both return the same seven values: `Broad_Money_Growth`, `FRED`,
+`Gold_Reserve_Changes`, `Gold_Reserves`, `Gold_Spot_Price`, `Stress_Score`,
+`TIC_Holdings`. Age arithmetic:
+2026-08-01 to 2026-09-26 is 56 days; to the next publication (~2026-10-05) is
+65.
+
+**Sample size.** All ten `CHECKS` groups inspected; all seven distinct
+`pipeline_name` values in the database enumerated.
+
+**Consequence.** Four sources would report permanently "never succeeded" and
+gold would sit CRITICAL while entirely correct. A watchdog that is wrong about
+40% of its inputs is decoration within a week — Principle 9.
+
+**Correction, 2026-09-26.** This entry originally also claimed that *no*
+pipeline writes a CDS log row. That was wrong. `pipelines/cds_fetcher.py:443`
+writes `pipeline_name=CDS_PIPELINE_NAME`, and line 223 defines that constant as
+`"CDS_MultiTenor"`. The claim came from a `grep` for `pipeline_name="..."` as a
+string literal, which cannot see a name bound to a constant, and from a local
+database where the CDS pipeline has simply never run. The headline stands - the
+four names in `CHECKS` were wrong, `CDS` among them, because the real name is
+`CDS_MultiTenor` - but the supporting claim of total absence was a false
+absence produced by an incomplete method. Principle 8: the artefact was real
+and what it implied was not.
+
+**Status.** Closed by the revised `freshness_watchdog.py` issued 07:15, which
+uses `Gold_Spot_Price`, `TIC_Holdings`, `Broad_Money_Growth`, `CDS_MultiTenor`
+and `Gold_Reserve_Changes`, and raises the gold threshold from 45 to 75 days.
+The module is still not in the tree.
+
+### F-0014 — The documented gold refresh command has never done anything
+
+**Claim.** `pipelines/experimental/gold_price_import.py` has no
+`if __name__ == "__main__"` block, so `python -m
+pipelines.experimental.gold_price_import` imports the module, runs no import,
+and exits 0.
+
+**Artifact.** `grep -n "__main__"` returns nothing; the command produced no
+output and exit code 0 on 2026-09-26. The refresh had to be driven by calling
+`run_gold_price_import(db)` directly.
+
+**Why it matters.** This is a second, independent reason the gold price was
+frozen. Even with the path defect in `F-0004` repaired, the refresh command
+named in both ORDER-02 V1 and V2 would have silently done nothing — and
+exiting zero is exactly what makes it invisible.
+
+### F-0015 — No September gold data exists in any file on disk
+
+**Claim.** ORDER-02 A5 cannot be satisfied. Its PROOF (`GOLD_SPOT_USD` latest
+is `2026-09-01`) is unachievable from current sources.
+
+**Artifact.** `..._Sep2026.xlsx`, sheet `Monthly_Avg`: 584 data rows, last row
+`2026-08-31 = 4409.89`. The older `..._since_1978.xlsx`: 583 rows, last row
+`2026-07-31 = 4073.92`. The workbook is named for its publication month, not
+its last data month. WGC publishes month-end, so September will not exist until
+early October.
+
+**Sample size.** Both gold price workbooks on disk, all sheets enumerated.
+
+### F-0016 — Measured blast radius of the three-month gold freeze: two countries understated by 33%, no tier changed
+
+**Claim.** Re-scoring with July gold versus August gold changes two composite
+scores and reassigns no country's tier.
+
+**Artifact.** `compute_composite_stress(db)` run twice on 2026-09-26, the
+"before" state produced by deleting the `2026-08-01` row inside an uncommitted
+transaction and rolling it back. 29 countries scored. RUS 104.8 -> 139.7;
+TUR 126.0 -> 168.0. Both x1.3333, consistent with the divergence multiplier
+moving 1.5 -> 2.0. Both were already `crisis` and remained `crisis`.
+
+**Sample size.** One scoring run per state, 29 countries, one date.
+
+**Direction.** Confirms the prediction in `F-0004`: the freeze **understated**
+divergence. Both affected countries looked calmer than the data supports. The
+tier boundaries absorbed it this time, which is luck rather than a safety
+property — the same 33% understatement at a different point in the
+distribution moves a country between tiers.
+
+### F-0033 — `/api/analyze/country` has never executed; `settings` was never imported
+
+**Claim.** The endpoint `F-0018` describes as an open, funded LLM proxy could
+not have been used as one. `api/routes.py` never imported `settings`, and the
+handler's first statement is `if not settings.grok_api_key:`. Every call raised
+`NameError` and returned 500 before reaching `api.x.ai`.
+
+**Artifact.** `git show HEAD:api/routes.py | grep -n "settings\."` returns
+exactly two hits, lines 507 and 531, both inside this handler. The same file's
+import block contains no `from config import settings` and no wildcard import.
+Reproduced 2026-09-26 against a `TestClient`: `NameError: name 'settings' is
+not defined`, raised from `routes.py:634`.
+
+**Sample size.** One handler, one reproduction, plus a full read of the import
+block at `HEAD`.
+
+**What this corrects.** `F-0018`'s mechanism is right and its severity is
+wrong. Nobody could spend the Grok key through this endpoint, because the
+endpoint was dead. It was a **latent** exposure: adding one import line would
+have armed it silently, with no other change and no review of the handler.
+
+**What it also resolves.** `D-0026` asks whether the AI analyst briefs are
+persisted to the database, because that decides the go-private observable in
+`A-0004`. They are not, and never have been — the handler returns its text to
+the caller and writes nothing, and it has never produced text at all. The brief
+feature has never worked in production.
+
+**Status.** Closed by this session: the import was added and the handler
+rewritten under `D-0031`. The endpoint now works *and* is constrained.
+
+### F-0034 — `A-0009` holds: nothing consumes `/api/health` beyond liveness
+
+**Claim.** `/api/health` was returning `database`, `scheduler`,
+`last_fred_update`, `last_treasury_update` and `last_gold_update` to
+unauthenticated callers, but no consumer read any of it.
+
+**Artifact.** `grep -noE "health\??\.[a-z_]+" ui/src/App.jsx` returns a single
+hit: `health.status` at line 1758. The two other mentions, at lines 2496-2497,
+are ADMIN checklist *strings* instructing a human to check the endpoint, not
+code reading the fields. `fly.toml` and the Dockerfile `HEALTHCHECK` test only
+the status code.
+
+**Sample size.** All consumers enumerated: one frontend, one Fly check, one
+Docker healthcheck, one test.
+
+**Consequence.** The detail could be removed without breaking anything, which
+is what made `D-0035` cheap. Recorded because the assumption was worth checking
+rather than asserting: the fields looked load-bearing and were not.
+
+
+### F-0030 — MERGED INTO `F-0013`
+
+Addendum B V2 assigned this number to the freshness watchdog's wrong pipeline
+names. Recorded here as `F-0013`. Do not reuse this number.
+
+### F-0031 — MERGED INTO `F-0014`
+
+Addendum B V2 assigned this number to `gold_price_import.py` having no
+`__main__` block. Recorded here as `F-0014`. Do not reuse this number.
+
+### F-0032 — MERGED INTO `F-0012`
+
+Addendum B V2 assigned this number to the identity of `127.0.0.1:5432`.
+Recorded here as `F-0012`. Do not reuse this number.
+
+---
+
+**Merge note, 2026-09-26.** Addendum B V2 carries its own `F-0030`, `F-0031`
+and `F-0032` — the freshness watchdog's wrong pipeline names, the missing
+`__main__` block, and the identity of `127.0.0.1:5432`. Those are the same
+three findings already recorded here as `F-0013`, `F-0014` and `F-0012`, found
+independently by the Builder session against the running system rather than
+against the snapshot.
+
+The Builder entries are retained and the Addendum B versions are not appended,
+because the retained ones carry the first-hand artefacts — including the
+correction to `F-0013`, which Addendum B does not have. Nothing is lost: the
+numbers `F-0030`–`F-0032` in Addendum B V2 resolve to `F-0013`, `F-0014` and
+`F-0012` here.
+
+### F-0035 — ORDER-01 A4 cannot be calibrated against the local database
+
+**Claim.** The watchdog's first run reported `US Treasury yield curve` as
+CRITICAL at 23 days against a 5-day limit, which trips ORDER-01 A4's stopping
+mechanism. The cause is a stale local database, not a wrong threshold.
+
+**Artifact.** Local `update_logs`, 2026-09-26: the last successful `FRED` run
+was 2026-09-06 09:00, and the run before it was `partial`. Local `DGS10`,
+`DGS5` and `DGS2` all end 2026-09-03; `DGS30` is absent from this database
+entirely. Production, per `F-0001`, held `DGS10` through 2026-09-24 with FRED
+matching, and per `F-0003` was running nightly through 2026-09-26.
+
+**Sample size.** One watchdog run against one database.
+
+**Why it matters.** A4's stated expectation — "Treasury yields OK" — was
+written for production. Run here it reports a real staleness in a dev copy
+whose scheduler has not run for three weeks. The order's warning still stands
+and is the reason nothing was tuned: **the thresholds are not established as
+wrong by this run, and adjusting them on this evidence would destroy the only
+calibration evidence available.** A4 must be re-run against production before
+any threshold is touched.
+
+**Confirmed correct by the same run:** `Gold spot price` reads **OK** at 56
+days against the new 75-day limit — the fix in `F-0004` and the threshold
+change from 45 to 75 both validated in one observation. Under the old 45-day
+limit this same healthy series would have read CRITICAL, which is `D-0024`'s
+argument demonstrated rather than asserted.
+
+### F-0036 — The watchdog's config self-check reports a false absence for a pipeline that has never run
+
+**Claim.** The revised `freshness_watchdog.py` validates the pipeline names in
+`CHECKS` against the distinct `pipeline_name` values present in `update_logs`.
+A correctly-named pipeline that has simply never run is therefore reported as a
+configuration error, and it sets the whole report's status to `config_error`.
+
+**Artifact.** Run of 2026-09-26 against the local database:
+`FRESHNESS CONFIG ERROR - CHECKS names 1 pipeline(s) absent from update_logs:
+CDS_MultiTenor`. The name is correct: `pipelines/cds_fetcher.py:223` defines
+`CDS_PIPELINE_NAME = "CDS_MultiTenor"` and line 443 writes it. The CDS pipeline
+has never run on this database, so no row carries that name.
+
+**Sample size.** One run, one affected check. `TreasuryDirect` was handled
+correctly and separately, as `Configured pipelines not yet run`.
+
+**Consequence.** `update_logs` cannot distinguish "this name is wrong" from
+"this pipeline has not run yet" — they produce identical evidence. The check
+should validate names against the constants the pipelines actually declare, and
+treat a never-run pipeline the way it already treats `TreasuryDirect`. Until it
+does, a fresh database or a newly added pipeline yields `config_error` on an
+otherwise correct configuration, and a status nobody can trust is the one
+people learn to scroll past - Principle 9.
+
+**Note.** This is the same false-absence shape as the Builder's own error in
+`F-0013`, made for the same reason: the evidence that a name is absent looks
+identical whether the name is wrong or the code path has never executed.
+
+**Status.** Open. Does not block installation; the report is otherwise correct.

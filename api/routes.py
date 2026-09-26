@@ -1,11 +1,13 @@
 import httpx
+import time
 from pipelines.fred_fetcher import run_fred_fetch
-from fastapi import APIRouter, Depends, Query, HTTPException
+from fastapi import APIRouter, Depends, Query, HTTPException, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
 from typing import List, Optional
 from database.connection import get_db, get_session
+from config import settings
 from database.models import Metric, TimeSeries, UpdateLog, Country
 from api.schemas import (
     MetricResponse,
@@ -18,6 +20,10 @@ from api.schemas import (
 from pipelines.scheduler import scheduler
 from pipelines.cds_fetcher import run_cds_fetch, get_cds_coverage
 from pipelines.stress_score_v2 import get_latest_metric_value
+# ORDER-03 B2 / F-0020: previously imported inside the handler bodies, which
+# hid these dependencies from any static read of the imports.
+from pipelines.gold_fetcher import compute_cross_asset_stress
+from pipelines.composite_stress import compute_composite_stress
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,9 +31,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["treasury-monitor"])
 
 
-@router.get("/health", response_model=HealthResponse)
-def health_check(db: Session = Depends(get_db)):
-    """System health check"""
+@router.get("/health")
+def health_check():
+    """Liveness only.
+
+    ORDER-03 A0 / F-0019: this path is listed in main.py OPEN_PATHS and is
+    served WITHOUT authentication for the Docker and Fly probes. It therefore
+    carries no pipeline detail, no scheduler state and no database state -
+    those moved to GET /api/pipeline-status, behind auth. Do not add data here.
+
+    It also takes no database session: the Fly probe hits this every 15s and a
+    liveness check should not consume a connection from a pool of 10.
+    """
+    return {"status": "healthy"}
+
+
+@router.get("/pipeline-status", response_model=HealthResponse)
+def pipeline_status(db: Session = Depends(get_db)):
+    """Pipeline freshness detail. Authenticated - this is what /api/health used
+    to return to anyone who asked."""
     fred_log = db.query(UpdateLog).filter_by(pipeline_name="FRED").order_by(UpdateLog.completed_at.desc()).first()
     treasury_log = db.query(UpdateLog).filter_by(pipeline_name="TIC_Holdings").order_by(UpdateLog.completed_at.desc()).first()
     gold_log = db.query(UpdateLog).filter_by(pipeline_name="Gold_Reserves").order_by(UpdateLog.completed_at.desc()).first()
@@ -246,7 +268,6 @@ def get_cross_asset_stress(db: Session = Depends(get_db)):
     with optional divergence multiplier when gold spot is rising.
     """
     try:
-        from pipelines.experimental.gold_fetcher import compute_cross_asset_stress
         result = compute_cross_asset_stress(db)
         # Wrap into expected format
         cross = [r for r in result if r.get("cross_asset_stress") or r.get("divergence_signal")]
@@ -497,19 +518,164 @@ def trigger_gold_changes_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ORDER-03 A2 / F-0018. The prompt is built here, from data already in the
+# database. The endpoint takes a country code and nothing else, so it cannot be
+# used as a funded pass-through to the model provider.
+SOVEREIGN_YIELD_CODES = {
+    "JPN": "IRLTLT01JPM156N", "DEU": "IRLTLT01DEM156N", "ITA": "IRLTLT01ITM156N",
+    "FRA": "IRLTLT01FRM156N", "ESP": "IRLTLT01ESM156N", "GBR": "IRLTLT01GBM156N",
+    "AUS": "IRLTLT01AUM156N", "CAN": "IRLTLT01CAM156N", "NLD": "IRLTLT01NLM156N",
+    "NOR": "IRLTLT01NOM156N", "SWE": "IRLTLT01SEM156N", "CHE": "IRLTLT01CHM156N",
+    "BEL": "IRLTLT01BEM156N", "KOR": "IRLTLT01KRM156N",
+}
+
+_BRIEF_HITS = {}
+_BRIEF_MAX_PER_HOUR = 20
+
+
+def _brief_rate_limit_ok(client_key: str) -> bool:
+    """Per-client cap. In-process only - it resets on restart and is not shared
+    between machines. That is a documented limit, not a claim of robustness."""
+    now = time.time()
+    hits = [t for t in _BRIEF_HITS.get(client_key, []) if now - t < 3600]
+    if len(hits) >= _BRIEF_MAX_PER_HOUR:
+        _BRIEF_HITS[client_key] = hits
+        return False
+    hits.append(now)
+    _BRIEF_HITS[client_key] = hits
+    return True
+
+
+def _gather_brief_context(db: Session, iso: str) -> dict:
+    """Read everything the prompt needs. Caller closes the session before the
+    outbound HTTP call."""
+    country = db.query(Country).filter(Country.iso_code == iso).first()
+    if country is None:
+        return None
+
+    ctx = {"iso": iso, "name": country.name}
+
+    tic_metric = db.query(Metric).filter_by(code="TIC_UST_HOLDINGS").first()
+    tic_rows = []
+    if tic_metric:
+        tic_rows = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == tic_metric.id,
+            TimeSeries.country_id == country.id,
+        ).order_by(TimeSeries.date.desc()).limit(2).all()
+        ctx["tic_months"] = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == tic_metric.id,
+            TimeSeries.country_id == country.id,
+        ).count()
+    ctx["tic_latest"] = float(tic_rows[0].value) if tic_rows else None
+    ctx["tic_mom_pct"] = None
+    if len(tic_rows) == 2 and float(tic_rows[1].value):
+        prev = float(tic_rows[1].value)
+        ctx["tic_mom_pct"] = (float(tic_rows[0].value) - prev) / prev * 100
+
+    gold_metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
+    gold_row = None
+    if gold_metric:
+        gold_row = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == gold_metric.id,
+            TimeSeries.country_id == country.id,
+        ).order_by(TimeSeries.date.desc()).first()
+    ctx["gold_tonnes"] = float(gold_row.value) if gold_row else None
+
+    yield_code = SOVEREIGN_YIELD_CODES.get(iso)
+    country_yield = get_latest_metric_value(db, yield_code) if yield_code else None
+    us10y = get_latest_metric_value(db, "DGS10")
+    ctx["spread_bps"] = None
+    if country_yield is not None and us10y is not None:
+        ctx["spread_bps"] = (country_yield - us10y) * 100
+
+    ctx["cds_5y"] = get_latest_metric_value(db, f"{iso}_CDS_5Y")
+    ctx["cds_10y"] = get_latest_metric_value(db, f"{iso}_CDS_10Y")
+    ctx["cds_term_spread"] = None
+    if ctx["cds_5y"] is not None and ctx["cds_10y"] is not None:
+        ctx["cds_term_spread"] = ctx["cds_10y"] - ctx["cds_5y"]
+    return ctx
+
+
+def _render_brief_prompt(c: dict) -> str:
+    def bps(v):
+        return "not available" if v is None else f"{'+' if v > 0 else ''}{v:.0f} basis points"
+
+    tic = "no data"
+    if c["tic_latest"] is not None:
+        tic = f"${c['tic_latest']:.1f}B current"
+        if c["tic_mom_pct"] is not None:
+            tic += f", MoM {'+' if c['tic_mom_pct'] > 0 else ''}{c['tic_mom_pct']:.2f}%"
+        tic += f", {c.get('tic_months', 0)} months of history"
+
+    gold = "no data" if c["gold_tonnes"] is None else f"{c['gold_tonnes']:.0f} metric tonnes"
+    cds5 = "not available" if c["cds_5y"] is None else f"{c['cds_5y']} bps"
+    cds10 = "not available" if c["cds_10y"] is None else f"{c['cds_10y']} bps"
+    term = "not available"
+    if c["cds_term_spread"] is not None:
+        term = f"{'+' if c['cds_term_spread'] > 0 else ''}{c['cds_term_spread']} bps"
+
+    return f"""You are a financial analyst writing a concise 200-250 word brief for a sophisticated audience. Analyze {c['name']} ({c['iso']}) based on this data:
+
+TREASURY HOLDINGS: {tic}
+GOLD RESERVES: {gold}
+SOVEREIGN YIELD SPREAD VS US 10Y: {bps(c['spread_bps'])}
+
+SOVEREIGN CDS:
+- 5Y CDS: {cds5}
+- 10Y CDS: {cds10}
+- Term Structure (10Y - 5Y): {term}
+
+Write three short sections:
+
+SITUATION
+What is this country doing with its US Treasury holdings and gold reserves? Include CDS levels if available. 2-3 plain sentences using the real numbers.
+
+WHAT TO WATCH
+What trends matter most right now? What would signal a change in posture? 2-3 sentences.
+
+RISK FACTORS
+What are the top 2 risks to monitor? Be specific. 2 sentences.
+
+Use plain English. No markdown formatting. No bullet points."""
+
+
 @router.post("/analyze/country")
-async def analyze_country(payload: dict, db: Session = Depends(get_db)):
+async def analyze_country(payload: dict, request: Request):
     """
-    Generate sovereign analysis using Grok (replaces Claude).
-    Expects: { "prompt": "..." }
+    Generate a sovereign analysis brief for one country.
+    Expects: { "country": "JPN" }
     Returns: { "text": "..." }
+
+    Note there is deliberately no `db: Session = Depends(...)` here. The pool
+    holds 10 connections and this handler awaits an external call for up to 75
+    seconds; holding one across that await lets ten concurrent briefs block
+    every other endpoint. The session below is opened and closed first.
     """
     if not settings.grok_api_key:
         raise HTTPException(status_code=503, detail="GROK_API_KEY not configured")
 
-    prompt = payload.get("prompt", "")
-    if not prompt:
-        raise HTTPException(status_code=400, detail="prompt required")
+    iso = str(payload.get("country", "")).strip().upper()
+    if not iso.isalpha() or len(iso) != 3:
+        raise HTTPException(
+            status_code=422,
+            detail="country must be a 3-letter ISO code; free-form prompts are not accepted",
+        )
+
+    client_key = request.client.host if request.client else "unknown"
+    if not _brief_rate_limit_ok(client_key):
+        raise HTTPException(
+            status_code=429,
+            detail=f"brief limit is {_BRIEF_MAX_PER_HOUR} per hour",
+        )
+
+    db = get_session()
+    try:
+        context = _gather_brief_context(db, iso)
+    finally:
+        db.close()
+
+    if context is None:
+        raise HTTPException(status_code=404, detail=f"unknown country {iso}")
 
     system_prompt = (
         "You are a brutally honest sovereign risk analyst. "
@@ -521,7 +687,7 @@ async def analyze_country(payload: dict, db: Session = Depends(get_db)):
         "model": "grok-2-latest",
         "messages": [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": _render_brief_prompt(context)},
         ],
         "temperature": 0.35,
         "max_tokens": 750,
@@ -529,7 +695,7 @@ async def analyze_country(payload: dict, db: Session = Depends(get_db)):
 
     headers = {
         "Authorization": f"Bearer {settings.grok_api_key}",
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
     }
 
     try:
@@ -537,7 +703,7 @@ async def analyze_country(payload: dict, db: Session = Depends(get_db)):
             response = await client.post(
                 "https://api.x.ai/v1/chat/completions",
                 json=payload_data,
-                headers=headers
+                headers=headers,
             )
             response.raise_for_status()
             data = response.json()
@@ -545,7 +711,7 @@ async def analyze_country(payload: dict, db: Session = Depends(get_db)):
             return {"text": text}
     except Exception as e:
         logger.error(f"Grok API call failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Grok analysis failed: {str(e)}")
+        raise HTTPException(status_code=502, detail="Grok analysis failed")
 
 
 @router.get("/cds/all")
@@ -619,7 +785,6 @@ def get_composite_stress(db: Session = Depends(get_db)):
     Returns tiered results: CRISIS / STRESSED / ELEVATED / WATCH.
     """
     try:
-        from pipelines.experimental.composite_stress import compute_composite_stress
         result = compute_composite_stress(db)
         return result
     except Exception as e:

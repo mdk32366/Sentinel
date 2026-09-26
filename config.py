@@ -13,7 +13,9 @@ class Settings(BaseSettings):
 
     # Basic Auth (set via Fly.io secrets)
     auth_username: str = "sentinel"
-    auth_password: str = "v1g1lant"
+    # ORDER-03 A3 / F-0009: no default. A missing AUTH_PASSWORD is a startup
+    # failure, not a fallback to a credential published in a public repo.
+    auth_password: str
 
     # API
     api_host: str = "0.0.0.0"

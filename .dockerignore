@@ -1,5 +1,43 @@
-fly.toml
-.git/
-__pycache__/
+# ORDER-03 A1 / F-0012. The Dockerfile does `COPY . .`, so anything not
+# excluded here is baked into the production image. `.env` was not excluded.
+
+# Secrets and local environment
+.env
+.env.*
+!.env.template
 .envrc
+
+# Virtualenvs - note this project's convention is `venv/`, not `.venv/`
+venv/
 .venv/
+env/
+
+# Dependencies and build caches
+node_modules/
+ui/node_modules/
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Logs (F-0023: these have held the live FRED key)
+*.log
+
+# Local snapshots only. data/incoming/ is NOT excluded: it is 4.2MB and
+# pipelines/gold_reserve_changes.py reads a workbook from it at runtime,
+# reached from api/routes.py. Excluding it breaks that endpoint in the image.
+*.zip
+
+# Repo and tooling metadata
+.git/
+.github/
+.vscode/
+fly.toml
+docker-compose.yaml
+Dockerfile.backup
+
+# Tests and docs do not run in the image
+tests/
+docs/
+*.md
+!README.md
