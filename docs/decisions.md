@@ -364,3 +364,50 @@ rule simple — one prefix, one behaviour, no exceptions to reason about.
 **Reversal condition.** If a data endpoint is ever large enough that
 revalidation matters, give that endpoint an `ETag` explicitly. Do not relax the
 default.
+
+### D-0039 — Disposability is a canary table, armed by the test package
+
+**Choice.** `database.connection` carries `assert_disposable()`, which requires
+a `canary` table holding the marker `SENTINEL_DISPOSABLE`. `tests/__init__.py`
+sets `SENTINEL_TEST_RUN=1`, and `get_session()` / `get_db()` refuse with
+`NotADisposableDatabase` when that marker is set and the canary is absent. The
+canary is created only by `tools/mark_disposable.py`, never by the application.
+
+**Rejected.** A hostname or port check — defeated by a tunnel, which is the
+signature that emptied a database twice. A reachability check — "skip unless a
+database is reachable" means supplying production credentials *arms* the guard
+instead of tripping it, which is Principle 6's blood line exactly. A required
+hand-typed environment variable — acceptable under Step 12, but it protects the
+session rather than the database, so a second terminal with the variable set
+carries the same risk to a different target.
+
+**What forced the call.** Step 12 demands both halves at once: the suite passes
+offline, and a real database is a hard error even through a tunnel. Firing on
+session creation *during a test run* satisfies both — our tests use in-memory
+SQLite and never ask for that session, so offline runs are untouched, while any
+future fixture that does reach for a real database must prove identity first.
+
+**What it does not cover, written where the next person will look.** It does
+not protect scripts run outside the suite; pointing a pipeline at production is
+what pipelines are for. It guards the case where a *test fixture* reaches a
+database whose data is not expendable.
+
+**Reversal condition.** If a test ever legitimately needs the real database,
+that test marks its own throwaway instance. Do not weaken the guard to admit it.
+
+### D-0040 — CI runs discovery from the repository root
+
+**Choice.** `python -m unittest discover -t . -s tests -p "test_*.py" -v`.
+
+**Rejected.** The hand-maintained module list, which left two test files outside
+the gate for weeks (`F-0006`). Also rejected: `discover -s tests` without
+`-t .`.
+
+**What forced the call.** `-t .` is not cosmetic. Without it, discovery inserts
+`tests/` on `sys.path` and imports the modules as top-level names, so
+`tests/__init__.py` never executes and the `D-0039` guard is never armed. See
+`F-0040`.
+
+**How it is kept honest.** `test_disposable_guard` asserts that
+`SENTINEL_TEST_RUN` is set. An invocation that disarms the guard fails the suite
+rather than passing quietly, so this cannot regress into a silent hole.

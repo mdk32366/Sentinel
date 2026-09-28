@@ -17,7 +17,12 @@ than 0.01.
 The displayed value depends on which ran last. Nothing errors. Direction:
 unbiased noise, worse than a bias because it cannot be corrected for.
 
-**Status:** ASSUMED — test specified, not yet run.
+**Status:** ASSUMED — test specified, not yet run. **Strong supporting
+evidence recorded 2026-09-28**: 920 value pairs over 184 overlapping business
+days, maximum absolute difference 0.0000 across all five tenors (`F-0041`).
+That was a one-off script, not the B1 contract test, so this stays ASSUMED —
+what has been shown is that the two sources agreed at one moment, not that a
+disagreement would ever be caught.
 
 ### A-0002 — Treasury's CSV endpoint stays unauthenticated and stable in shape
 
@@ -31,7 +36,13 @@ recognised tenor columns in header".
 FRED's one-day lag. Degradation, not corruption. Treasury *adding* a tenor is
 survivable; *renaming* one is not.
 
-**Status:** ASSUMED — never fetched from this project. ORDER-01 A8 is first
+**Status:** **FIRST CONTACT MADE 2026-09-28, endpoint behaves as assumed.**
+`fetch_curve_csv()` returned 185 parseable rows covering 2026-01-02 to
+2026-09-25, unauthenticated, with every `TENOR_MAP` key matched — no
+"No recognised tenor columns" error. One unassumed property was discovered: the
+rows arrive newest-first (`F-0042`).
+
+*Original status, retained:* ASSUMED — never fetched from this project. ORDER-01 A8 is first
 contact.
 
 ### A-0003 — FRED's 502s remain single-series and transient

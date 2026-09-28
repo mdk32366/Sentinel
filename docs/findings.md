@@ -127,11 +127,34 @@ configuration is identical to the one that truncated production twice.
 
 ### F-0009 — `config.py` carries a working password as a source default
 
-**Claim.** `config.py:20` — `auth_password: str = "v1g1lant"` — in a public
-repository. A missing `AUTH_PASSWORD` secret does not fail startup; it falls
-back to a published credential.
+**Claim.** `config.py:20` carried a hard-coded `auth_password` default in a
+public repository. A missing `AUTH_PASSWORD` secret did not fail startup; it
+fell back to that published credential.
 
-**Artifact.** `config.py:20` at `378352f`.
+**Artifact.** `config.py:20` at `378352f`. **The value is deliberately not
+reproduced here** — see the amendment below for why.
+
+**Amendment 2026-09-28 — this entry published the credential it was reporting.**
+As first written, the claim quoted the literal default string. `docs/findings.md`
+is tracked and this repository is public (`D-0026` is unruled, so it has not
+gone private), which means the register republished the exact secret that
+removing it from `config.py` was meant to retire. The quote has been redacted,
+but **redaction now does not unpublish it**: the register was committed in PR
+#11 and merged to `master`, so the string is in git history and in every clone
+and fork taken since 2026-09-26.
+
+**Consequence.** If the Fly `AUTH_PASSWORD` secret still holds that value, the
+dashboard password is public and has been for two days. Its digest is visible
+via `flyctl secrets list` but the value is not, so this cannot be settled by
+reading — it has to be rotated. `AUTH_PASSWORD` joins the rotation list in
+ORDER-01 C1 alongside `FRED_API_KEY`, `ANTHROPIC_API_KEY` and `GROK_API_KEY`,
+and it should be treated as compromised rather than merely suspect.
+
+**The general lesson.** A findings register names artefacts, and an artefact
+that *is* a secret cannot be named by value. `config.py:20 at 378352f` locates
+it exactly and reveals nothing. Principle 4 says never in a file, never
+committed, never pasted — and a document whose whole purpose is to be
+committed is the last place the exception should have been made.
 
 ### F-0010 — The FRED API key is in production logs and served over HTTP
 
@@ -744,3 +767,124 @@ and the API was correct. Only the copy in the browser was stale, and that is
 the one layer none of the guards look at.
 
 **Status.** Closed by `D-0038`.
+
+### F-0040 — The Step 12 guard was bypassable by the very command that was meant to run it
+
+**Claim.** `python -m unittest discover -s tests` imports the test modules as
+top-level names rather than as members of the `tests` package, so
+`tests/__init__.py` does not execute, `SENTINEL_TEST_RUN` is never set, and the
+`D-0039` guard is inert for the whole run.
+
+**Artifact.** 2026-09-28. With `-s tests` alone: 2 failures, and the failing
+test names print as `test_disposable_guard.TestDisposableGuard...` with no
+`tests.` prefix — the package was never imported. `os.environ.get(
+"SENTINEL_TEST_RUN")` returned `None`. With `-t . -s tests`: 55 tests, OK.
+
+**Sample size.** Two invocations of the same suite, same machine, same moment.
+
+**How it was caught.** By the guard's own test asserting that the guard was
+armed — not by reading the code. The first version of ORDER-01 A5's fix used
+`discover -s tests`, which would have shipped a Step 12 guard that never fired
+while every test passed and the gate stayed green. A guard proved only by
+reading it is not proved.
+
+**Why it is recorded.** This is the third false-absence in this project's
+register with the same shape (`F-0013`, `F-0036`), and the first to be caught
+by a mechanism rather than by noticing. The defence that worked was a test
+asserting its own preconditions.
+
+### F-0041 — FRED and Treasury Direct agree exactly across 184 overlapping business days
+
+**Claim.** For every date and tenor present in both sources in 2026, the values
+are identical — not within 0.01, but equal.
+
+**Artifact.** 2026-09-28, read-only. `parse_curve_csv(fetch_curve_csv())` gave
+185 rows covering 2026-01-02 to 2026-09-25. Compared against the local database
+for `DGS2`, `DGS5`, `DGS7`, `DGS10`, `DGS30` over the 184 overlapping business
+days: **920 value pairs, 0 differing by more than 0.01, maximum absolute
+difference 0.0000 for every tenor.**
+
+**Sample size.** 920 pairs, 184 days, 5 tenors, one fetch.
+
+**What it does and does not establish.** It is strong evidence for `A-0001`,
+and therefore for `D-0022`'s dual-write design. **It is not the B1 contract
+test.** B1 requires the check to exist in the suite and run in the gate; this
+was a one-off script and proves only that the two sources agreed at the moment
+it ran. `A-0001` stays ASSUMED until the test exists.
+
+### F-0042 — The Treasury CSV is ordered newest-first, and ORDER-01's A8 command reads the oldest row
+
+**Claim.** `parse_curve_csv` preserves the source ordering, which is
+**descending**. `r[-1]` is therefore the oldest row, not the newest.
+
+**Artifact.** 2026-09-28: 185 rows, `dates[0]` = 2026-09-25, `dates[-1]` =
+2026-01-02, ordering confirmed descending. ORDER-01 A8's command prints
+`r[-1]['date']` and its PROOF reads *"the last row is pasted back with a `DGS7`
+value"* — satisfied by `2026-01-02`, nine months stale. B3's PROOF then says
+*"`latest_date` matches what A8 reported"*, which would compare a backfill's
+newest date against January.
+
+**Sample size.** One fetch, 185 rows.
+
+**Why it matters.** The command succeeds, prints a well-formed row with a
+plausible date and a real `DGS7` value, and is wrong about which row it is.
+Principle 11 in a PROOF line rather than in the code. The actual newest row is
+2026-09-25: `DGS7` 5.06, `DGS10` 5.17, `DGS30` 5.49.
+
+**Consequence for the design.** Treasury carries 2026-09-25 while FRED ends at
+2026-09-24, so the same-day premise of ORDER-01 holds — Treasury is one
+business day ahead, which is the entire point of the pipeline.
+
+### F-0043 — FRED has no live gold spot series, and `GOLDPMGBD228NLBM` does not exist
+
+**Claim.** There is no FRED series carrying gold spot in USD per troy ounce
+with a current observation. The series some 2026 sources still cite was not
+restored; those sources are stale.
+
+**Artifact.** 2026-09-28. `/fred/series/search?search_text=gold+price&limit=40`
+returned 30 hits; 11 were Daily or Monthly and updated within 60 days, and
+**every one is an index** — `NASDAQQGLDI`, `GVZCLS` (volatility),
+`WPU159402`, `PCU2122221222` and other PPI series. The single hit with units
+"Dollars per Fine Ounce" is `A04018GB00LONA286NNBR`, annual, last updated
+2012-08-16. Direct lookups of `GOLDPMGBD228NLBM` and `GOLDAMGBD228NLBM` both
+returned `400 — "The series does not exist."`
+
+**Sample size.** One search of 40, two direct series lookups.
+
+**Resolves.** ORDER-02 Part A's open question. The 2022-01-31 ICE Benchmark
+deletion stands.
+
+### F-0044 — LBMA serves the same series the manual CSV carries, daily and without authentication
+
+**Claim.** `https://prices.lbma.org.uk/json/gold_pm.json` is live, requires no
+credentials, and its monthly mean reproduces the existing `GOLD_SPOT_USD`
+history exactly.
+
+**Artifact.** 2026-09-28: HTTP 200, `application/json`, 915 KB, 14,691 daily
+entries of the form `{"d": "2026-09-25", "v": [4261.05, 3216.67, 3737.79]}` —
+USD, GBP, EUR. 702 months of history against the WGC CSV's 584.
+
+The join check, for the 13 most recent overlapping months:
+
+| Month | WGC CSV | LBMA PM monthly mean | Diff |
+|---|---|---|---|
+| 2025-08 | 3363.00 | 3362.99 | 0.00% |
+| 2026-05 | 4587.50 | 4587.52 | 0.00% |
+| 2026-07 | 4073.90 | 4073.92 | 0.00% |
+| 2026-08 | 4409.90 | 4409.89 | 0.00% |
+
+**Worst discrepancy across all 13 months: 0.00%.**
+
+**Sample size.** 13 overlapping months compared, all matching to two decimal
+places.
+
+**What this means.** They are not two sources that happen to agree — they are
+the same series. WGC sources from ICE Benchmark Administration, which
+administers the LBMA Gold Price. The CSV is a monthly mean of these daily
+fixes, rounded to one decimal. There is no splice risk, which is the condition
+ORDER-02 B2's stopping mechanism exists to detect.
+
+**What it does not cover.** Gold *reserves* by country, which stay manual
+either way — the WGC country series is behind the same account wall with no
+public API. And the frequency question in `A-0005` becomes live: the existing
+series is monthly and normalised to day-1 on write, while this source is daily.

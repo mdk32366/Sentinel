@@ -42,8 +42,15 @@ jobs:
         run: pip install -r requirements.txt
       - name: Initialize database schema
         run: python -c "from database.connection import init_db; init_db()"
-      - name: Run frontend auth, cold-start, and CDS coverage tests
-        run: python -m unittest tests.test_frontend_auth tests.test_lifespan_cold_start tests.test_cds_coverage tests.test_cds_parser -v
+      # ORDER-01 A5 / F-0006: discovery, not a hand-maintained list. Two test
+      # files sat outside the gate for weeks and read as coverage. A new test
+      # is now in the gate by default rather than by memory.
+      - name: Run the test suite
+        # -t . matters: without it discovery imports the test modules as
+        # top-level names, tests/__init__.py never runs, and the Step 12
+        # guard is never armed. test_disposable_guard fails loudly if that
+        # happens, so this cannot regress silently.
+        run: python -m unittest discover -t . -s tests -p "test_*.py" -v
 
   deploy:
     name: Deploy app
