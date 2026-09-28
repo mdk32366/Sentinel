@@ -680,3 +680,12 @@ output is affected today precisely because nothing calls either module.
 backfill, scheduler registration, `/api/freshness`) or by removing the modules
 until that work is scheduled. Leaving them in place unmarked is the one option
 that should not persist.
+
+**Update 2026-09-28.** The seven-year now exists as real data, but this finding
+is **not** closed by that. `DGS7` was added to `FRED_METRICS` and backfilled to
+1,246 points covering 2021-09-29 to 2026-09-24 (`D-0036`), which removes the
+"`DGS7` exists only as a lookup-table entry" half of the claim. Everything else
+stands unchanged: `treasury_direct.py` and `freshness_watchdog.py` are still
+imported by nothing, still registered nowhere, and there is still no
+`/api/freshness` route. The seven-year arrived through the FRED pipeline, not
+through the module named after it.

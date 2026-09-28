@@ -7,6 +7,7 @@ const API = window.location.hostname === "localhost" ? "http://localhost:8000/ap
 const METRICS = [
   { code: "DGS30",      label: "30Y Treasury",  color: "#D4B06A", unit: "%" },
   { code: "DGS10",      label: "10Y Treasury",  color: "#C8A96E", unit: "%" },
+  { code: "DGS7",       label: "7Y Treasury",   color: "#A3B19B", unit: "%" },
   { code: "DGS5",       label: "5Y Treasury",   color: "#7EB8C9", unit: "%" },
   { code: "DGS2",       label: "2Y Treasury",   color: "#9B8EC4", unit: "%" },
   { code: "FEDFUNDS",   label: "Fed Funds",     color: "#5DB87A", unit: "%" },
@@ -1779,7 +1780,7 @@ setLatestAll({ latest, month30 });
 
         {tab === "MARKETS" && (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 12, marginBottom: 28 }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 28 }}>
               {METRICS.map(m => <StatCard key={m.code} label={m.label} value={latest[m.code]} unit={m.unit} change={getChange(m.code, m.unit)} color={m.color} />)}
             </div>
             <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "24px 28px" }}>
