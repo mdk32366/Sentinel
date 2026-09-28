@@ -290,3 +290,51 @@ and was correct to mint — a real choice with a rejected alternative, and
 leaving it unrecorded is the failure this register exists to prevent.
 
 ---
+
+### D-0036 — Ship `DGS7` through FRED alone; `treasury_direct` stays unregistered
+
+**Choice.** Add `DGS7` to `FRED_METRICS` and surface it in the UI. Do not
+register `treasury_direct` and do not add a second writer for the `DGS*`
+namespace.
+
+**Rejected.** Completing ORDER-01 B3-B5 in the same pass — registering the
+21:00 Treasury Direct job and backfilling from `home.treasury.gov`. That is the
+route the order specifies and it also delivers `DGS7`, same-day rather than on
+FRED's one-business-day lag.
+
+**What forced the call.** `D-0022` makes Treasury Direct and FRED two producers
+writing the same metric codes, and it is valid only if the contract test in
+ORDER-01 B1 passes — the two sources agreeing to 0.01 across overlapping dates.
+That test has not been written or run, and `A-0002` records that this project
+has never once fetched the Treasury endpoint. Registering the job to obtain the
+seven-year would start the dual write that the test exists to validate, and
+would do it for a reason unrelated to the test.
+
+Adding `DGS7` to `FRED_METRICS` is a **single** producer on a namespace FRED
+already owns. It carries none of `D-0022`'s risk and needs none of its
+preconditions.
+
+**Cost, stated.** The seven-year arrives on FRED's one-business-day lag rather
+than same-day, and `F-0038` stays open: `treasury_direct.py` and
+`freshness_watchdog.py` remain deployed and unreferenced.
+
+**Reversal condition.** When the B1 contract test passes, Treasury Direct is
+registered and takes the same-day write. `DGS7` needs no change at that point —
+it is already in `FRED_METRICS`, which is where `D-0022` expects it.
+
+### D-0037 — Six tickers to a line
+
+**Choice.** The MARKETS stat-card grid moves from five columns to six, so the
+eleven tickers occupy exactly two rows of 6 + 5. The yield curve and Fed Funds
+fall on the first line together.
+
+**Rejected.** Leaving five columns, which would have pushed the eleventh ticker
+onto a third row holding a single card.
+
+**What forced the call.** Requested by the owner as part of adding the
+seven-year. Six columns is the first width at which eleven tickers fit two
+lines; it also happens to put `DGS30 / DGS10 / DGS7 / DGS5 / DGS2 / FEDFUNDS`
+on one row, which reads as the curve.
+
+**Watch for.** A twelfth ticker still fits. A thirteenth spills to a third row
+and this decision needs revisiting rather than silently widening again.
