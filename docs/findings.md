@@ -1024,3 +1024,75 @@ a renamed field empties a tile silently.
 **production**, where CDS and `region` have values, and model from that. That
 is a twenty-minute job with production read access and is not guesswork; it
 simply cannot be done from here.
+
+### F-0050 — `TIC_Holdings` reported success for nine months while importing a frozen year
+
+**Claim.** The TIC pipeline has run successfully and changed nothing since
+2025-12-01. Its configured source is a **calendar-year file** that covers
+January to December 2025 and will never advance, so every run faithfully
+re-imports the same year and reports `success`.
+
+**Artifact.** Production `/api/pipeline-logs?pipeline_name=TIC_Holdings`,
+2026-09-28: the ten most recent runs are all `status=success`,
+`records_inserted=0`, `records_updated=10009` — identical every time.
+`/api/holdings` returns `date: 2025-12-01` with 36 countries.
+`https://ticdata.treasury.gov/Publish/mfhhis01.txt` fetches live, 99,490 bytes,
+and its header row reads `Dec Nov Oct ... Jan` over `2025 2025 ... 2025`.
+
+**Sample size.** Ten consecutive production runs; one live fetch of the source.
+
+**What is NOT established.** Whether Treasury publishes 2026 MFH data at some
+other URL. `mfhhis02` through `mfhhis07` return 404; `mfh.txt` exists but
+covers January 2022 to January 2023 and `parse_tic_mfh` returns zero countries
+against it, because that file is space-delimited where the parser expects
+tabs. **Four guessed URLs finding nothing is not proof the data does not
+exist** — that is the false-absence shape already recorded three times in this
+register (`F-0013`, `F-0036`, `F-0040`), and this entry will not repeat it. The
+upstream question is open and belongs to whoever can read the TIC release
+schedule.
+
+**Why it survived.** Every layer worked. The fetch returned 200, the parser
+returned 36 countries, the writer updated 10,009 rows, the log said `success`.
+The only thing wrong was that the answer had not changed in nine months, and
+nothing in the pipeline compared the data's age to anything. This is `F-0004`
+again with a different source: right shape, right provenance, plausible
+numbers, frozen.
+
+**Consequence, direction stated.** TIC holdings feed the composite scorer's
+first dimension. Every tier assignment since December 2025 has been computed
+against nine-month-old holdings. Unlike the gold case the direction is not
+uniform — a country that has since sold will look unchanged, and one that has
+bought will too — so this understates *movement* in both directions rather than
+biasing the level.
+
+**Status.** Half closed by `D-0045`: the pipeline now fails loudly instead of
+reporting success. The data is still nine months old, and the upstream URL
+question is open.
+
+### F-0051 — Alembic is unused in every observable sense
+
+**Claim.** `alembic==1.12.1` is pinned and there is no trace of it anywhere
+else in the project.
+
+**Artifact.** 2026-09-28. A case-insensitive search for `alembic` across all
+`.py`, `.yml`, `.toml` and the Dockerfile returns **nothing** outside
+`requirements.txt`. `alembic.ini`, `alembic/` and `migrations/` do not exist.
+Schema comes from `Base.metadata.create_all()`.
+
+**Sample size.** Whole tree.
+
+**Evidence bearing on `D-0032`, recorded as facts rather than a recommendation:**
+
+- `create_all()` handles **additive** change correctly, demonstrated today:
+  `composite_snapshots` was added for `D-0042` and appeared without ceremony.
+- It silently ignores **changed columns**, which is the real gap. The known
+  live case is `update_logs.error_message varchar(500)` (`A-0003`), which
+  needs hand-written DDL against production and would not be picked up by
+  editing `models.py`.
+- Local schema currently matches `models.py` exactly. The single difference is
+  the `canary` table, which is present in the database and deliberately
+  **absent** from `models.py` — the application must never be able to create
+  its own disposability marker (`D-0039`). That is correct and should not be
+  "fixed".
+
+**Status.** Open, and it is a ruling rather than a task — see `D-0032`.
