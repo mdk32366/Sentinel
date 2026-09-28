@@ -13,6 +13,10 @@ from database.models import Metric, TimeSeries, UpdateLog, Country
 from api.schemas import (
     HoldingsResponse,
     GoldReservesResponse,
+    CdsAllItem,
+    CdsCountryResponse,
+    CrossAssetStressResponse,
+    CompositeStressResponse,
     MetricResponse,
     CountryResponse,
     TimeSeriesDataPoint,
@@ -293,7 +297,7 @@ def get_all_holdings(
 
 
 
-@router.get("/holdings/cross-asset-stress")
+@router.get("/holdings/cross-asset-stress", response_model=CrossAssetStressResponse)
 def get_cross_asset_stress(db: Session = Depends(get_db)):
     """
     Cross-asset stress: countries selling both Treasuries AND gold,
@@ -760,7 +764,7 @@ async def analyze_country(payload: dict, request: Request):
         raise HTTPException(status_code=502, detail="Grok analysis failed")
 
 
-@router.get("/cds/all")
+@router.get("/cds/all", response_model=List[CdsAllItem])
 async def get_all_cds(db: Session = Depends(get_db)):
     """
     Returns latest 5Y (and same-source/same-as-of 10Y) CDS for countries with data.
@@ -827,7 +831,7 @@ def trigger_cds_fetch():
             db.close()
 
 
-@router.get("/stress/composite")
+@router.get("/stress/composite", response_model=CompositeStressResponse)
 def get_composite_stress(recompute: bool = Query(False, description="Bypass the stored snapshot and score from scratch"), db: Session = Depends(get_db)):
     """
     5-dimension composite sovereign stress scorer.
@@ -910,7 +914,7 @@ def get_country_tic_history(
 from fastapi import Query
 from typing import Optional
 
-@router.get("/cds")
+@router.get("/cds", response_model=CdsCountryResponse)
 async def get_latest_cds(country: str = Query(..., description="Country ISO code (e.g. TUR, MEX, BRA)"), db: Session = Depends(get_db)):
     """
     Returns the latest 5Y and 10Y CDS values for a country.
