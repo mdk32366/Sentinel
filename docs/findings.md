@@ -593,7 +593,25 @@ people learn to scroll past - Principle 9.
 `F-0013`, made for the same reason: the evidence that a name is absent looks
 identical whether the name is wrong or the code path has never executed.
 
-**Status.** Open. Does not block installation; the report is otherwise correct.
+**Status.** **Closed 2026-09-28**, in the same change that installed the module
+(PR #11). `validate_pipeline_names` now compares the names in `CHECKS` against
+`declared_pipeline_names()`, a static scan of every `pipeline_name="..."`
+literal and every `*PIPELINE_NAME = "..."` constant in the package. A name that
+is declared but absent from `update_logs` is reported as `pending`; only a name
+nothing declares is a `config_error`. The `NOT_YET_RUNNING` allowlist is
+retired, since declaration now answers the question the allowlist was
+suppressing.
+
+Verified by tripping it: the correct configuration reports no unknown names;
+reintroducing the original `GoldPrice` typo reports `['GoldPrice']`; removing it
+clears. A failure-red, and the fixture distinguishes a working check from a
+broken one.
+
+**The fix contained the same bug once.** The first version of the constant
+pattern required a prefix before `PIPELINE_NAME`, so `treasury_direct.py`'s bare
+`PIPELINE_NAME = "TreasuryDirect"` did not match and was reported as an unknown
+name — a false absence produced while fixing a false absence. Caught because the
+trip test named a pipeline that should have been `pending`.
 
 ### F-0037 — The 2026-09-26 snapshot was taken from a stale master; ORDER-03 reviewed an incomplete tree
 
