@@ -176,15 +176,33 @@ def _last_success(db: Session, pipeline_names) -> dict:
     out = {}
     for name in pipeline_names:
         row = (
-            db.query(UpdateLog.completed_at, UpdateLog.status)
+            db.query(UpdateLog.completed_at, UpdateLog.status,
+                     UpdateLog.error_message)
             .filter(UpdateLog.pipeline_name == name,
                     UpdateLog.status.in_(["success", "partial"]))
             .order_by(UpdateLog.completed_at.desc())
             .first()
         )
         if row:
-            out[name] = {"completed_at": row[0], "status": row[1]}
+            out[name] = {"completed_at": row[0], "status": row[1],
+                         "error_message": row[2]}
     return out
+
+
+# D-0046. treasury_direct records a value that jumped more than MAX_JUMP_PP by
+# prefixing its log field with this marker. It deliberately does not block -
+# a blocking jump detector refuses to record a crisis - but until now the
+# answer landed somewhere nobody reads, which is Principle 9's second form.
+ANOMALY_MARKER = "ANOMALIES:"
+
+
+def _anomalies_from(pipeline_info: dict) -> list:
+    """Pull the anomaly lines out of a pipeline's most recent log row."""
+    text = (pipeline_info or {}).get("error_message") or ""
+    if ANOMALY_MARKER not in text:
+        return []
+    tail = text.split(ANOMALY_MARKER, 1)[1]
+    return [part.strip() for part in tail.split(";") if part.strip()]
 
 
 # F-0036. Pipeline names are validated against what the pipelines DECLARE, not
@@ -333,6 +351,15 @@ def get_freshness_report(db: Session) -> dict:
         status = _classify(age_days, check["max_age_days"])
 
         pipelines = _last_success(db, check.get("pipelines", []))
+
+        # D-0046: an anomaly raises an otherwise-OK source to `anomaly`. It
+        # never lowers a worse status - stale data with an odd jump is still
+        # stale, and the more serious finding wins.
+        anomalies = []
+        for info in pipelines.values():
+            anomalies.extend(_anomalies_from(info))
+        if anomalies and status == "ok":
+            status = "anomaly"
         pipeline_view = {
             name: {
                 "last_run": info["completed_at"].isoformat(),
@@ -359,10 +386,11 @@ def get_freshness_report(db: Session) -> dict:
                 if oldest_code and oldest_age != age_days else None
             ),
             "pipelines": pipeline_view,
+            "anomalies": anomalies,
             "note": check.get("note"),
         })
 
-    counts = {"ok": 0, "stale": 0, "critical": 0, "unknown": 0}
+    counts = {"ok": 0, "anomaly": 0, "stale": 0, "critical": 0, "unknown": 0}
     for s in sources:
         counts[s["status"]] += 1
 
@@ -375,6 +403,11 @@ def get_freshness_report(db: Session) -> dict:
         overall = "stale"
     elif counts["unknown"]:
         overall = "unknown"
+    elif counts["anomaly"]:
+        # Below stale on purpose. A stale source is definitely wrong; an
+        # anomalous one is plausibly correct and worth a look. Ranking it
+        # higher would make every genuine market move outrank real staleness.
+        overall = "anomaly"
     else:
         overall = "ok"
 
@@ -385,7 +418,7 @@ def get_freshness_report(db: Session) -> dict:
         "checked_at": now.isoformat(),
         "sources": sorted(
             sources,
-            key=lambda s: ({"critical": 0, "stale": 1, "unknown": 2, "ok": 3}[s["status"]],
+            key=lambda s: ({"critical": 0, "stale": 1, "unknown": 2, "anomaly": 3, "ok": 4}[s["status"]],
                            -(s["age_days"] or 0)),
         ),
     }
@@ -393,7 +426,8 @@ def get_freshness_report(db: Session) -> dict:
 
 def format_report_text(report: dict) -> str:
     """Plain-text rendering for email / webhook bodies and console output."""
-    icon = {"ok": "OK      ", "stale": "STALE   ", "critical": "CRITICAL",
+    icon = {"ok": "OK      ", "anomaly": "ANOMALY ",
+            "stale": "STALE   ", "critical": "CRITICAL",
             "unknown": "UNKNOWN ", "config_error": "CONFIG  "}
     lines = [
         f"Sentinel data freshness — {report['overall'].upper()}",

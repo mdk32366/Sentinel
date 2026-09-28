@@ -596,3 +596,34 @@ one country's row fails to parse.
 
 **Reversal condition.** If TIC moves to a source whose cadence differs, the
 constant is re-derived from that cadence rather than nudged.
+
+### D-0046 — The jump anomaly reaches the freshness report, and still does not block
+
+**Choice.** `treasury_direct`'s `MAX_JUMP_PP` anomaly, which it writes into
+`update_logs.error_message` behind an `ANOMALIES:` marker, is now read by the
+freshness watchdog. An affected source carries its anomaly text and, if it
+would otherwise be `ok`, reports the new status **`anomaly`**.
+
+**Rejected.** Making the jump detector block the write. The testplan has always
+said why, and it has not changed: on 2026-09-23 the 10-year moved 15 basis
+points in one session during a genuine selloff, and **a blocking jump detector
+is a mechanism for refusing to record a crisis.** The defect was never
+permissiveness.
+
+**What forced the call.** The testplan's own open item: *"the anomaly lands
+only in a log field nobody reads... a check placed where its answer cannot
+change what anyone does - Principle 9's second form. Not closed."* The answer
+existed and reached no one. Now it reaches the one report a human looks at.
+
+**Ranking, and why it is low.** `anomaly` sits below `stale` and `unknown` in
+both the per-source sort and the overall status. A stale source is definitely
+wrong and a missing one is definitely absent; an anomalous one is plausibly
+correct and worth a look. Ranked higher, every genuine market move would mask a
+real gap - which is how a signal becomes noise and then becomes ignored.
+
+**It raises, never lowers.** Stale data that also jumped is still stale. The
+more serious finding wins.
+
+**Reversal condition.** If `anomaly` fires often enough that people scroll past
+it, `MAX_JUMP_PP` is mis-calibrated and should be re-derived from observed
+daily moves - not silenced.
