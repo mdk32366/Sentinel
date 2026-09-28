@@ -1226,3 +1226,46 @@ points and 60 monthly `FEDFUNDS` points over the same five years:
 **Status.** Open. This is the gap that makes ORDER-03 Part F steps 2-4 worth
 sequencing carefully: decomposing a 2,583-line file with no tests is the
 change most likely to break something silently.
+
+### F-0054 — `.gitignore` swallowed the frontend's API module, and the merge said nothing
+
+**Claim.** `ui/src/lib/api.js` was created, imported by `App.jsx`, built into
+the bundle, reviewed and **merged — without ever being added to the
+repository**. `App.jsx` on `master` imported a file that was not there.
+
+**Artifact.** `git check-ignore -v ui/src/lib/api.js` →
+`.gitignore:21: lib/`. That entry sits in a block of Python build directories
+(`eggs/`, `dist/`, `parts/`, `sdist/`, `var/`, `wheels/`) and is **unanchored**,
+so it matches `lib/` at any depth — including `ui/src/lib/`.
+`git show HEAD:ui/src/lib/api.js` failed while `git show HEAD:ui/src/App.jsx`
+contained `import { apiFetch } from "./lib/api";`.
+
+**Sample size.** One file, one merge — PR #23.
+
+**Why nothing caught it.** `git add ui/` skips ignored files **silently**, by
+design. The local build kept working because the file was on disk. The bundle
+kept working because Vite had already inlined it. Production kept working
+because it serves the prebuilt bundle. CI kept passing because it runs Python
+and never builds the UI (`F-0053`). Every signal available said fine.
+
+**What it would have cost.** A fresh clone cannot build the frontend:
+`npm run build` fails on a missing import. That is the state `master` was in
+between PR #23 merging and this entry.
+
+**How it was caught.** By `D-0048`'s bundle-freshness guard, on its **first CI
+run**, one commit later. The guard hashes `ui/src` and compares against a
+manifest; CI computed a different digest because the file it hashes locally
+does not exist in the checkout. It was written to catch a forgotten rebuild and
+caught a missing file instead — the check was placed where it could see
+something real, and saw something nobody was looking for.
+
+**Fixed.** `lib/` and `lib64/` are anchored to `/lib/` and `/lib64/`, so they
+still exclude the Python build directories they were written for and no longer
+match anything nested. `ui/src/lib/api.js` is tracked. Verified by recomputing
+the digest from the **git index** rather than the working tree — that is what
+CI checks out, and it now matches the manifest exactly.
+
+**The general lesson.** An ignore rule written for one language matched a
+directory in another, and the only thing that reports it is a tool asked
+directly. `git status` is silent about ignored files, which is what makes this
+class of loss invisible rather than merely easy.
