@@ -18,8 +18,12 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# F-0054: these are Python build directories and belong at the repository root
+# only. Unanchored, `lib/` matched ui/src/lib/ and silently swallowed the
+# frontend's API module - App.jsx shipped importing a file that was not in the
+# repository, and `git add` said nothing because ignored files are skipped.
+/lib/
+/lib64/
 parts/
 sdist/
 var/

@@ -655,3 +655,37 @@ refactor with a behaviour change. Error handling belongs to Part F step 2.
 `localhost:8000` — `import.meta.env.DEV` is false in a production build, so
 Vite removes the dev branch entirely and production ships only the same-origin
 path.
+
+### D-0048 — A manifest makes a stale UI bundle fail the gate
+
+**Choice.** `tools/record_ui_build.py` records a SHA-256 over every source file
+Vite compiles, plus the bundle `index.html` references, into
+`api/static/BUILD_MANIFEST.json`. `tests/test_ui_bundle_freshness.py`
+recomputes it, so editing `ui/src` without rebuilding fails CI.
+
+**Rejected.** Adding a Node stage to the Dockerfile, which is what `F-0027`
+actually asks for and which would prove more — it would build the UI from
+source at image build time, making a stale bundle impossible rather than
+merely detectable. Not taken **today**: it changes the deploy path, and
+changing the deploy path is not something to do at the end of a long session
+on a Monday evening. The guard is the cheap half that carries no deploy risk,
+and `F-0027` stays open for the other half.
+
+Also rejected: comparing file modification times. Git does not preserve
+mtimes, so a fresh clone would fail or pass at random.
+
+**What forced the call.** The bundle was rebuilt and copied by hand four times
+today. Every one of those was a step that could have been skipped, and skipping
+it ships the old interface against a new API with **nothing** indicating it —
+the app loads, every endpoint answers, the UI is simply wrong.
+
+**Detail that matters.** The digest normalises CRLF to LF before hashing. Git
+checks this repository out with CRLF on Windows and LF in CI, and a line-ending
+difference must not read as a source change.
+
+**Proved by tripping it.** An unbuilt edit to `ui/src/App.jsx` fails with the
+two digests and the exact commands to fix it; reverting clears it.
+
+**What it does not prove.** That the committed bundle was built *correctly*
+from that source — only that the source has not moved since. Building in CI is
+what would close that.

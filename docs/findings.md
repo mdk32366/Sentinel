@@ -360,6 +360,29 @@ sets `python-version: '3.11'`. The project's recorded decision chose Python
 the decision describes, which means one of the two is wrong and nobody knows
 which.
 
+**Correction 2026-09-28 — the premise is unsupported.** This entry asserts
+"the project's recorded decision chose Python 3.13 with 3.13-pinned wheels",
+and its Artifact line cites only `Dockerfile:1` and the workflow — **it never
+cites the decision**. Checked today:
+
+- No entry in `docs/decisions.md` mentions Python 3.13, or any Python version.
+- `requirements.txt` contains no 3.13-pinned wheels and no version markers.
+
+So there is no recorded decision for the deployment to disagree with. The claim
+appears to have come from the same planning session that produced Addendum B,
+against a copy of the project the Builder cannot find.
+
+**What is actually true, measured.** Local development runs **Python 3.13.14**;
+the Dockerfile and CI both run **3.11**. That is a dev-versus-deploy
+difference, not a decision-versus-deploy one — and the important half already
+holds: **CI matches production**, so the gate runs in the environment that
+ships. The residual risk is that a 3.13-only behaviour passes locally and is
+first seen in CI, which is the right place to see it.
+
+**Left as a recommendation rather than a change.** Aligning the local venv to
+3.11 would remove the last mismatch, but recreating a developer's virtualenv is
+the owner's call, not a Builder's.
+
 ### F-0027 — No frontend build stage; the bundle is committed
 
 **Claim.** The Dockerfile has a Python builder stage and no Node stage.
@@ -372,6 +395,19 @@ via `COPY . .`. `.gitignore` ignores a bare `dist/` but not `api/static/`.
 a new API with no signal of any kind. Flagged as Phase 0 in the June plan;
 still open.
 
+
+**Partially closed 2026-09-28 by `D-0048`.** The harm this finding describes is
+that a forgotten rebuild ships a stale UI *with no signal*. There is a signal
+now: `api/static/BUILD_MANIFEST.json` records the `ui/src` digest the committed
+bundle was built from, and `tests/test_ui_bundle_freshness.py` fails the gate
+when the source has moved since. Proved by tripping it — an unbuilt edit fails
+with both digests and the commands to fix it; reverting clears it.
+
+**Still open:** the Dockerfile has no Node stage. The guard makes a stale
+bundle *detectable*; a build stage would make it *impossible*, and would also
+prove the committed bundle actually corresponds to the source rather than
+merely coexisting with an unchanged copy of it. That change touches the deploy
+path and is deliberately not bundled with a guard.
 ### F-0028 — The application writes an unbounded log file inside the container
 
 **Claim.** `main.py:17` attaches `logging.FileHandler('treasury_monitor.log')`.
@@ -1190,3 +1226,46 @@ points and 60 monthly `FEDFUNDS` points over the same five years:
 **Status.** Open. This is the gap that makes ORDER-03 Part F steps 2-4 worth
 sequencing carefully: decomposing a 2,583-line file with no tests is the
 change most likely to break something silently.
+
+### F-0054 — `.gitignore` swallowed the frontend's API module, and the merge said nothing
+
+**Claim.** `ui/src/lib/api.js` was created, imported by `App.jsx`, built into
+the bundle, reviewed and **merged — without ever being added to the
+repository**. `App.jsx` on `master` imported a file that was not there.
+
+**Artifact.** `git check-ignore -v ui/src/lib/api.js` →
+`.gitignore:21: lib/`. That entry sits in a block of Python build directories
+(`eggs/`, `dist/`, `parts/`, `sdist/`, `var/`, `wheels/`) and is **unanchored**,
+so it matches `lib/` at any depth — including `ui/src/lib/`.
+`git show HEAD:ui/src/lib/api.js` failed while `git show HEAD:ui/src/App.jsx`
+contained `import { apiFetch } from "./lib/api";`.
+
+**Sample size.** One file, one merge — PR #23.
+
+**Why nothing caught it.** `git add ui/` skips ignored files **silently**, by
+design. The local build kept working because the file was on disk. The bundle
+kept working because Vite had already inlined it. Production kept working
+because it serves the prebuilt bundle. CI kept passing because it runs Python
+and never builds the UI (`F-0053`). Every signal available said fine.
+
+**What it would have cost.** A fresh clone cannot build the frontend:
+`npm run build` fails on a missing import. That is the state `master` was in
+between PR #23 merging and this entry.
+
+**How it was caught.** By `D-0048`'s bundle-freshness guard, on its **first CI
+run**, one commit later. The guard hashes `ui/src` and compares against a
+manifest; CI computed a different digest because the file it hashes locally
+does not exist in the checkout. It was written to catch a forgotten rebuild and
+caught a missing file instead — the check was placed where it could see
+something real, and saw something nobody was looking for.
+
+**Fixed.** `lib/` and `lib64/` are anchored to `/lib/` and `/lib64/`, so they
+still exclude the Python build directories they were written for and no longer
+match anything nested. `ui/src/lib/api.js` is tracked. Verified by recomputing
+the digest from the **git index** rather than the working tree — that is what
+CI checks out, and it now matches the manifest exactly.
+
+**The general lesson.** An ignore rule written for one language matched a
+directory in another, and the only thing that reports it is a tool asked
+directly. `git status` is silent about ignored files, which is what makes this
+class of loss invisible rather than merely easy.
