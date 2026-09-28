@@ -58,6 +58,21 @@ app = FastAPI(
 # ignored by browsers. The UI is served from api/static by this same app, so
 # every request is same-origin and no cross-origin access is intended.
 
+# F-0039: API responses carried no Cache-Control, no ETag and no Last-Modified,
+# so a browser was free to cache them heuristically (RFC 9111 4.2.2) and replay
+# a stale payload without revalidating. The stat cards showed a day-old yield
+# while the database and FRED both held the current one. Data endpoints are
+# never cacheable: they are a live read of a database that changes nightly.
+class NoStoreAPIMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+
 # Static frontend + API: HTTP Basic Auth so the browser prompts on GET /
 # /api/health stays open for Docker/Fly probes.
 OPEN_PATHS = {"/api/health"}
@@ -96,6 +111,7 @@ def _credentials_ok(header: str) -> bool:
 
 
 app.add_middleware(BasicAuthMiddleware)
+app.add_middleware(NoStoreAPIMiddleware)
 app.include_router(router)
 app.mount("/", StaticFiles(directory="api/static", html=True), name="static")
 
