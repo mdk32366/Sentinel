@@ -455,3 +455,44 @@ the route by which spot arrives.
 
 **Reversal condition.** LBMA requiring authentication, or its monthly mean
 diverging from the WGC CSV by more than 1% in any month.
+
+### D-0042 — The composite score is persisted nightly and the endpoint is a read
+
+**Choice.** `persist_composite_snapshot()` scores every country once at 04:45
+UTC and stores the scorer's own output as JSON text in `composite_snapshots`.
+`GET /api/stress/composite` serves the stored result with its `computed_at`,
+and `?recompute=true` bypasses it.
+
+**Rejected.** Caching in process — lost on every deploy, and Fly restarts this
+app often enough that the cache would be cold whenever anyone looked. Also
+rejected: shredding the payload into columns, which would need a schema change
+every time the scorer gains a dimension, against a project with no migrations
+(`F-0022`).
+
+**What forced the call.** The endpoint recomputed on every click of the
+COMPOSITE tab. Measured: 297 queries before `D2`'s metric-cache hoist, 232
+after, ~116ms per request against a pool of 10 connections.
+
+**The contract this creates.** Persisting makes a second producer of the same
+number — the same shape as `D-0022` — so it gets the same treatment:
+`tests/test_composite_snapshot.py`, and equality on real data measured at
+29 countries with **0 disagreements and an identical payload**. A stale score
+served fast is worse than a slow correct one.
+
+**Fall-through, deliberate.** With no snapshot the endpoint computes rather than
+serving an empty tab. Absence is a case with a cause, never a blank.
+
+**Reversal condition.** Stored and recomputed disagreeing on unchanged inputs.
+
+### D-0043 — A manual trigger for the gold fetch
+
+**Choice.** `POST /api/fetch/gold-price`, following the existing
+`/api/fetch/gold-reserves` pattern.
+
+**Rejected.** Waiting for the 02:30 UTC job. That is correct for a routine
+refresh and wrong when the series is known stale, because the scorer is wrong
+until it runs — which is the whole of `F-0004`.
+
+**What forced the call.** The freshness endpoint's first production run
+reported `Gold spot price CRITICAL, latest 2026-07-01, age 89, limit 8`. The
+data existed; nothing could pull it before the next window.

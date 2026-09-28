@@ -64,9 +64,28 @@ import logging
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from database.models import Metric, TimeSeries, Country
+import json
+
+from database.models import (
+    Metric, TimeSeries, Country, CompositeSnapshot, UpdateLog,
+)
 
 logger = logging.getLogger(__name__)
+
+
+# ORDER-03 D2 / F-0023. Each dimension helper used to re-resolve its metric by
+# code, once per country per dimension, against a table of 79 rows that does
+# not change during a request. One query replaces roughly 250.
+#
+# Cached on the Session, not module-level: a module-level dict would outlive
+# the session that produced the ORM instances and hand detached objects to the
+# next request.
+def _metrics_by_code(db: Session) -> dict:
+    cache = getattr(db, "_sentinel_metric_cache", None)
+    if cache is None:
+        cache = {m.code: m for m in db.query(Metric).all()}
+        db._sentinel_metric_cache = cache
+    return cache
 
 # FRED codes for 10Y government bond yields (OECD monthly series)
 SOVEREIGN_YIELD_CODES = {
@@ -106,7 +125,7 @@ OIL_DEPENDENT_COUNTRIES = {
 
 def get_us_10y_yield(db: Session) -> float | None:
     """Get latest US 10Y yield from DB."""
-    metric = db.query(Metric).filter_by(code="DGS10").first()
+    metric = _metrics_by_code(db).get("DGS10")
     if not metric:
         return None
     latest = db.query(TimeSeries).filter(
@@ -124,7 +143,7 @@ def get_brent_trend(db: Session, months: int = 3) -> dict:
     Returns: {latest_price, start_price, change_pct, falling}
     """
     for code in ("DCOILBRENTEU", "DCOILWTICO"):
-        metric = db.query(Metric).filter_by(code=code).first()
+        metric = _metrics_by_code(db).get(code)
         if not metric:
             continue
 
@@ -213,7 +232,7 @@ def get_sovereign_spread(db: Session, iso: str, us_10y: float | None) -> dict:
         return {"spread_bps": None, "widening_bps": None, "score": 0}
 
     fred_code = SOVEREIGN_YIELD_CODES[iso]
-    metric = db.query(Metric).filter_by(code=fred_code).first()
+    metric = _metrics_by_code(db).get(fred_code)
     if not metric:
         return {"spread_bps": None, "widening_bps": None, "score": 0}
 
@@ -276,7 +295,7 @@ def _latest_and_prior(db: Session, code: str, days_back: int = 90):
     measure recent widening. Returns (None, None) if the metric or data is
     absent, so a missing country simply scores zero on this dimension.
     """
-    metric = db.query(Metric).filter_by(code=code).first()
+    metric = _metrics_by_code(db).get(code)
     if not metric:
         return None, None
 
@@ -380,7 +399,7 @@ def get_cds_score(db: Session, iso: str) -> dict:
 
 def get_spot_gold_trend(db: Session, months: int = 3) -> dict:
     """Get recent spot gold price trend."""
-    gold_metric = db.query(Metric).filter_by(code="GOLD_SPOT_USD").first()
+    gold_metric = _metrics_by_code(db).get("GOLD_SPOT_USD")
     if not gold_metric:
         return {"latest_price": None, "trend_3m_pct": None, "rising": None}
 
@@ -410,9 +429,9 @@ def compute_composite_stress(db: Session) -> dict:
     Compute five-dimension composite stress scores for all countries.
     Returns structured dict with tiers and summary.
     """
-    tic_metric = db.query(Metric).filter_by(code="TIC_UST_HOLDINGS").first()
-    gold_metric = db.query(Metric).filter_by(code="GOLD_RESERVES").first()
-    m2_metric = db.query(Metric).filter_by(code="BROAD_MONEY_GROWTH").first()
+    tic_metric = _metrics_by_code(db).get("TIC_UST_HOLDINGS")
+    gold_metric = _metrics_by_code(db).get("GOLD_RESERVES")
+    m2_metric = _metrics_by_code(db).get("BROAD_MONEY_GROWTH")
 
     if not tic_metric:
         return {"error": "No TIC data loaded"}
@@ -736,7 +755,7 @@ def get_treseg_signal(db: Session, iso: str, no_tic: bool) -> dict:
     if not fred_code:
         return {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}
 
-    metric = db.query(Metric).filter_by(code=fred_code).first()
+    metric = _metrics_by_code(db).get(fred_code)
     if not metric:
         return {"signal": "NO_DATA", "trend_pct": None, "latest_bn": None}
 
@@ -768,3 +787,67 @@ def get_treseg_signal(db: Session, iso: str, no_tic: bool) -> dict:
         "trend_pct": round(trend_pct, 1),
         "latest_bn": round(latest / 1000, 1),
     }
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ORDER-03 D3 — persist, so the endpoint is a read
+# ─────────────────────────────────────────────────────────────────────────────
+
+PIPELINE_NAME = "Composite_Snapshot"
+
+
+def persist_composite_snapshot(db: Session) -> dict:
+    """Compute the composite score once and store the result.
+
+    Called by the scheduler. The endpoint then serves what this wrote, instead
+    of recomputing ~230 queries on every click of the COMPOSITE tab.
+    """
+    started = datetime.utcnow()
+    try:
+        result = compute_composite_stress(db)
+        if "error" in result:
+            raise RuntimeError(result["error"])
+
+        countries = sum(
+            len(result.get(tier, []))
+            for tier in ("crisis", "stressed", "elevated", "watch")
+        )
+        snapshot = CompositeSnapshot(
+            computed_at=started,
+            country_count=countries,
+            payload=json.dumps(result, default=str),
+        )
+        db.add(snapshot)
+        db.add(UpdateLog(
+            pipeline_name=PIPELINE_NAME,
+            status="success",
+            records_inserted=1,
+            records_updated=0,
+            error_message=None,
+            started_at=started,
+            completed_at=datetime.utcnow(),
+        ))
+        db.commit()
+        return {"status": "success", "countries": countries,
+                "computed_at": started.isoformat()}
+    except Exception as exc:
+        db.rollback()
+        db.add(UpdateLog(
+            pipeline_name=PIPELINE_NAME,
+            status="failed",
+            records_inserted=0,
+            records_updated=0,
+            error_message=str(exc)[:480],
+            started_at=started,
+            completed_at=datetime.utcnow(),
+        ))
+        db.commit()
+        raise
+
+
+def latest_composite_snapshot(db: Session):
+    """Most recent stored result, or None if the job has never run."""
+    return (
+        db.query(CompositeSnapshot)
+        .order_by(CompositeSnapshot.computed_at.desc())
+        .first()
+    )

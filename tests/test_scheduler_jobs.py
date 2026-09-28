@@ -28,6 +28,7 @@ EXPECTED_CRON_JOBS = {
     "treasury_direct",
     "freshness_check",
     "gold_price",
+    "composite_snapshot",
 }
 EXPECTED_ONE_SHOTS = {"startup_fetches", "startup_cds_fetch"}
 
