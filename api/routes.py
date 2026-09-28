@@ -11,6 +11,8 @@ from database.connection import get_db, get_session
 from config import settings
 from database.models import Metric, TimeSeries, UpdateLog, Country
 from api.schemas import (
+    HoldingsResponse,
+    GoldReservesResponse,
     MetricResponse,
     CountryResponse,
     TimeSeriesDataPoint,
@@ -231,7 +233,7 @@ def trigger_fred_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/holdings")
+@router.get("/holdings", response_model=HoldingsResponse)
 def get_all_holdings(
     country_iso: Optional[str] = Query(None),
     date: Optional[datetime] = Query(None),
@@ -400,7 +402,7 @@ def trigger_treasury_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/gold-reserves")
+@router.get("/gold-reserves", response_model=GoldReservesResponse)
 def get_gold_reserves(
     country_iso: Optional[str] = Query(None),
     date: Optional[datetime] = Query(None),

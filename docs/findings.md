@@ -980,3 +980,36 @@ would otherwise look achieved when the measurement says otherwise.
 tier and score assignments across all 29 countries before and after: **0
 changes**. `metrics.code` has no duplicates, so the dict-versus-`.first()`
 difference cannot bite.
+
+### F-0049 — Two of E2's endpoints cannot be modelled from the data available locally
+
+**Claim.** `response_model` was declared on `/holdings` and `/gold-reserves`,
+where every field has been observed populated. It was **not** declared on
+`/holdings/cross-asset-stress`, `/stress/composite`, `/cds` or `/cds/all`,
+because the types behind their nullable fields cannot be read from this
+database.
+
+**Artifact.** 2026-09-28, local. `/api/cds/all` returns `[]` — the CDS pipeline
+has never run here (`F-0013`'s correction). `/api/cds?country=DEU` returns a
+*no-data variant*: `{country, 5Y: null, 10Y: null, term_spread: null,
+message}`, a different shape from the populated one. In
+`cross_asset_stress`, `region`, `treseg_trend_pct` and `treseg_latest_bn` are
+`null` on every one of the 5 rows present.
+
+**Sample size.** All 36 `/holdings` rows and all 39 `/gold-reserves` rows carry
+no nulls in any field — those are safe. The others were inspected row by row.
+
+**Why not guess.** A field that is `null` in every local row has no observable
+type. Declaring `Optional[str]` for `region` when production holds something
+else turns an endpoint that works into a 500 — trading a silent wrong value for
+a loud outage, on a guess. `/cds` additionally returns two different shapes
+depending on whether data exists, so a single model would reject one of them.
+
+**Consequence.** E2 is partially delivered. The four unmodelled endpoints keep
+the defect the order describes: `App.jsx` remains their only specification and
+a renamed field empties a tile silently.
+
+**How to close it properly.** Capture one populated response per endpoint from
+**production**, where CDS and `region` have values, and model from that. That
+is a twenty-minute job with production read access and is not guesswork; it
+simply cannot be done from here.
