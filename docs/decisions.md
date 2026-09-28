@@ -627,3 +627,31 @@ more serious finding wins.
 **Reversal condition.** If `anomaly` fires often enough that people scroll past
 it, `MAX_JUMP_PP` is mis-calibrated and should be re-derived from observed
 daily moves - not silenced.
+
+### D-0047 — One module owns the API base URL
+
+**Choice.** `ui/src/lib/api.js` exports `API_BASE`, `apiUrl()` and
+`apiFetch()`. All 22 call sites in `App.jsx` go through `apiFetch`; no bare
+`fetch(` and no `API` constant remain in that file.
+
+Resolution order: an explicit `VITE_API_BASE` wins; in dev the API is taken to
+be port 8000 **of whatever host the page was loaded from**; in production it is
+same-origin `/api`.
+
+**Rejected.** Fixing the hostname test in place — `hostname === "localhost" ||
+hostname === "127.0.0.1"` and so on. It extends the list of blessed hostnames
+without removing the assumption that the list can be complete.
+
+**What forced the call.** `F-0052`. Reading the host instead of comparing it to
+a literal is the actual fix; the module is what stops the next person needing
+to know that.
+
+**Behaviour deliberately unchanged.** `apiFetch` does not throw on a non-2xx
+response. Callers already branch on `r.ok` or read an error field from the
+body, and changing that contract while moving 22 call sites would mix a
+refactor with a behaviour change. Error handling belongs to Part F step 2.
+
+**Verified.** The production bundle contains **zero** occurrences of
+`localhost:8000` — `import.meta.env.DEV` is false in a production build, so
+Vite removes the dev branch entirely and production ships only the same-origin
+path.

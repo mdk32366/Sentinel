@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
+// ORDER-03 Part F step 1: one module owns the base URL (F-0052).
+import { apiFetch } from "./lib/api";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from "recharts";
 
-const API = window.location.hostname === "localhost" ? "http://localhost:8000/api" : "/api";
+
 
 const METRICS = [
   { code: "DGS30",      label: "30Y Treasury",  color: "#D4B06A", unit: "%" },
@@ -256,10 +258,10 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
     start.setFullYear(start.getFullYear() - 3);
     const tresegCode = TRESEG_CODES[iso];
     Promise.all([
-      fetch(`${API}/holdings/${iso}?start_date=${start.toISOString()}&end_date=${end.toISOString()}`).then(r => r.json()).catch(() => null),
-      fetch(`${API}/gold-reserves/${iso}`).then(r => r.json()).catch(() => null),
+      apiFetch(`/holdings/${iso}?start_date=${start.toISOString()}&end_date=${end.toISOString()}`).then(r => r.json()).catch(() => null),
+      apiFetch(`/gold-reserves/${iso}`).then(r => r.json()).catch(() => null),
       tresegCode
-        ? fetch(`${API}/timeseries?metric_codes=${tresegCode}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`).then(r => r.json()).catch(() => null)
+        ? apiFetch(`/timeseries?metric_codes=${tresegCode}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`).then(r => r.json()).catch(() => null)
         : Promise.resolve(null),
     ]).then(([tic, gold, reserves]) => {
       setTicHistory(tic);
@@ -269,7 +271,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
     });
 
     // Fetch latest CDS for the coverage tile (independent of narrative generation)
-    fetch(`${API}/cds?country=${iso}`)
+    apiFetch(`/cds?country=${iso}`)
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (!d) { setCdsData({ cds5y: null, cds10y: null, termSpread: null }); return; }
@@ -292,7 +294,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   setNarrative(null);
 
   try {
-    const r = await fetch(`${API}/analyze/country`, {
+    const r = await apiFetch(`/analyze/country`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ country: iso }),
@@ -564,7 +566,7 @@ function HoldingsTab({ onCountrySelect, latestAll = {} }) {
   const [sort, setSort] = useState("holdings");
 
   useEffect(() => {
-    fetch(`${API}/holdings`)
+    apiFetch(`/holdings`)
       .then(r => r.json())
       .then(d => { setHoldings(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -712,7 +714,7 @@ function USADashboard() {
     const start = new Date();
     start.setDate(start.getDate() - range);
     const codes = "DGS30,DGS10,DGS2,DGS5,FEDFUNDS,DFII10,DTWEXBGS,CPIAUCSL,M2SL";
-    fetch(`${API}/timeseries?metric_codes=${codes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
+    apiFetch(`/timeseries?metric_codes=${codes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then(r => r.json())
       .then(raw => {
         const byMetric = {};
@@ -793,14 +795,35 @@ function USADashboard() {
     { label: "Cut to 0% (ZIRP)", ff: 0.0, color: "#FF4444", desc: "2020-2022 playbook: M2 surged 27%, CPI hit 9%, 10Y rose from 0.5% to 3.5%. The bond market doesn't care what the Fed says." },
   ];
 
-  // Build chart data
-  const yieldData = (data["DGS10"]||[]).map((d,i) => ({
-    date: d.date, "10Y": d.value,
-    "30Y": data["DGS30"]?.[i]?.value,
-    "2Y": data["DGS2"]?.[i]?.value,
-    "Fed Funds": data["FEDFUNDS"]?.[i]?.value,
-    "Real Yield": data["DFII10"]?.[i]?.value,
-  }));
+  // Build chart data.
+  //
+  // F-0007: this used to zip the series by ARRAY INDEX off DGS10 -
+  // data["FEDFUNDS"]?.[i]?.value and so on. DGS10 is daily (~1,250 points over
+  // five years) and FEDFUNDS is monthly (~60), so the sixty monthly values
+  // were painted onto the first sixty DAILY dates: Fed Funds appeared
+  // compressed into the left ~5% of the chart, against dates it never had, and
+  // was null for the rest. DGS2 drifted the same way whenever the two series
+  // had different missing days.
+  //
+  // Joining on the date keeps every point where it belongs. The monthly series
+  // is then sparse against a daily axis, which is correct and is why every
+  // <Line> carries connectNulls - it draws through its real monthly points.
+  const yieldData = (() => {
+    const byDate = new Map();
+    const merge = (code, key) => {
+      for (const point of data[code] || []) {
+        if (!point?.date) continue;
+        if (!byDate.has(point.date)) byDate.set(point.date, { date: point.date });
+        byDate.get(point.date)[key] = point.value;
+      }
+    };
+    merge("DGS10", "10Y");
+    merge("DGS30", "30Y");
+    merge("DGS2", "2Y");
+    merge("FEDFUNDS", "Fed Funds");
+    merge("DFII10", "Real Yield");
+    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
+  })();
   const m2Data = (data["M2SL"]||[]).map(d => ({ date: d.date, value: d.value }));
   const m2YoyData = m2Data.map((d, i) => {
     if (i < 12) return { date: d.date, growth: null };
@@ -1054,7 +1077,7 @@ function CountryTab({ initialIso, onIsoChange, latestAll = {} }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API}/countries`)
+    apiFetch(`/countries`)
       .then(r => r.json())
       .then(d => { setCountries(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -1164,7 +1187,7 @@ function CrossAssetTab() {
   const [view, setView] = useState("all");
 
   useEffect(() => {
-    fetch(`${API}/holdings/cross-asset-stress`)
+    apiFetch(`/holdings/cross-asset-stress`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -1307,7 +1330,7 @@ function CompositeTab({ onCountrySelect }) {
   const [view, setView] = useState("all");
 
   useEffect(() => {
-    fetch(`${API}/stress/composite`)
+    apiFetch(`/stress/composite`)
       .then(r => r.json())
       .then(d => { setData(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -1536,7 +1559,7 @@ function GoldReservesTab({ onCountrySelect }) {
   const [selected, setSelected] = useState(null);
 
   useEffect(() => {
-    fetch(`${API}/gold-reserves`)
+    apiFetch(`/gold-reserves`)
       .then(r => r.json())
       .then(d => { setReserves(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -1675,7 +1698,7 @@ export default function App() {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 120);
-    fetch(`${API}/timeseries?metric_codes=${allCodes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
+    apiFetch(`/timeseries?metric_codes=${allCodes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then(r => r.json())
       .then(raw => {
         const byDate = {};
@@ -1708,7 +1731,7 @@ setLatestAll({ latest, month30 });
       const end = new Date();
       const start = new Date();
       start.setDate(start.getDate() - range.days);
-      const res = await fetch(`${API}/timeseries?metric_codes=${activeMetrics.join(",")}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`);
+      const res = await apiFetch(`/timeseries?metric_codes=${activeMetrics.join(",")}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`);
       const raw = await res.json();
       const byDate = {};
       raw.forEach(({ date, value, metric_code }) => {
@@ -1733,8 +1756,8 @@ setLatestAll({ latest, month30 });
 
   useEffect(() => { fetchChartData(); }, [fetchChartData]);
   useEffect(() => {
-    fetch(`${API}/stats`).then(r => r.json()).then(setStats).catch(() => {});
-    fetch(`${API}/health`).then(r => r.json()).then(setHealth).catch(() => {});
+    apiFetch(`/stats`).then(r => r.json()).then(setStats).catch(() => {});
+    apiFetch(`/health`).then(r => r.json()).then(setHealth).catch(() => {});
   }, []);
 
   const { latest = {}, month30 } = latestAll;
@@ -1868,7 +1891,7 @@ function StressScoreTab() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API}/stress-score`)
+    apiFetch(`/stress-score`)
       .then(r => r.json())
       .then(d => { setScore(d); setLoading(false); })
       .catch(() => setLoading(false));
@@ -2035,8 +2058,8 @@ function CDSTab({ onCountrySelect }) {
 
   const load = useCallback(() => {
     return Promise.all([
-      fetch(`${API}/cds/all`).then(r => r.ok ? r.json() : []).catch(() => []),
-      fetch(`${API}/cds/coverage`).then(r => r.ok ? r.json() : null).catch(() => null),
+      apiFetch(`/cds/all`).then(r => r.ok ? r.json() : []).catch(() => []),
+      apiFetch(`/cds/coverage`).then(r => r.ok ? r.json() : null).catch(() => null),
     ]).then(([rows, cov]) => {
       setData(Array.isArray(rows) ? rows : []);
       setCoverage(cov);
@@ -2051,7 +2074,7 @@ function CDSTab({ onCountrySelect }) {
     setFetching(true);
     setFetchResult(null);
     try {
-      const r = await fetch(`${API}/cds/fetch`, { method: "POST" });
+      const r = await apiFetch(`/cds/fetch`, { method: "POST" });
       const result = await r.json();
       setFetchResult({ ok: r.ok, data: result });
       await load();
@@ -2210,11 +2233,11 @@ function AdminTab() {
   const [stats, setStats] = useState(null);
 
   const loadLogs = () => {
-    fetch(`${API}/pipeline-logs?limit=20`)
+    apiFetch(`/pipeline-logs?limit=20`)
       .then(r => r.json())
       .then(setLogs)
       .catch(() => {});
-    fetch(`${API}/stats`).then(r => r.json()).then(setStats).catch(() => {});
+    apiFetch(`/stats`).then(r => r.json()).then(setStats).catch(() => {});
   };
 
   useEffect(() => { loadLogs(); }, []);
@@ -2223,7 +2246,7 @@ function AdminTab() {
     setRunning(p => ({ ...p, [name]: true }));
     setResults(p => ({ ...p, [name]: null }));
     try {
-      const r = await fetch(`${API}${endpoint}`, { method });
+      const r = await apiFetch(`${endpoint}`, { method });
       const data = await r.json();
       setResults(p => ({ ...p, [name]: { ok: r.ok, data } }));
     } catch (e) {
