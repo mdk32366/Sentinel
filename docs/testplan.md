@@ -53,7 +53,12 @@ Why it does not block: on 2026-09-23 the 10-year moved 15 basis points in one
 session during a genuine selloff, and a blocking jump detector is a mechanism
 for refusing to record a crisis. A real trade-off, recorded rather than hidden.
 
-**Open item this creates:** the anomaly lands only in a log field nobody reads.
+**Open item this creates — CLOSED 2026-09-28 by `D-0046`.** The anomaly now
+reaches the freshness report: an affected source carries its anomaly text and
+reports status `anomaly` when it would otherwise be `ok`. It still does not
+block, for the reason below, which has not changed.
+
+*Original wording, retained:* the anomaly lands only in a log field nobody reads.
 It should raise the watchdog's status for that source. Until it does, it is a
 check placed where its answer cannot change what anyone does — Principle 9's
 second form. **Not closed.**
