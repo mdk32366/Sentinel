@@ -1025,6 +1025,36 @@ a renamed field empties a tile silently.
 is a twenty-minute job with production read access and is not guesswork; it
 simply cannot be done from here.
 
+**CLOSED 2026-09-28.** Done exactly that way. All four endpoints now carry a
+`response_model` built from production shapes, with every field's nullability
+read from live rows rather than inferred:
+
+| Field | Basis for `Optional` |
+|---|---|
+| `cds_10y`, `cds_term_spread` | null in 20 of 21 production rows |
+| `tic_mom_pct` | null in 24 of 49 |
+| `spread_bps`, `spread_widening_bps` | null in 35 of 49 |
+| `treseg_trend_pct`, `treseg_latest_bn` | null in 39 of 49 |
+| `m2_growth_pct`, `m2_year` | null in 22 of 49 |
+| `region` | null in 49/49 **and** `Country.region = Column(String(100))` |
+| `oil_signal` | null in 49/49 **and** `composite_stress.py:194/198` returns `None` or a string |
+
+The last two were typed from the schema and the code, not from the nulls -
+which is the difference between reading and guessing.
+
+`/api/cds` needed one model covering **two** production shapes: with data it
+carries tenor objects, without it carries `message` and nulls. A model that
+rejected the second would have turned "no CDS for this country" into a 500.
+
+All six payloads were validated against the live application before anything
+was declared, and the payloads are captured as fixtures so it stays proved -
+`tests/test_production_payload_contracts.py`, which also asserts the fixtures
+still exercise the nullable paths, so an all-populated recapture cannot quietly
+turn it into a test of nothing.
+
+OpenAPI schemas: 9 before ORDER-03 Part E, 18 now. Every endpoint `App.jsx`
+consumes is modelled.
+
 ### F-0050 — `TIC_Holdings` reported success for nine months while importing a frozen year
 
 **Claim.** The TIC pipeline has run successfully and changed nothing since
