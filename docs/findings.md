@@ -106,7 +106,18 @@ have differing missing days.
 
 **Artifact.** `ui/src/App.jsx` lines ~806–811 at `378352f`.
 
-**Status.** Open, deferred to the V2 frontend decomposition. Adding a 7Y line
+**Status.** **CLOSED 2026-09-28.** `yieldData` now joins the series on their
+dates instead of zipping them by array index off `DGS10`. Measured against
+realistic shapes (1,250 daily points, 60 monthly): the old code put **0 of 60**
+Fed Funds values on a real `FEDFUNDS` date and confined the line to the
+leftmost 4.7% of the axis; the new code puts every point on its own date
+across the full range. Every `<Line>` already carried `connectNulls`, so the
+monthly series draws continuously through its real points against a daily axis.
+
+Verified by demonstration rather than by a test, because the frontend has no
+test harness — see `F-0053`.
+
+*Original status, retained:* Open, deferred to the V2 frontend decomposition. Adding a 7Y line
 would inherit it.
 
 ### F-0008 — The test suite poses no truncation risk today, and the guard that would keep it that way does not exist
@@ -1126,3 +1137,56 @@ Schema comes from `Base.metadata.create_all()`.
   "fixed".
 
 **Status.** Open, and it is a ruling rather than a task — see `D-0032`.
+
+### F-0052 — The app could only be developed from the literal hostname `localhost`
+
+**Claim.** `App.jsx:5` chose its API base by comparing the hostname to a
+string:
+
+```js
+const API = window.location.hostname === "localhost"
+  ? "http://localhost:8000/api" : "/api";
+```
+
+Loaded from `127.0.0.1`, a LAN address, or any preview host, this fell through
+to same-origin `/api` — correct in production, wrong against a Vite dev server
+on a different port.
+
+**Artifact.** The line as committed at `378352f` and unchanged until
+2026-09-28. 22 `fetch(\`${API}...\`)` call sites depended on it.
+
+**Sample size.** One expression; every request the frontend makes.
+
+**Failure shape.** Every call 404s or hits the dev server instead of the API,
+with nothing naming the cause. The app appears broken rather than
+misconfigured, which is why "it only works on localhost" reads as a quirk
+rather than a defect.
+
+**Status.** Closed by `D-0047`.
+
+### F-0053 — The frontend has no test harness, so `F-0007` is proved by demonstration
+
+**Claim.** There is no JavaScript test runner in this project — no vitest, no
+jest, no test script beyond `lint`. Nothing in `ui/` can be asserted in the
+gate.
+
+**Artifact.** `ui/package.json` scripts are `dev`, `build`, `lint`, `preview`.
+The CI workflow runs `python -m unittest discover` and nothing else.
+
+**Consequence.** Every backend guard proved this week runs in CI. The two
+frontend fixes shipped today — `D-0047` and the `F-0007` date join — are
+verified by a build plus a demonstration, and **nothing stops either
+regressing**. `App.jsx` is 2,583 lines with no test covering any of it.
+
+**The demonstration, recorded because it is the only evidence there is.**
+Both implementations were run against realistic shapes — 1,250 daily `DGS10`
+points and 60 monthly `FEDFUNDS` points over the same five years:
+
+| | Fed Funds span | Last point, across x-axis | Points on a real FEDFUNDS date |
+|---|---|---|---|
+| index zip (old) | 2021-09-01 → 2021-11-26 | 4.7% | **0 of 60** |
+| date join (new) | full range | 96.8% | **all of them** |
+
+**Status.** Open. This is the gap that makes ORDER-03 Part F steps 2-4 worth
+sequencing carefully: decomposing a 2,583-line file with no tests is the
+change most likely to break something silently.
