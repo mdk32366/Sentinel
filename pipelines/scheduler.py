@@ -11,15 +11,36 @@ from pipelines.treasury_holdings import run_treasury_holdings_fetch
 from pipelines.stress_score_v2 import run_stress_score_calculation
 from pipelines.gold_reserves import run_gold_reserves_fetch
 from pipelines.cds_fetcher import run_cds_fetch
+from pipelines.treasury_direct import run_treasury_direct_fetch
+from pipelines.freshness_watchdog import run_freshness_check
+from pipelines.gold_price_fetcher import run_gold_price_fetch
 
 logger = logging.getLogger(__name__)
-scheduler = BackgroundScheduler()
+# ORDER-01 B5. Set once on the scheduler rather than repeated on every
+# add_job: a per-job keyword is a thing the NEXT job can forget, which is how
+# only the CDS job ended up with a misfire grace period.
+#
+#   misfire_grace_time  a job whose fire time was missed (restart, deploy,
+#                       machine asleep) still runs if it is under an hour late,
+#                       instead of being silently dropped.
+#   coalesce            several missed fires collapse into one run rather than
+#                       a burst against a public API.
+#   max_instances       one run at a time. A 3-minute FRED fetch must never
+#                       overlap itself and write the same rows twice.
+JOB_DEFAULTS = {
+    "misfire_grace_time": 3600,
+    "coalesce": True,
+    "max_instances": 1,
+}
+
+scheduler = BackgroundScheduler(job_defaults=JOB_DEFAULTS)
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
 cds_hour = int(os.getenv("CDS_FETCH_HOUR", "3"))
 
 
 def scheduled_fred_fetch():
+    db = None
     try:
         db = get_session()
         result = run_fred_fetch(db)
@@ -27,7 +48,8 @@ def scheduled_fred_fetch():
     except Exception as e:
         logger.error(f"Scheduled FRED fetch failed: {e}", exc_info=True)
     finally:
-        db.close()
+        if db is not None:
+            db.close()
 
 
 def scheduled_cds_fetch():
@@ -49,6 +71,7 @@ def scheduled_cds_fetch():
 
 
 def scheduled_treasury_fetch():
+    db = None
     try:
         db = get_session()
         result = run_treasury_holdings_fetch(db)
@@ -56,10 +79,12 @@ def scheduled_treasury_fetch():
     except Exception as e:
         logger.error(f"Scheduled Treasury fetch failed: {e}", exc_info=True)
     finally:
-        db.close()
+        if db is not None:
+            db.close()
 
 
 def scheduled_gold_fetch():
+    db = None
     try:
         db = get_session()
         result = run_gold_reserves_fetch(db)
@@ -67,10 +92,12 @@ def scheduled_gold_fetch():
     except Exception as e:
         logger.error(f"Scheduled gold fetch failed: {e}", exc_info=True)
     finally:
-        db.close()
+        if db is not None:
+            db.close()
 
 
 def scheduled_stress_score():
+    db = None
     try:
         db = get_session()
         result = run_stress_score_calculation(db)
@@ -81,7 +108,73 @@ def scheduled_stress_score():
     except Exception as e:
         logger.error(f"Scheduled stress score failed: {e}", exc_info=True)
     finally:
-        db.close()
+        if db is not None:
+            db.close()
+
+
+def scheduled_treasury_direct_fetch():
+    """Same-day par yield curve, straight from Treasury.
+
+    Runs at 21:00 UTC, after Treasury publishes and before FRED's 02:00 run,
+    so the curve is current a business day earlier than FRED alone (D-0022).
+    FRED overwrites with its revised value overnight; A-0001's contract test
+    is what makes that safe.
+    """
+    db = None
+    try:
+        db = get_session()
+        result = run_treasury_direct_fetch(db)
+        logger.info(
+            f"Treasury Direct: {result['status']} - {result['inserted']} inserted, "
+            f"{result['updated']} updated, latest={result.get('latest_date')}"
+        )
+        if result.get("anomalies"):
+            logger.warning(f"Treasury Direct anomalies: {result['anomalies']}")
+    except Exception as e:
+        logger.error(f"Scheduled Treasury Direct fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
+def scheduled_gold_price_fetch():
+    """LBMA gold fix, daily at 02:30 UTC (D-0041).
+
+    Distinct from scheduled_gold_fetch, which is gold RESERVES by country and
+    stays manual - the WGC country series is behind an account wall with no
+    public API, and Part B did not change that.
+    """
+    db = None
+    try:
+        db = get_session()
+        result = run_gold_price_fetch(db)
+        logger.info(
+            f"Gold price: {result['status']} - {result['inserted']} inserted, "
+            f"{result['updated']} updated, latest={result.get('latest_date')}"
+        )
+    except Exception as e:
+        logger.error(f"Scheduled gold price fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
+def scheduled_freshness_check():
+    """Daily freshness sweep. Reads; the only thing it writes is its own log row."""
+    db = None
+    try:
+        db = get_session()
+        report = run_freshness_check(db)
+        logger.info(
+            f"Freshness: {report['status']} - {report['counts']}"
+            if isinstance(report, dict) and "counts" in report
+            else f"Freshness: {report}"
+        )
+    except Exception as e:
+        logger.error(f"Scheduled freshness check failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
 
 
 def scheduled_startup_fetches():
@@ -141,6 +234,30 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
     logger.info(f"CDS Multi-Tenor pipeline scheduled daily at {cds_hour}:00 UTC")
+
+    scheduler.add_job(
+        scheduled_treasury_direct_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=21, minute=0),
+        id="treasury_direct", name="Treasury Direct Par Yield Curve",
+        replace_existing=True,
+    )
+    logger.info("Scheduled Treasury Direct weekdays at 21:00 UTC")
+
+    scheduler.add_job(
+        scheduled_gold_price_fetch,
+        CronTrigger(hour=2, minute=30),
+        id="gold_price", name="Gold Spot Price (LBMA)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled gold price daily at 02:30 UTC")
+
+    scheduler.add_job(
+        scheduled_freshness_check,
+        CronTrigger(hour=5, minute=0),
+        id="freshness_check", name="Data Freshness Watchdog",
+        replace_existing=True,
+    )
+    logger.info("Scheduled freshness watchdog daily at 05:00 UTC")
 
     scheduler.start()
     logger.info("Scheduler started")

@@ -98,7 +98,11 @@ CHECKS = [
         "key": "gold_price",
         "label": "Gold spot price",
         "patterns": ["GOLD_SPOT_USD"],
-        "max_age_days": 75,      # see MONTH_START note below — NOT 45
+        "max_age_days": 8,       # D-0041: LBMA daily fix, not the month-end CSV.
+                                 # 75 was calibrated for a monthly series normalised
+                                 # to day-1. Left at 75 against a daily feed, a dead
+                                 # source goes unnoticed for eleven weeks - the
+                                 # decoration D-0024 exists to prevent.
         "pipelines": ["Gold_Spot_Price"],
         "note": "MANUAL CSV. Feeds the 2.0x divergence multiplier.",
     },

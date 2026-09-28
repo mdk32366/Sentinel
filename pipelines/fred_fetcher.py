@@ -5,6 +5,9 @@ Fetches economic time series from the Federal Reserve Economic Data API.
 Runs daily at 2am via scheduler.
 """
 
+import re
+import time
+
 import requests
 import logging
 from datetime import datetime, timedelta
@@ -61,6 +64,23 @@ FRED_METRICS = [
 ]
 
 
+# F-0010: the key travels as a query parameter, so raise_for_status() embeds
+# the full URL in the exception text, that text is written to
+# update_logs.error_message, and /api/pipeline-logs serves the field over HTTP.
+# Nothing here is hypothetical - five of ten sampled rows carried the live key.
+_API_KEY_RE = re.compile(r"api_key=[0-9A-Za-z]+")
+
+# A-0003: error_message is varchar(500). A multi-series failure overflows it,
+# the UpdateLog insert itself throws, and the log row is lost entirely -
+# destroying the diagnostic that produced every finding about this pipeline.
+ERROR_FIELD_LIMIT = 480
+
+
+def _redact(text: str) -> str:
+    """Strip any API key from text bound for a log, a database or an HTTP body."""
+    return _API_KEY_RE.sub("api_key=***", str(text))
+
+
 def ensure_metric(db: Session, metric_data: dict) -> Metric:
     metric = db.query(Metric).filter_by(code=metric_data["code"]).first()
     if not metric:
@@ -71,8 +91,18 @@ def ensure_metric(db: Session, metric_data: dict) -> Metric:
     return metric
 
 
-def fetch_fred_series(series_id: str, start_date: str, end_date: str) -> list:
-    """Fetch observations from FRED API."""
+def fetch_fred_series(series_id: str, start_date: str, end_date: str,
+                      attempts: int = 3, backoff: float = 4.0) -> list:
+    """Fetch observations from FRED, retrying transient failures.
+
+    F-0003: FRED returns intermittent 502s that lose exactly one random series
+    per run. Five of ten sampled runs were `partial` for that reason. The
+    failures recovered on the next night, so they are transient and worth
+    retrying rather than surfacing.
+
+    A 4xx other than 429 is not transient - it is a bad request or a bad key,
+    and retrying it three times only delays the report.
+    """
     params = {
         "series_id": series_id,
         "api_key": settings.fred_api_key,
@@ -80,10 +110,32 @@ def fetch_fred_series(series_id: str, start_date: str, end_date: str) -> list:
         "observation_start": start_date,
         "observation_end": end_date,
     }
-    r = requests.get(FRED_BASE, params=params, timeout=30)
-    r.raise_for_status()
-    data = r.json()
-    return data.get("observations", [])
+
+    last_error = None
+    for attempt in range(1, attempts + 1):
+        try:
+            r = requests.get(FRED_BASE, params=params, timeout=30)
+            if 400 <= r.status_code < 500 and r.status_code != 429:
+                r.raise_for_status()
+            r.raise_for_status()
+            return r.json().get("observations", [])
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            if status is not None and 400 <= status < 500 and status != 429:
+                raise
+            last_error = exc
+        except requests.RequestException as exc:
+            last_error = exc
+
+        if attempt < attempts:
+            wait = backoff * (2 ** (attempt - 1))
+            logger.warning(
+                "FRED %s attempt %d/%d failed (%s); retrying in %.0fs",
+                series_id, attempt, attempts, _redact(last_error), wait,
+            )
+            time.sleep(wait)
+
+    raise last_error
 
 
 def run_fred_fetch(db: Session, days_back: int = 1825) -> dict:
@@ -134,16 +186,27 @@ def run_fred_fetch(db: Session, days_back: int = 1825) -> dict:
             logger.info(f"FRED {metric_data['code']}: fetched {len(observations)} observations")
 
         except Exception as e:
-            logger.error(f"FRED fetch failed for {metric_data['code']}: {e}")
-            errors.append(f"{metric_data['code']}: {str(e)}")
+            logger.error("FRED fetch failed for %s: %s",
+                         metric_data["code"], _redact(e))
+            errors.append(_redact(f"{metric_data['code']}: {e}"))
+
+        # Be a good citizen against a shared public API, and keep a run that
+        # hits 37 series from looking like a burst.
+        time.sleep(0.5)
 
     status = "success" if not errors else "partial"
+    # Truncate BEFORE the insert. An over-long error_message makes the insert
+    # itself throw, which loses the whole log row - the row that would have
+    # told you what went wrong (A-0003).
+    joined = "; ".join(errors) if errors else None
+    if joined and len(joined) > ERROR_FIELD_LIMIT:
+        joined = joined[:ERROR_FIELD_LIMIT - 3] + "..."
     db.add(UpdateLog(
         pipeline_name="FRED",
         status=status,
         records_inserted=total_inserted,
         records_updated=total_updated,
-        error_message="; ".join(errors) if errors else None,
+        error_message=joined,
         started_at=start_time,
         completed_at=datetime.utcnow(),
     ))

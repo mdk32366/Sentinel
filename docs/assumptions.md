@@ -84,7 +84,19 @@ otherwise unchanged inputs.
 
 **Consequence:** tier assignments shift for reasons unrelated to the data.
 
-**Status:** ASSUMED. The importer's `date.replace(day=1)` suggests something
+**Status:** **MEASURED 2026-09-28, HOLDS AT THIS INPUT.** `get_spot_gold_trend`
+(`composite_stress.py:381-405`) does not assume monthly spacing structurally:
+it selects by a date window, takes the first and last points in it, and needs
+only two. Scoring with monthly versus daily gold changed `trend_3m_pct` from
+8.25% to 5.83% and changed **zero** tier assignments across 29 countries
+(`D-0041`).
+
+Not closed, because `rising` is a threshold at 2% and both frequencies happen
+to sit well above it today. A trend near the boundary could have the two
+frequencies disagree, flipping the 2.0x divergence multiplier. The falsification
+condition stands and wants re-measuring whenever the multiplier's inputs move.
+
+*Original note, retained:* ASSUMED. The importer's `date.replace(day=1)` suggests something
 downstream expects month-start keys — which makes this more likely to be load
 bearing than it looks.
 

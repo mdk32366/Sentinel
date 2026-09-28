@@ -194,3 +194,90 @@ merge was attempted, so production would have booted; CI would not have.
 
 **Fix.** Throwaway `AUTH_USERNAME` / `AUTH_PASSWORD` added to the workflow env.
 They are not credentials - the CI database is an ephemeral container.
+
+---
+
+## ORDER-01 Part B and ORDER-02 Part C, 2026-09-28
+
+### T — Contract test: Treasury Direct vs FRED (IN THE GATE)
+
+`tests/test_treasury_fred_contract.py`. **184 overlapping business days, 920
+value pairs, zero disagreements.** Proves `A-0001`; its failure is `D-0022`'s
+reversal condition.
+
+Runs offline against fixtures captured from both live sources on 2026-09-28.
+Principle 5 keeps the live check out of the gate; the fixtures carry a staleness
+assertion so a year-old agreement cannot quietly keep passing.
+
+**It caught itself once.** The corruption case originally picked `DGS1MO`, a
+tenor Treasury publishes and FRED does not, so the comparison skipped it and a
+5pp corruption went undetected. The fixture did not distinguish a correct
+implementation from a broken one — clause (c) — until it was fixed to pick a
+tenor both sources carry.
+
+### T — Treasury CSV parser cases (IN THE GATE)
+
+`tests/test_treasury_parser.py`, 19 cases, all taking CSV text rather than a
+URL. Both date forms · blank / `N/A` / `.` skipped rather than zeroed · out of
+`PLAUSIBLE_RANGE` rejected *and logged* · negative yields inside the range kept
+· unknown tenor column ignored · BOM · irregular and mixed-case header
+whitespace · a **renamed** column failing loudly, which is `A-0002`'s
+falsification condition · newest-first ordering, per `F-0042`.
+
+### T — FRED redaction, truncation and retry (IN THE GATE)
+
+`tests/test_fred_error_handling.py`, 15 cases, every network call stubbed. Key
+redacted from URLs and exception objects · a 12-series failure fits inside
+`varchar(500)` · truncation visible rather than silent · 502 retried then
+succeeding · 4xx not retried · **429 retried despite being 4xx** · backoff
+growing 4s then 8s.
+
+### T — Scheduler registration (IN THE GATE)
+
+`tests/test_scheduler_jobs.py`, 10 cases. Every job registered, both new jobs
+present, triggers at the stated hours, every job carrying a misfire grace
+period / coalescing / single instance, and `SCHEDULER_ENABLED=false`
+registering **nothing at all** — including CDS, which used to be added at
+import time and bypassed the switch entirely.
+
+Registered against `start(paused=True)` rather than a stubbed `start()`. See
+`F-0045`: job defaults are applied during start-up, so a stubbed start reports
+them absent for a correct scheduler.
+
+### T — Watchdog trip test (PROVED, AND IN THE GATE)
+
+ORDER-01 B7. Gold reading CRITICAL does not count — that is the fault it was
+built for.
+
+**What was backdated:** a single `DGS10` metric, matching the `DGS%` pattern of
+the `treasury_yields` check whose limit is 5 days, in a disposable in-memory
+database holding nothing else.
+
+**Watched, in order:**
+
+| State | Observed |
+|---|---|
+| no observation at all | `UNKNOWN`, latest `None` |
+| one observation backdated 400 days | **`CRITICAL`**, latest 2025-08-24, age 400, limit 5 |
+| row removed, current observation added | **`OK`**, latest 2026-09-28, age 0, limit 5 |
+
+A **failure-red**: the report came back intact each time with a populated
+`counts` block and a `status` field that said `critical`. An exception would
+also have stopped a deploy and would have proved nothing about the check.
+
+`tests/test_watchdog_trip.py` keeps it proved, including that a current
+observation alone does *not* trip it — without which a watchdog that always
+reported critical would pass.
+
+### T — What we chose NOT to test here, and why
+
+**The live Treasury and LBMA endpoints are not reached from the suite.** Both
+have offline fixture tests, and the live check is a script. A gate that needs
+the internet fails for reasons that have nothing to do with the change being
+gated, and teaches people to re-run it until it passes.
+
+**The production cluster is never pointed at by a test**, even to prove the
+Step 12 guard refuses it. Proving that would require production credentials in
+a test environment, which is the thing the guard exists to survive. The offline
+cases establish that identity is read from the database rather than inferred
+from an address, which is the property that makes the tunnel case safe.
