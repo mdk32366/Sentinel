@@ -631,3 +631,52 @@ fetch; without one, being 25 days behind looks identical to being up to date.
 **Closing it.** `git fetch` before taking any snapshot for the Planner, and
 before branching. Nothing in this repository enforces that, which makes it the
 owner's seam in exactly the sense the doctrine describes.
+
+### F-0038 — `treasury_direct.py` and `freshness_watchdog.py` are deployed and unreferenced
+
+**Claim.** Both modules shipped to production in the 2026-09-26 deploy and
+nothing imports, schedules or calls either one. `DGS7` exists in the repository
+only as a lookup-table entry. Recorded 2026-09-28.
+
+**Artifact.** Against `master` at the merge of PR #11:
+
+- A search for `treasury_direct`, `freshness_watchdog`, `TreasuryDirect`,
+  `run_treasury_direct_fetch`, `run_freshness_check` and `get_freshness_report`
+  across every `.py` in the project, excluding the two modules themselves,
+  returns **no** matches.
+- `pipelines/scheduler.py` registers seven jobs — `fred_fetch`,
+  `treasury_fetch`, `stress_score`, `gold_fetch`, `cds_multi_tenor_job`,
+  `startup_fetches`, `startup_cds_fetch`. Neither module appears.
+- `FRED_METRICS` holds 37 codes. `DGS7` is not among them (ORDER-01 B4).
+- No `GET /api/freshness` route exists (ORDER-01 B6, as amended by ORDER-03 A0).
+- The database holds `DGS2`, `DGS5`, `DGS10` and `DGS30` at ~1,250 points each
+  through 2026-09-24. **There is no `DGS7` metric row at all** (ORDER-01 B3).
+- `treasury_direct.py:79` maps the `7 yr` column to `DGS7`. That line is the
+  entire presence of the seven-year in the system.
+- The watchdog says so itself, on its own first run:
+  `Configured pipelines declared but not yet run: CDS_MultiTenor, TreasuryDirect`.
+
+**Sample size.** One full-tree search, one scheduler read, one database query.
+
+**Why this is deliberate, and why it is still a finding.** ORDER-01 sequences A5
+as first contact with `home.treasury.gov` and stops for a ruling, and B1
+requires the FRED-versus-Treasury contract test to pass **before** any dual
+write, because `D-0022` is only valid if the two sources agree to 0.01. Adding
+`DGS7` to `FRED_METRICS` or registering the 21:00 job ahead of that test would
+begin the dual write that the test exists to validate. Stopping was correct.
+
+What is *not* correct is that the stop left two modules in production with no
+marker. Code that is present, imports cleanly and is named after a working
+feature reads as done. The next person to open `pipelines/` sees a Treasury
+Direct pipeline and a freshness watchdog and has no reason to think the yield
+curve still comes from one source on a one-day lag, or that nothing is watching
+freshness. That is the shape of `F-0004` again — right structure, right names,
+nothing running — and it survived for the same reason: nothing goes red.
+
+**Direction.** The risk is a false sense of coverage, not a wrong number. No
+output is affected today precisely because nothing calls either module.
+
+**Status.** Open. Closed by either finishing ORDER-01 B1–B6 (contract test,
+backfill, scheduler registration, `/api/freshness`) or by removing the modules
+until that work is scheduled. Leaving them in place unmarked is the one option
+that should not persist.
