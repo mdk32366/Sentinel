@@ -411,3 +411,47 @@ the gate for weeks (`F-0006`). Also rejected: `discover -s tests` without
 **How it is kept honest.** `test_disposable_guard` asserts that
 `SENTINEL_TEST_RUN` is set. An invocation that disarms the guard fails the suite
 rather than passing quietly, so this cannot regress into a silent hole.
+
+### D-0041 — Gold spot comes from the LBMA daily fix
+
+**Choice.** `pipelines/gold_price_fetcher.py` reads
+`prices.lbma.org.uk/json/gold_pm.json` and writes `GOLD_SPOT_USD` daily at
+02:30 UTC. Ruled by the owner on 2026-09-28 after ORDER-02 Part B reported.
+
+**Rejected.** A FRED series — none exists. `GOLDPMGBD228NLBM` returns *"The
+series does not exist"*; every recent gold hit on FRED is an index, not a price
+in USD per troy ounce (`F-0043`). Also rejected: the World Bank Pink Sheet,
+which is not exposed as a WDI indicator. Also rejected: keeping the manual WGC
+CSV as the only path, which is what produced `F-0004`.
+
+**What forced the call.** LBMA is live, unauthenticated, daily, and carries 702
+months against the CSV's 584. It is not a second source spliced onto a first:
+its monthly mean reproduces the existing history to **0.00% across every month
+compared** (`F-0044`), because WGC sources from ICE Benchmark Administration,
+which administers this fix. The stopping mechanism in ORDER-02 B2 exists to
+catch a systematic level difference between two sources; there is none, because
+there are not two sources.
+
+**Consequence, measured before shipping.** `GOLD_SPOT_USD` becomes daily where
+it was monthly-normalised-to-day-1. `A-0005` was the open question and it was
+tested rather than assumed: scoring with monthly versus daily gold changed
+`trend_3m_pct` from 8.25% to 5.83% and changed **zero** tier assignments across
+29 countries. `rising` is a threshold at 2%, so both frequencies land on the
+same side of it today — that is a measurement at one moment, not a proof for
+all inputs.
+
+**The freshness threshold moves with it.** `gold_price` goes from 75 days to
+**8**. 75 was calibrated for a month-end series normalised to day-1, where a
+healthy value is already 56 days old. Left at 75 against a daily feed, a dead
+source would go unnoticed for eleven weeks — the decoration `D-0024` exists to
+prevent. A threshold is a property of the source's cadence, so changing the
+source without changing the threshold is half a change.
+
+**What it does not cover.** Gold **reserves** by country stay manual. The WGC
+country series is behind the same account wall with no public API, and Part B
+did not change that. `pipelines/gold_price_import.py` is retained as the manual
+CSV path and as the importer `D-0033`'s guards are attached to; it is no longer
+the route by which spot arrives.
+
+**Reversal condition.** LBMA requiring authentication, or its monthly mean
+diverging from the WGC CSV by more than 1% in any month.

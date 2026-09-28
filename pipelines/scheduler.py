@@ -13,6 +13,7 @@ from pipelines.gold_reserves import run_gold_reserves_fetch
 from pipelines.cds_fetcher import run_cds_fetch
 from pipelines.treasury_direct import run_treasury_direct_fetch
 from pipelines.freshness_watchdog import run_freshness_check
+from pipelines.gold_price_fetcher import run_gold_price_fetch
 
 logger = logging.getLogger(__name__)
 # ORDER-01 B5. Set once on the scheduler rather than repeated on every
@@ -136,6 +137,28 @@ def scheduled_treasury_direct_fetch():
             db.close()
 
 
+def scheduled_gold_price_fetch():
+    """LBMA gold fix, daily at 02:30 UTC (D-0041).
+
+    Distinct from scheduled_gold_fetch, which is gold RESERVES by country and
+    stays manual - the WGC country series is behind an account wall with no
+    public API, and Part B did not change that.
+    """
+    db = None
+    try:
+        db = get_session()
+        result = run_gold_price_fetch(db)
+        logger.info(
+            f"Gold price: {result['status']} - {result['inserted']} inserted, "
+            f"{result['updated']} updated, latest={result.get('latest_date')}"
+        )
+    except Exception as e:
+        logger.error(f"Scheduled gold price fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
 def scheduled_freshness_check():
     """Daily freshness sweep. Reads; the only thing it writes is its own log row."""
     db = None
@@ -219,6 +242,14 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled Treasury Direct weekdays at 21:00 UTC")
+
+    scheduler.add_job(
+        scheduled_gold_price_fetch,
+        CronTrigger(hour=2, minute=30),
+        id="gold_price", name="Gold Spot Price (LBMA)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled gold price daily at 02:30 UTC")
 
     scheduler.add_job(
         scheduled_freshness_check,

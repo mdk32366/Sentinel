@@ -888,3 +888,46 @@ ORDER-02 B2's stopping mechanism exists to detect.
 either way — the WGC country series is behind the same account wall with no
 public API. And the frequency question in `A-0005` becomes live: the existing
 series is monthly and normalised to day-1 on write, while this source is daily.
+
+### F-0045 — The scheduler test measured nothing, because job defaults are applied at start-up
+
+**Claim.** APScheduler 3.x applies `job_defaults` when a pending job is really
+added during `scheduler.start()`. A test harness that stubs `start()` leaves
+every job *pending* with `misfire_grace_time`, `coalesce` and `max_instances`
+unset — so a test reading those attributes reports them absent for a correctly
+configured scheduler.
+
+**Artifact.** 2026-09-28, apscheduler 3.10.4. With `start()` stubbed:
+`AttributeError: 'apscheduler.job.Job' object has no attribute
+'max_instances'`, while `dir(job)` lists all three as slots. Registering
+against `start(paused=True)` instead: 10 tests pass, every job reporting
+`misfire_grace_time=3600`, `coalesce=True`, `max_instances=1`.
+
+**Sample size.** One scheduler, ten jobs, two harness designs.
+
+**Why it is recorded.** The first harness would have failed loudly here, which
+is the lucky case. The dangerous version is the inverse: a harness that stubs
+too much and reports *success* for configuration that was never applied. The
+fix was to use the real registration path with execution paused, rather than a
+fake registration path — proving the thing rather than a model of it.
+
+### F-0046 — The gold plausibility range rejects genuine 1970s prices
+
+**Claim.** `PLAUSIBLE_RANGE = (100.0, 20000.0)` in `gold_price_fetcher.py`
+rejects the earliest LBMA observations, which are real.
+
+**Artifact.** The 2026-09-28 run logged `LBMA 1973-11-26 out of plausible
+range: 90.25` and `1973-11-27: 92`, among 1,329 rows skipped out of 13,362
+parsed.
+
+**Sample size.** One full fetch of the LBMA series back to 1968.
+
+**Why it is not being changed.** The range exists to reject a decimal-point
+error or a currency mix-up, not to model gold's history, and the write window
+is 400 days so nothing before 2025 is ever written. The skip is correct for
+every row this pipeline will store. It is recorded because the log line reads
+like a data problem and is not — the next person to see it should find this
+entry rather than widen the range.
+
+**What would change it.** Backfilling `GOLD_SPOT_USD` before 1975, which would
+need a lower bound and a reason.

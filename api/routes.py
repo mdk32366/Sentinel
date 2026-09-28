@@ -30,6 +30,7 @@ from pipelines.stress_score_v2 import get_latest_metric_value
 # hid these dependencies from any static read of the imports.
 from pipelines.gold_fetcher import compute_cross_asset_stress
 from pipelines.composite_stress import compute_composite_stress
+from pipelines.freshness_watchdog import get_freshness_report
 import logging
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,24 @@ def health_check():
     liveness check should not consume a connection from a pool of 10.
     """
     return {"status": "healthy"}
+
+
+@router.get("/freshness")
+def freshness(db: Session = Depends(get_db)):
+    """Per-source data freshness.
+
+    ORDER-01 B6, as amended by ORDER-03 A0. B6 originally asked for a
+    `data_freshness` block on `/api/health` as well. That instruction is wrong
+    and is not followed: `/api/health` is listed in `main.py` OPEN_PATHS and is
+    served unauthenticated to the Fly and Docker probes, so per-source staleness
+    and pipeline names do not belong on it (`D-0035`, `F-0019`). This endpoint
+    sits behind the same Basic Auth as every other route.
+
+    Thresholds are per-source, not uniform (`D-0024`): a rule that alerts on
+    healthy Treasury data every weekend teaches you to scroll past the one that
+    matters.
+    """
+    return get_freshness_report(db)
 
 
 @router.get("/pipeline-status", response_model=HealthResponse)
