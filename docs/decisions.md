@@ -496,3 +496,56 @@ until it runs — which is the whole of `F-0004`.
 **What forced the call.** The freshness endpoint's first production run
 reported `Gold spot price CRITICAL, latest 2026-07-01, age 89, limit 8`. The
 data existed; nothing could pull it before the next window.
+
+### D-0044 — Credential rotation is deferred to Friday 2026-10-02
+
+**Choice.** ORDER-01 Part C — rotating `AUTH_PASSWORD`, `FRED_API_KEY`,
+`ANTHROPIC_API_KEY` and `GROK_API_KEY`, and scrubbing the `update_logs` rows —
+is scheduled for **Friday 2026-10-02** rather than done on discovery. Owner's
+ruling, 2026-09-28.
+
+**Rejected.** Rotating on the spot. It is the safer default and it was the
+recommendation; the owner has the context on what else the keys touch and when
+there is time to do the scrub properly.
+
+**What is being accepted for four days, stated plainly so it is a decision and
+not a drift.** These two findings compose, and neither entry says so on its
+own:
+
+1. `F-0009` — the dashboard password is in public git history and is confirmed
+   to be the live production credential.
+2. `F-0010` — `/api/pipeline-logs` serves the live `FRED_API_KEY` in plaintext,
+   21 occurrences as measured on 2026-09-28, zero redacted.
+
+Together: the password that gates the endpoint is public, so the FRED key is
+effectively readable without credentials until Friday. That is the exposure
+being accepted, and its size is known rather than guessed.
+
+**Not affected by the delay.** `GROK_API_KEY` is not set in Fly at all, so
+nothing in production can spend it. `ANTHROPIC_API_KEY` and `GROK_API_KEY`
+values do not appear in git history — their rotation rests on ORDER-01 C1's
+claim that they were in a file shared into the Planner's project, which the
+Builder cannot verify and the owner can.
+
+**Sequencing for Friday, because the order lists these as one step and they are
+not.**
+
+1. Rotate `AUTH_PASSWORD` **first** — it is what gates the endpoint that leaks
+   the FRED key.
+2. Rotate `FRED_API_KEY` **second**. Rotation neutralises all 21 exposed copies
+   immediately; the `update_logs` scrub is hygiene afterwards, not the fix.
+3. Scrub `update_logs`. **`psql` is not in the image** — use `python3` with
+   `psycopg2` over `fly ssh console`.
+4. Rotate `ANTHROPIC_API_KEY` and `GROK_API_KEY` if the shared-file claim
+   holds.
+5. `DATABASE_URL` depends on `A-0007`, whose historical answer is
+   unrecoverable. Treat as a separate call.
+
+**Blocker that is still open and is not a key.** C1 requires a completed backup
+and a recovery credential held outside any env file — Day-One Step 16, recorded
+as unanswered in `architecture.md`. The destructive `UPDATE` in step 3 should
+not run before that question is answered.
+
+**Reversal condition.** Any sign the FRED key has been used by someone else —
+an unexplained rate-limit error or a `partial` run that the 502 pattern in
+`F-0003` does not explain. Then rotate that day, not Friday.

@@ -164,7 +164,18 @@ committed is the last place the exception should have been made.
 
 **Artifact.** Five of ten sampled `update_logs` rows contain `api_key=` and the
 live key, retrieved over HTTP from the running application.
-`treasury_monitor.log` holds it eight more times.
+`treasury_monitor.log` held it eight more times; that file was deleted on
+2026-09-28 (ORDER-01 A3) and had never been committed.
+
+**Re-measured 2026-09-28.** `/api/pipeline-logs?limit=200` returns **21** live
+occurrences of the key, **zero** redacted. The `_redact()` added in ORDER-01 B4
+applies to rows written from now on; every existing row is untouched until the
+scrub in ORDER-01 C1.
+
+**Status.** Open. Rotation deferred to 2026-10-02 by `D-0044`, which records
+that this composes with `F-0009`: the password gating this endpoint is in
+public git history, so the key is effectively readable without credentials
+until then. Rotation, not the scrub, is what closes it.
 
 ### F-0011 — A planning claim of absence was made from a stale copy and was wrong
 
