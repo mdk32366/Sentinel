@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, ForeignKey, Index, Numeric
+from sqlalchemy import Text, Column, Integer, String, Float, DateTime, ForeignKey, Index, Numeric
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -64,6 +64,28 @@ class TimeSeries(Base):
     
     def __repr__(self):
         return f"<TimeSeries {self.metric_id} @ {self.date}: {self.value}>"
+
+
+class CompositeSnapshot(Base):
+    """A computed composite stress result, stored so the endpoint is a read.
+
+    ORDER-03 D3. The payload is the scorer's own output, kept whole as JSON
+    text rather than shredded into columns: the shape belongs to the scorer,
+    and a schema that mirrors it would have to change every time the scorer
+    gains a dimension - against a project with no migrations (F-0022).
+
+    Text, not JSONB, so the same code runs on the SQLite databases the test
+    suite builds.
+    """
+    __tablename__ = "composite_snapshots"
+
+    id = Column(Integer, primary_key=True)
+    computed_at = Column(DateTime, nullable=False, index=True)
+    country_count = Column(Integer, default=0)
+    payload = Column(Text, nullable=False)
+
+    def __repr__(self):
+        return f"<CompositeSnapshot {self.country_count} countries @ {self.computed_at}>"
 
 
 class UpdateLog(Base):

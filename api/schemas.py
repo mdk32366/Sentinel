@@ -90,3 +90,40 @@ class HealthResponse(BaseModel):
     last_fred_update: Optional[datetime] = None
     last_treasury_update: Optional[datetime] = None
     last_gold_update: Optional[datetime] = None
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ORDER-03 E2 — response models for the endpoints App.jsx consumes
+#
+# Declared only where every field has been OBSERVED populated. Two of the seven
+# named in E2 are deliberately left unmodelled; see F-0049 for why guessing the
+# type behind a field that is null in every local row is worse than leaving it
+# undeclared.
+# ─────────────────────────────────────────────────────────────────────────────
+
+class HoldingItem(BaseModel):
+    country_code: str
+    country_name: str
+    holdings_billions_usd: float
+    percent_of_total: float
+
+
+class HoldingsResponse(BaseModel):
+    date: str
+    total_billions_usd: float
+    holdings: List[HoldingItem]
+
+
+class GoldReserveItem(BaseModel):
+    country_code: str
+    country_name: str
+    as_of_date: str
+    metric_tonnes: float
+    percent_of_total: float
+
+
+class GoldReservesResponse(BaseModel):
+    as_of: str
+    total_metric_tonnes: float
+    country_count: int
+    reserves: List[GoldReserveItem]

@@ -183,7 +183,14 @@ inputs differ for any country.
 — Principle 11's failure mode, and the same two-producer shape as `A-0001`.
 Direction: unknown, which is why it needs a test rather than an argument.
 
-**Status:** ASSUMED. Becomes load-bearing the moment `D-0030` ships; test
+**Status:** **TESTED 2026-09-28, HOLDS.** `D-0042` shipped the persistence and
+`tests/test_composite_snapshot.py` is its contract test. Equality measured on
+real data: 29 countries, 0 tier or score disagreements, full payload identical
+excluding the timestamps. The gate test covers the round trip - compute,
+serialise, store, read back - including that a changed score is detected and
+that a failed scoring run writes no snapshot at all.
+
+*Original note, retained:* ASSUMED. Becomes load-bearing the moment `D-0030` ships; test
 specified in `testplan.md`.
 
 ### A-0009 — Nothing external consumes `/api/health` beyond liveness

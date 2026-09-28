@@ -14,6 +14,7 @@ from pipelines.cds_fetcher import run_cds_fetch
 from pipelines.treasury_direct import run_treasury_direct_fetch
 from pipelines.freshness_watchdog import run_freshness_check
 from pipelines.gold_price_fetcher import run_gold_price_fetch
+from pipelines.composite_stress import persist_composite_snapshot
 
 logger = logging.getLogger(__name__)
 # ORDER-01 B5. Set once on the scheduler rather than repeated on every
@@ -137,6 +138,25 @@ def scheduled_treasury_direct_fetch():
             db.close()
 
 
+def scheduled_composite_snapshot():
+    """Score every country once, nightly, and store the result (D-0042).
+
+    Runs at 04:45 UTC, after the 04:30 stress score and after every data
+    pipeline has landed. ORDER-03 D3 assumed the 04:30 job already computed
+    this; it does not - that job runs a different scorer (F-0047).
+    """
+    db = None
+    try:
+        db = get_session()
+        result = persist_composite_snapshot(db)
+        logger.info(f"Composite snapshot: {result['countries']} countries stored")
+    except Exception as e:
+        logger.error(f"Scheduled composite snapshot failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
 def scheduled_gold_price_fetch():
     """LBMA gold fix, daily at 02:30 UTC (D-0041).
 
@@ -242,6 +262,14 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled Treasury Direct weekdays at 21:00 UTC")
+
+    scheduler.add_job(
+        scheduled_composite_snapshot,
+        CronTrigger(hour=4, minute=45),
+        id="composite_snapshot", name="Composite Stress Snapshot",
+        replace_existing=True,
+    )
+    logger.info("Scheduled composite snapshot daily at 04:45 UTC")
 
     scheduler.add_job(
         scheduled_gold_price_fetch,

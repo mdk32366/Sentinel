@@ -717,10 +717,12 @@ nothing running — and it survived for the same reason: nothing goes red.
 **Direction.** The risk is a false sense of coverage, not a wrong number. No
 output is affected today precisely because nothing calls either module.
 
-**Status.** Open. Closed by either finishing ORDER-01 B1–B6 (contract test,
-backfill, scheduler registration, `/api/freshness`) or by removing the modules
-until that work is scheduled. Leaving them in place unmarked is the one option
-that should not persist.
+**Status.** **CLOSED 2026-09-28.** ORDER-01 Part B finished the work rather
+than removing the modules. `treasury_direct` is registered weekdays at 21:00
+UTC and `freshness_check` daily at 05:00 UTC (`D-0040`'s test asserts both);
+the B1 contract test that gates the dual write passes over 920 value pairs;
+`GET /api/freshness` exists behind auth; and the watchdog has been tripped and
+watched (`B7`). Neither module is unreferenced any longer.
 
 **Update 2026-09-28.** The seven-year now exists as real data, but this finding
 is **not** closed by that. `DGS7` was added to `FRED_METRICS` and backfilled to
@@ -931,3 +933,83 @@ entry rather than widen the range.
 
 **What would change it.** Backfilling `GOLD_SPOT_USD` before 1975, which would
 need a lower bound and a reason.
+
+### F-0047 — ORDER-03 D3's premise is wrong: the 04:30 job computes a different scorer
+
+**Claim.** D3 says *"The 04:30 scheduled job already computes this. The endpoint
+ignores it."* It does not. Nothing scheduled has ever computed the composite
+score.
+
+**Artifact.** `scheduled_stress_score` calls `run_stress_score_calculation`
+from `stress_score_v2.py`, which calls `calculate_stress_score` — a different
+scorer answering a different question. A search for `compute_composite_stress`
+across the project returns exactly three hits: its definition, its import in
+`api/routes.py`, and its single call site at `routes.py:834`.
+
+**Sample size.** One full-tree search, one scheduler read.
+
+**Consequence.** D3 was written as "read what the job already wrote", and the
+work is actually "write it in the first place". `D-0042` adds the job at 04:45
+UTC rather than reusing 04:30.
+
+**Why it is recorded.** Third order-level premise found wrong against the live
+tree, after `F-0042` (A8 reading the oldest row) and B5's two already-done
+items. The pattern is consistent: the orders are accurate about the code they
+were shown and wrong wherever the working copy had moved — which is `F-0037`
+seen from the other side.
+
+### F-0048 — The composite scorer's query count is dominated by per-country history, not metric lookups
+
+**Claim.** ORDER-03 D2 attributes ~400 queries per request largely to each
+dimension helper re-resolving its metric by code. Hoisting every one of those
+into a single cached map removes 65 queries, not most of them.
+
+**Artifact.** Measured on 29 countries, 2026-09-28, counting
+`before_cursor_execute`: **297 queries before, 232 after**, wall time 0.16s to
+0.15s. Nine `db.query(Metric).filter_by(code=...)` call sites were replaced.
+The remaining ~230 are the per-country TIC, gold and M2 history reads — eight
+per country — which is a query-shape problem, not a lookup-caching one.
+
+**Sample size.** One request per variant, same database, same moment.
+
+**Consequence.** D2 is done and is worth having, but it is not what makes the
+endpoint fast; `D-0042`'s persistence is. Recorded because the order's estimate
+would otherwise look achieved when the measurement says otherwise.
+
+**Verified unchanged.** D2 must not alter what the scorer computes. Comparing
+tier and score assignments across all 29 countries before and after: **0
+changes**. `metrics.code` has no duplicates, so the dict-versus-`.first()`
+difference cannot bite.
+
+### F-0049 — Two of E2's endpoints cannot be modelled from the data available locally
+
+**Claim.** `response_model` was declared on `/holdings` and `/gold-reserves`,
+where every field has been observed populated. It was **not** declared on
+`/holdings/cross-asset-stress`, `/stress/composite`, `/cds` or `/cds/all`,
+because the types behind their nullable fields cannot be read from this
+database.
+
+**Artifact.** 2026-09-28, local. `/api/cds/all` returns `[]` — the CDS pipeline
+has never run here (`F-0013`'s correction). `/api/cds?country=DEU` returns a
+*no-data variant*: `{country, 5Y: null, 10Y: null, term_spread: null,
+message}`, a different shape from the populated one. In
+`cross_asset_stress`, `region`, `treseg_trend_pct` and `treseg_latest_bn` are
+`null` on every one of the 5 rows present.
+
+**Sample size.** All 36 `/holdings` rows and all 39 `/gold-reserves` rows carry
+no nulls in any field — those are safe. The others were inspected row by row.
+
+**Why not guess.** A field that is `null` in every local row has no observable
+type. Declaring `Optional[str]` for `region` when production holds something
+else turns an endpoint that works into a 500 — trading a silent wrong value for
+a loud outage, on a guess. `/cds` additionally returns two different shapes
+depending on whether data exists, so a single model would reject one of them.
+
+**Consequence.** E2 is partially delivered. The four unmodelled endpoints keep
+the defect the order describes: `App.jsx` remains their only specification and
+a renamed field empties a tile silently.
+
+**How to close it properly.** Capture one populated response per endpoint from
+**production**, where CDS and `region` have values, and model from that. That
+is a twenty-minute job with production read access and is not guesswork; it
+simply cannot be done from here.

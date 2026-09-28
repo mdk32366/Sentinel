@@ -1,3 +1,4 @@
+import json
 import httpx
 import time
 from pipelines.fred_fetcher import run_fred_fetch
@@ -10,6 +11,8 @@ from database.connection import get_db, get_session
 from config import settings
 from database.models import Metric, TimeSeries, UpdateLog, Country
 from api.schemas import (
+    HoldingsResponse,
+    GoldReservesResponse,
     MetricResponse,
     CountryResponse,
     TimeSeriesDataPoint,
@@ -29,7 +32,11 @@ from pipelines.stress_score_v2 import get_latest_metric_value
 # ORDER-03 B2 / F-0020: previously imported inside the handler bodies, which
 # hid these dependencies from any static read of the imports.
 from pipelines.gold_fetcher import compute_cross_asset_stress
-from pipelines.composite_stress import compute_composite_stress
+from pipelines.composite_stress import (
+    compute_composite_stress,
+    latest_composite_snapshot,
+    persist_composite_snapshot,
+)
 from pipelines.freshness_watchdog import get_freshness_report
 import logging
 
@@ -226,7 +233,7 @@ def trigger_fred_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/holdings")
+@router.get("/holdings", response_model=HoldingsResponse)
 def get_all_holdings(
     country_iso: Optional[str] = Query(None),
     date: Optional[datetime] = Query(None),
@@ -395,7 +402,7 @@ def trigger_treasury_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.get("/gold-reserves")
+@router.get("/gold-reserves", response_model=GoldReservesResponse)
 def get_gold_reserves(
     country_iso: Optional[str] = Query(None),
     date: Optional[datetime] = Query(None),
@@ -529,6 +536,20 @@ def trigger_gold_fetch(db: Session = Depends(get_db)):
     try:
         result = run_gold_reserves_fetch(db)
         return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/fetch/gold-price")
+def trigger_gold_price_fetch(db: Session = Depends(get_db)):
+    """Manually trigger the LBMA gold spot fetch (D-0041).
+
+    The scheduled job runs at 02:30 UTC. This exists for the case where the
+    series is known stale and waiting for the next window means serving a
+    scorer that is wrong in the meantime - which is exactly what F-0004 was.
+    """
+    from pipelines.gold_price_fetcher import run_gold_price_fetch
+    try:
+        return run_gold_price_fetch(db)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -807,7 +828,7 @@ def trigger_cds_fetch():
 
 
 @router.get("/stress/composite")
-def get_composite_stress(db: Session = Depends(get_db)):
+def get_composite_stress(recompute: bool = Query(False, description="Bypass the stored snapshot and score from scratch"), db: Session = Depends(get_db)):
     """
     5-dimension composite sovereign stress scorer.
     Scores all countries on: Treasury MoM + consecutive months,
@@ -817,7 +838,21 @@ def get_composite_stress(db: Session = Depends(get_db)):
     Returns tiered results: CRISIS / STRESSED / ELEVATED / WATCH.
     """
     try:
+        # ORDER-03 D3: serve the stored result. Recomputing ~230 queries on
+        # every click of the COMPOSITE tab is work the nightly job already did.
+        if not recompute:
+            snapshot = latest_composite_snapshot(db)
+            if snapshot is not None:
+                payload = json.loads(snapshot.payload)
+                payload["computed_at"] = snapshot.computed_at.isoformat()
+                payload["served_from"] = "snapshot"
+                return payload
+            # No snapshot yet - the job has not run. Fall through and compute,
+            # rather than serving an empty tab and calling it success.
+
         result = compute_composite_stress(db)
+        result["computed_at"] = datetime.utcnow().isoformat()
+        result["served_from"] = "recompute"
         return result
     except Exception as e:
         logger.error(f"Composite stress calculation failed: {e}")
