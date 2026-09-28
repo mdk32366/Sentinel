@@ -17,6 +17,28 @@ logger = logging.getLogger(__name__)
 
 TIC_MFH_URL = "https://ticdata.treasury.gov/Publish/mfhhis01.txt"
 
+# D-0045 / F-0050. TIC MFH is monthly, released roughly 45 days in arrears, so
+# a healthy newest row is about 60 days old and 75 at the end of a cycle. 100
+# is the first value that does not fire on a correctly updating source.
+#
+# This exists because the pipeline reported `success` for nine months while
+# re-importing a file frozen at December 2025: 10,009 rows updated, 0 inserted,
+# every run. Nothing errored. The fetch worked, the parse worked, the write
+# worked, and the data never moved. A pipeline that cannot tell "I imported
+# current data" from "I re-imported a frozen year" is not reporting success,
+# it is reporting completion.
+MAX_SOURCE_AGE_DAYS = 100
+
+
+class StaleSourceError(RuntimeError):
+    """The fetch and parse both worked and the data is frozen.
+
+    Distinct from the per-country parse errors that legitimately make a run
+    `partial`: this one means the whole import is worthless, so it must be
+    `failed`. D-0027 - a guard that stands aside is not a guard, and `partial`
+    is exactly standing aside.
+    """
+
 MONTH_ABBR_SET = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"}
 
 SKIP_ROWS = {
@@ -193,6 +215,7 @@ def run_treasury_holdings_fetch(db: Session) -> dict:
     start_time = datetime.utcnow()
     total_inserted = 0
     total_updated = 0
+    newest_source_date = None
     errors = []
     countries_loaded = 0
 
@@ -217,6 +240,8 @@ def run_treasury_holdings_fetch(db: Session) -> dict:
             for date_str, value_billions in date_values.items():
                 try:
                     date_obj = datetime.strptime(f"01 {date_str}", "%d %b %Y")
+                    if newest_source_date is None or date_obj > newest_source_date:
+                        newest_source_date = date_obj
                     value = Decimal(str(value_billions))
 
                     existing = db.query(TimeSeries).filter(
@@ -249,11 +274,35 @@ def run_treasury_holdings_fetch(db: Session) -> dict:
             f"{total_inserted} inserted, {total_updated} updated"
         )
 
+        # D-0045: refuse to call a frozen source a success.
+        if newest_source_date is None:
+            raise StaleSourceError(
+                f"TIC source at {TIC_MFH_URL} yielded no parseable dates. "
+                f"Refusing to report success."
+            )
+        age_days = (datetime.utcnow() - newest_source_date).days
+        if age_days > MAX_SOURCE_AGE_DAYS:
+            raise StaleSourceError(
+                f"TIC source at {TIC_MFH_URL} is stale: newest row "
+                f"{newest_source_date.date()} is {age_days} days old, limit is "
+                f"{MAX_SOURCE_AGE_DAYS}. The fetch and parse both succeeded - "
+                f"the upstream file is frozen, or the URL now points at a "
+                f"historical year rather than the current release. See F-0050."
+            )
+
+        stale = False
+    except StaleSourceError as e:
+        logger.error(f"TIC holdings source is frozen: {e}")
+        errors.append(str(e))
+        stale = True
     except Exception as e:
         logger.error(f"TIC holdings fetch failed: {e}")
         errors.append(str(e))
+        stale = False
 
-    status = "success" if not errors else "partial"
+    # A frozen source is `failed`, not `partial`. `partial` reads as "mostly
+    # fine" and is what let this sit for nine months.
+    status = "failed" if stale else ("success" if not errors else "partial")
     db.add(UpdateLog(
         pipeline_name="TIC_Holdings",
         status=status,

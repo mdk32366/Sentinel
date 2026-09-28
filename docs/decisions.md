@@ -119,6 +119,21 @@ reproduces. See `A-0004`.
 **Owner's ruling, not the Builder's and not the Planner's.** Recorded as
 unresolved rather than left unrecorded.
 
+**Partial ruling 2026-09-28: not ready to go private.** The repository stays
+public for now, which settles the *state*.
+
+**What this does not settle.** Principle 10 asks for the **observable** that
+will make "development is complete" true, recorded as a numbered decision, so
+the stopping point is not argued about at the moment it matters. "Not ready
+yet" is a position, not an observable, and this entry stays open until one is
+named.
+
+The candidate is unchanged and is now better supported: *the first stored data
+that cannot be rebuilt from public sources*. `F-0033` established that the AI
+analyst briefs are not persisted and never have been, so `A-0004` holds and
+nothing currently stored fails that test. Every series — FRED, Treasury, LBMA,
+TIC, WGC, World Bank — is rebuildable today.
+
 ---
 
 ### D-0028 — Backend remediation sequenced ahead of frontend decomposition
@@ -549,3 +564,35 @@ not run before that question is answered.
 **Reversal condition.** Any sign the FRED key has been used by someone else —
 an unexplained rate-limit error or a `partial` run that the 502 pattern in
 `F-0003` does not explain. Then rotate that day, not Friday.
+
+### D-0045 — A frozen TIC source is a failure, not a success and not a `partial`
+
+**Choice.** `run_treasury_holdings_fetch` raises `StaleSourceError` when the
+newest parsed observation is older than `MAX_SOURCE_AGE_DAYS = 100`, and that
+error is logged as `status="failed"`.
+
+**Rejected.** Leaving the freshness watchdog as the only thing that notices.
+It *did* notice — the watchdog flagged TIC CRITICAL at 301 days on its first
+production run, which is the watchdog earning its keep. But a pipeline that
+reports `success` while importing a nine-month-old file is lying in its own
+log, and the log is what anyone debugging reads first.
+
+Also rejected: `partial`. `partial` reads as "mostly fine" and is precisely
+what let this sit unexamined. A guard that stands aside is not a guard
+(`D-0027`).
+
+**What forced the call.** `F-0050`. Ten consecutive runs, all `success`, all
+`0 inserted / 10009 updated`, newest observation never moving.
+
+**Why 100 days.** TIC MFH is monthly, released about 45 days in arrears, so a
+healthy newest row is around 60 days old and roughly 75 at the end of a cycle.
+100 is the first value that does not fire on a correctly updating source. A
+tighter limit would alert on healthy data, which is the decoration `D-0024`
+exists to prevent.
+
+**Distinguished from per-country errors.** `StaleSourceError` is its own type
+so it cannot be swallowed by the loop that legitimately produces `partial` when
+one country's row fails to parse.
+
+**Reversal condition.** If TIC moves to a source whose cadence differs, the
+constant is re-derived from that cadence rather than nudged.
