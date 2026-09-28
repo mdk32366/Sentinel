@@ -360,6 +360,29 @@ sets `python-version: '3.11'`. The project's recorded decision chose Python
 the decision describes, which means one of the two is wrong and nobody knows
 which.
 
+**Correction 2026-09-28 — the premise is unsupported.** This entry asserts
+"the project's recorded decision chose Python 3.13 with 3.13-pinned wheels",
+and its Artifact line cites only `Dockerfile:1` and the workflow — **it never
+cites the decision**. Checked today:
+
+- No entry in `docs/decisions.md` mentions Python 3.13, or any Python version.
+- `requirements.txt` contains no 3.13-pinned wheels and no version markers.
+
+So there is no recorded decision for the deployment to disagree with. The claim
+appears to have come from the same planning session that produced Addendum B,
+against a copy of the project the Builder cannot find.
+
+**What is actually true, measured.** Local development runs **Python 3.13.14**;
+the Dockerfile and CI both run **3.11**. That is a dev-versus-deploy
+difference, not a decision-versus-deploy one — and the important half already
+holds: **CI matches production**, so the gate runs in the environment that
+ships. The residual risk is that a 3.13-only behaviour passes locally and is
+first seen in CI, which is the right place to see it.
+
+**Left as a recommendation rather than a change.** Aligning the local venv to
+3.11 would remove the last mismatch, but recreating a developer's virtualenv is
+the owner's call, not a Builder's.
+
 ### F-0027 — No frontend build stage; the bundle is committed
 
 **Claim.** The Dockerfile has a Python builder stage and no Node stage.
@@ -372,6 +395,19 @@ via `COPY . .`. `.gitignore` ignores a bare `dist/` but not `api/static/`.
 a new API with no signal of any kind. Flagged as Phase 0 in the June plan;
 still open.
 
+
+**Partially closed 2026-09-28 by `D-0048`.** The harm this finding describes is
+that a forgotten rebuild ships a stale UI *with no signal*. There is a signal
+now: `api/static/BUILD_MANIFEST.json` records the `ui/src` digest the committed
+bundle was built from, and `tests/test_ui_bundle_freshness.py` fails the gate
+when the source has moved since. Proved by tripping it — an unbuilt edit fails
+with both digests and the commands to fix it; reverting clears it.
+
+**Still open:** the Dockerfile has no Node stage. The guard makes a stale
+bundle *detectable*; a build stage would make it *impossible*, and would also
+prove the committed bundle actually corresponds to the source rather than
+merely coexisting with an unchanged copy of it. That change touches the deploy
+path and is deliberately not bundled with a guard.
 ### F-0028 — The application writes an unbounded log file inside the container
 
 **Claim.** `main.py:17` attaches `logging.FileHandler('treasury_monitor.log')`.
