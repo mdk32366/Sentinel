@@ -124,10 +124,29 @@ or Fly's builder excluding it by some mechanism other than `.dockerignore`.
 access, and travel in every image layer pushed to the registry. Rotation does
 not help until the image is rebuilt.
 
-**Status:** ASSUMED, AND EXPECTED FALSE. `.dockerignore` does not list `.env`
-and the Dockerfile does `COPY . .`. This is the one assumption here recorded in
-the expectation that the check will fail. ORDER-03 A1 runs it first, before the
-fix, so the answer is known rather than merely corrected.
+**Status:** ASSUMED, EXPECTED TRUE GOING FORWARD, **AND THE HISTORICAL ANSWER
+IS LOST**.
+
+*Original status, retained:* ASSUMED, AND EXPECTED FALSE — `.dockerignore` did
+not list `.env` while the Dockerfile does `COPY . .`. ORDER-03 A1 required the
+check to run **first, before the fix**, so the answer would be known rather
+than merely corrected.
+
+**That ordering was not followed.** `.dockerignore` was rewritten on 2026-09-26
+(`F-0017`) and now excludes `.env` at line 5, `.env.*` at line 6 and `.envrc` at
+line 8. Deploys after that commit should contain no `.env`. Whether the images
+deployed *before* it contained one was never checked, and cannot be recovered
+from the current image.
+
+**What this costs.** If `.env` was in those images it is in every layer pushed
+to the registry for the life of the project so far, and rotating the
+credentials is the only remedy — a question that is now open rather than
+answered. `FRED_API_KEY`, `ANTHROPIC_API_KEY`, `AUTH_PASSWORD`, `AUTH_USERNAME`
+and `DATABASE_URL` are the secrets in scope.
+
+**Still worth running, two ways.** `ls -la /app/.env` in a current container
+confirms the forward-looking half. A prior Fly release, if one is still
+retained, would answer the historical half — that is the only route left to it.
 
 ### A-0008 — The persisted composite score equals a fresh recompute
 
@@ -155,7 +174,18 @@ that endpoint.
 **Consequence:** trimming `/api/health` to liveness only, per `D-0033`, breaks
 a silent consumer.
 
-**Status:** ASSUMED. Cheap to check and never checked.
+**Status:** **VERIFIED 2026-09-26, HOLDS.** See `F-0034`.
+
+`grep -noE "health\??\.[a-z_]+" ui/src/App.jsx` returns a single hit,
+`health.status` at line 1758. The two other mentions, at lines 2496-2497, are
+ADMIN checklist *strings* telling a human to go and read the endpoint, not code
+reading its fields. `fly.toml` and the Dockerfile `HEALTHCHECK` test the status
+code only. All four consumers enumerated; none read the pipeline detail.
+
+Because it held, trimming `/api/health` to liveness only broke nothing, which
+is what made `D-0035` cheap. Recorded because the fields *looked* load-bearing
+and were not — the assumption was worth checking rather than asserting in
+either direction.
 
 ### A-0010 — `create_all()` has never silently skipped a needed column change
 
