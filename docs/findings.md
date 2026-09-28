@@ -689,3 +689,40 @@ stands unchanged: `treasury_direct.py` and `freshness_watchdog.py` are still
 imported by nothing, still registered nowhere, and there is still no
 `/api/freshness` route. The seven-year arrived through the FRED pipeline, not
 through the module named after it.
+
+### F-0039 — API responses carry no cache headers, so a browser may serve stale data indefinitely
+
+**Claim.** Every `/api/*` response was returned with no `Cache-Control`, no
+`ETag`, no `Last-Modified` and no `Expires`. A browser is then permitted to
+cache heuristically and replay a stored response without revalidating, so the
+dashboard can display data older than the database holds, with nothing to
+indicate it.
+
+**Artifact.** 2026-09-28, production. `curl -D -` against
+`/api/timeseries?metric_codes=DGS7&...` returned exactly two response headers:
+`HTTP/1.1 200 OK` and `date:`. No caching directive of any kind. By contrast
+`GET /` returned `last-modified` and `etag`, because `StaticFiles` sets them —
+so the HTML revalidated while the data behind it did not.
+
+**How it surfaced.** The owner reported the MARKETS stat cards showing data to
+2026-09-23. Measured at the same moment: the production database held `DGS7`
+and `DGS10` through **2026-09-24**; FRED's own API ended at **2026-09-24**;
+the scheduler reported `running` with a successful FRED run that day updating
+11,698 rows; and replaying the page's exact request and its exact `latest`
+computation returned 2026-09-24 for all five tenors. Every layer was current
+except the one in the browser.
+
+**Sample size.** One header inspection across three endpoints, one reported
+observation. **The browser cache itself was not inspected** — the missing
+headers are the mechanism that permits the symptom, and they are a defect on
+their own terms, but this entry does not claim to have watched a cache hit.
+
+**Why it is Principle 11.** Nothing errored. The number on the card had the
+right shape, the right units and a plausible value — it was simply a day old,
+and a yield that moved 5.05 to 5.10 is not a number anyone can eyeball as
+wrong. The system had no way to go red, because from its own point of view
+nothing had gone wrong: the database was correct, the pipeline was correct,
+and the API was correct. Only the copy in the browser was stale, and that is
+the one layer none of the guards look at.
+
+**Status.** Closed by `D-0038`.

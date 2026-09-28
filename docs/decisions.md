@@ -338,3 +338,29 @@ on one row, which reads as the curve.
 
 **Watch for.** A twelfth ticker still fits. A thirteenth spills to a third row
 and this decision needs revisiting rather than silently widening again.
+
+### D-0038 — `/api/*` is `no-store`; static assets keep their validators
+
+**Choice.** A `NoStoreAPIMiddleware` sets `Cache-Control: no-store,
+must-revalidate` plus `Pragma: no-cache` and `Expires: 0` on every response
+whose path begins with `/api/`. Static assets are untouched and keep the
+`ETag` and `Last-Modified` that `StaticFiles` provides.
+
+**Rejected.** `ETag` with revalidation on the data endpoints. It would cut
+bandwidth and still guarantee freshness, and for a dashboard whose payloads are
+a few hundred kilobytes that saving buys nothing against the cost of getting
+the validator wrong. Also rejected: a short `max-age`, which replaces "stale
+forever" with "stale for N seconds" and leaves the same failure mode with a
+smaller window.
+
+**What forced the call.** `F-0039`. These endpoints are a live read of a
+database that changes nightly, and the fingerprinted asset bundle already
+handles the case that genuinely benefits from caching.
+
+**Note on scope.** `/api/health` is also `no-store`. The Fly and Docker probes
+issue their own requests and do not cache, so this costs nothing and keeps the
+rule simple — one prefix, one behaviour, no exceptions to reason about.
+
+**Reversal condition.** If a data endpoint is ever large enough that
+revalidation matters, give that endpoint an `ETag` explicitly. Do not relax the
+default.
