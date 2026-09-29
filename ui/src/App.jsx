@@ -3,6 +3,14 @@ import { createPortal } from "react-dom";
 // ORDER-03 Part F step 1: one module owns the base URL (F-0052).
 import { apiFetch } from "./lib/api";
 import { buildYieldSeries } from "./lib/yieldSeries";
+import {
+  formatDate, formatValue, scoreColor, tierColor, tierLabel,
+  spreadBasisPoints, spreadColor,
+} from "./lib/format";
+import {
+  seriesByCode, latestByCode, priorObservation,
+  changeBetween, changeSuffix, changeWindowLabel,
+} from "./lib/series";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from "recharts";
 
 
@@ -31,44 +39,10 @@ const RANGES = [
 
 const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "CDS", "STRESS", "COUNTRY", "ADMIN", "ABOUT"];
 
-function formatDate(d) {
-  return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "2-digit" });
-}
-
-function formatValue(v, unit) {
-  if (v == null) return null;
-  if (unit === "%") return `${v.toFixed(2)}%`;
-  if (unit === "$/bbl") return `$${v.toFixed(2)}`;
-  if (unit === "B$") return `$${(v / 1000).toFixed(1)}T`;
-  return v.toFixed(2);
-}
-
-function scoreColor(score) {
-  if (score >= 50) return "#E07B5A";
-  if (score >= 25) return "#E8C547";
-  return "#5A6878";
-}
-
-function tierColor(tier) {
-  if (tier === "DIVERGENCE")    return "#FF4444";
-  if (tier === "CROSS_ASSET")   return "#E07B5A";
-  if (tier === "TREASURY_ONLY") return "#E8C547";
-  if (tier === "GOLD_ONLY")     return "#C8A96E";
-  return "#5A6878";
-}
-
-function tierLabel(tier) {
-  if (tier === "DIVERGENCE")    return "⚡ DIVERGENCE";
-  if (tier === "CROSS_ASSET")   return "⚠ CROSS-ASSET";
-  if (tier === "TREASURY_ONLY") return "T-ONLY";
-  if (tier === "GOLD_ONLY")     return "Au ONLY";
-  return tier;
-}
-
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
 function StatCard({ label, value, unit, change, color }) {
-  const up = change >= 0;
+  const up = (change?.value ?? 0) >= 0;
   return (
     <div style={{ background: "#0F1923", border: `1px solid ${color}33`, borderTop: `2px solid ${color}`, borderRadius: 2, padding: "18px 22px", minWidth: 0 }}>
       <div style={{ fontSize: 11, letterSpacing: "0.12em", color: "#5A6878", textTransform: "uppercase", marginBottom: 8, fontFamily: "monospace" }}>{label}</div>
@@ -77,7 +51,7 @@ function StatCard({ label, value, unit, change, color }) {
       </div>
       {change != null && (
         <div style={{ marginTop: 6, fontSize: 12, color: up ? "#5DB87A" : "#E07B5A", fontFamily: "monospace" }}>
-          {up ? "▲" : "▼"} {Math.abs(change).toFixed(2)}{unit === "%" ? "pp" : "%"} vs 30d
+          {up ? "▲" : "▼"} {Math.abs(change.value).toFixed(2)}{change.suffix} {change.window}
         </div>
       )}
     </div>
@@ -347,8 +321,8 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   const yieldCode = SOVEREIGN_YIELD_CODES[iso];
   const countryYield = yieldCode ? latestAll[yieldCode] : null;
   const us10y = latestAll["DGS10"];
-  const spreadBps = countryYield != null && us10y != null ? (countryYield - us10y) * 100 : null;
-  const spreadColor = spreadBps == null ? "#3A4D5C" : spreadBps > 150 ? "#FF4444" : spreadBps > 50 ? "#E07B5A" : spreadBps > 0 ? "#E8C547" : "#7EB8C9";
+  const spreadBps = spreadBasisPoints(countryYield, us10y);
+  const spreadStroke = spreadColor(spreadBps);
 
   return (
     <div style={container}>
@@ -395,7 +369,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
           },
           { label: "Gold Reserves", val: latestGold ? `${latestGold.tonnes.toFixed(0)}t` : "—", color: "#E8C547" },
           { label: "Sovereign Yield", val: countryYield != null ? `${countryYield.toFixed(2)}%` : "—", color: "#7EB8C9" },
-          { label: "Spread vs US 10Y", val: spreadBps != null ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)}bps` : "—", color: spreadColor },
+          { label: "Spread vs US 10Y", val: spreadBps != null ? `${spreadBps > 0 ? "+" : ""}${spreadBps.toFixed(0)}bps` : "—", color: spreadStroke },
           {
             label: "5Y CDS",
             val: cdsData.cds5y != null ? `${cdsData.cds5y.toFixed(0)}bps` : "No coverage",
@@ -1684,19 +1658,23 @@ export default function App() {
           byDate[d][metric_code] = value;
         });
 const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-const latest = {}, month30 = {};
 const allTrackedCodes = [...METRICS.map(m => m.code),
   "IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N",
   "IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N",
   "IRLTLT01NLM156N","IRLTLT01NOM156N","IRLTLT01SEM156N","IRLTLT01CHM156N",
   "IRLTLT01BEM156N","IRLTLT01KRM156N"
 ];
+// F-0055: `prior` is the observation ~30 days back BY DATE, and it carries the
+// gap it actually found. This used to be points.at(-2) - the previous row -
+// which on a daily series is yesterday, while the card said "vs 30d".
+const series = seriesByCode(rows, allTrackedCodes);
+const latest = latestByCode(series);
+const prior = {};
 allTrackedCodes.forEach((code) => {
-  const withVal = rows.filter(r => r[code] != null);
-  if (withVal.length) latest[code] = withVal[withVal.length - 1][code];
-  if (withVal.length > 1) month30[code] = withVal[Math.max(0, withVal.length - 2)][code];
+  const found = priorObservation(series[code], 30);
+  if (found) prior[code] = found;
 });
-setLatestAll({ latest, month30 });
+setLatestAll({ latest, prior });
       }).catch(() => {});
   }, []);
 
@@ -1736,11 +1714,13 @@ setLatestAll({ latest, month30 });
     apiFetch(`/health`).then(r => r.json()).then(setHealth).catch(() => {});
   }, []);
 
-  const { latest = {}, month30 } = latestAll;
+  const { latest = {}, prior = {} } = latestAll;
   const getChange = (code, unit) => {
-    if (!month30 || latest[code] == null || month30[code] == null) return null;
-    if (unit === "%" || unit === "") return latest[code] - month30[code];
-    return ((latest[code] - month30[code]) / month30[code]) * 100;
+    const previous = prior[code];
+    if (!previous || latest[code] == null) return null;
+    const value = changeBetween(latest[code], previous.value, unit);
+    if (value == null) return null;
+    return { value, suffix: changeSuffix(unit), window: changeWindowLabel(previous.actualDays) };
   };
   const tickerData = METRICS.map(m => ({ ...m, latest: latest[m.code] })).filter(m => m.latest != null);
 

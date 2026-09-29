@@ -731,3 +731,29 @@ reinstalling dependencies.
 — and the image was rebuilt. The marker appeared in the bundle inside the
 image. That is the only evidence that the image builds from source rather than
 from a committed artefact.
+
+### D-0050 — The change window is measured, and the label says what was measured
+
+**Choice.** `priorObservation(points, 30)` finds the last observation on or
+before thirty days prior and returns the gap it actually found.
+`changeWindowLabel(actualDays)` renders that number, so a card reads `vs 30d`
+when the comparison really spans thirty days and `vs 3d` when it does not.
+
+**Rejected.** Relabelling everything to "vs prev". Honest, and it throws away a
+metric people want — a thirty-day move is a real question and the dashboard was
+trying to answer it.
+
+Also rejected: falling back to the oldest available point when a series is too
+short. That is exactly the defect in another form — comparing against whatever
+happens to be there and describing it as thirty days. `priorObservation`
+returns null instead, and the card shows no change at all.
+
+**What forced the call.** `F-0055`. Eight of eleven tickers described a
+one-to-three-day move as a month.
+
+**Consequence, stated.** Numbers on the MARKETS cards will change, because they
+now measure a different and longer period. That is the fix, not a regression.
+
+**Tested.** `ui/src/lib/series.test.js` covers the date lookup, the too-short
+case, the exact-boundary case, the percentage-point versus percent branch, and
+that the label never claims thirty days for a three-day gap.
