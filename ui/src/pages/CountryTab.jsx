@@ -1,20 +1,13 @@
 import { USADashboard } from "./USADashboard";
-import { useState, useEffect } from "react";
-import { apiFetch } from "../lib/api";
+import { useState } from "react";
+import { useApiResource } from "../hooks/useApiResource";
 import { CountryDetail } from "../components/CountryDetail";
 
 export function CountryTab({ initialIso, onIsoChange, latestAll = {} }) {
-  const [countries, setCountries] = useState([]);
+  const { data, loading } = useApiResource(`/countries`);
+  const countries = Array.isArray(data) ? data : [];
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(initialIso || null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    apiFetch(`/countries`)
-      .then(r => r.json())
-      .then(d => { setCountries(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
 
   const filtered = countries.filter(c =>
     c.name.toLowerCase().includes(search.toLowerCase()) ||

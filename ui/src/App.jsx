@@ -202,17 +202,13 @@ export default function App() {
           </>
         )}
 
-        {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} latestAll={latestAll} />}
+        {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} latestAll={latest} />}
         {tab === "CROSS-ASSET" && <CrossAssetTab />}
-        {tab === "GOLD" && <GoldReservesTab onCountrySelect={handleCountrySelect} />}
+        {tab === "GOLD" && <GoldReservesTab onCountrySelect={handleCountrySelect} latestAll={latest} />}
         {tab === "COMPOSITE" && <CompositeTab onCountrySelect={handleCountrySelect} />}
         {tab === "CDS" && <CDSTab onCountrySelect={handleCountrySelect} />}
         {tab === "COUNTRY" && (
-          <CountryTab
-            initialIso={countryIso}
-            onIsoChange={setCountryIso}
-            latestAll={latest}
-          />
+          <CountryTab initialIso={countryIso} onIsoChange={setCountryIso} latestAll={latest} />
         )}
         {tab === "ADMIN" && <AdminTab />}
         {tab === "ABOUT" && <AboutTab />}

@@ -1,24 +1,20 @@
-import { useState, useEffect } from "react";
-import { apiFetch } from "../lib/api";
+import { useState } from "react";
+import { useApiResource } from "../hooks/useApiResource";
 import { tierColor, tierLabel } from "../lib/format";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
+import { LoadFailure } from "../components/LoadFailure";
 import { StressBar } from "../components/StressBar";
 
 export function CrossAssetTab() {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data, error, loading } = useApiResource(`/holdings/cross-asset-stress`);
   const [view, setView] = useState("all");
 
-  useEffect(() => {
-    apiFetch(`/holdings/cross-asset-stress`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
   if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading cross-asset signals...</div>;
-  if (!data || data.detail) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>No cross-asset data. Ensure TIC and gold reserves are loaded.</div>;
+  if (error || !data || data.detail) {
+    return <LoadFailure what="cross-asset signals" error={error}
+      detail="Ensure TIC holdings and gold reserves are both loaded." />;
+  }
 
   const { summary } = data;
   const allStressed = [...(data.cross_asset_stress || []), ...(data.treasury_only_stress || []), ...(data.gold_only_stress || [])].sort((a, b) => b.stress_score - a.stress_score);

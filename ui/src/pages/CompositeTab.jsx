@@ -1,22 +1,17 @@
-import { useState, useEffect } from "react";
-import { apiFetch } from "../lib/api";
+import { useState } from "react";
+import { useApiResource } from "../hooks/useApiResource";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
+import { LoadFailure } from "../components/LoadFailure";
 
 export function CompositeTab({ onCountrySelect }) {
-  const [data, setData] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data, error, loading } = useApiResource(`/stress/composite`);
   const [view, setView] = useState("all");
 
-  useEffect(() => {
-    apiFetch(`/stress/composite`)
-      .then(r => r.json())
-      .then(d => { setData(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
   if (loading) return <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:300, fontFamily:"monospace", fontSize:13, color:"#3A4D5C" }}>computing composite stress...</div>;
-  if (!data || data.error) return <div style={{ fontFamily:"monospace", color:"#E07B5A", padding:24 }}>Failed to load composite stress data. {data?.error ?? ""}</div>;
+  if (error || !data || data.error) {
+    return <LoadFailure what="composite stress" error={error} detail={data?.error} />;
+  }
 
   const { summary } = data;
   const allResults = [...(data.crisis||[]), ...(data.stressed||[]), ...(data.elevated||[]), ...(data.watch||[])];

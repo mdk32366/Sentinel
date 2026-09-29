@@ -1,23 +1,19 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
-import { apiFetch } from "../lib/api";
+import { useApiResource } from "../hooks/useApiResource";
 import { ColHeader } from "../components/ColHeader";
 import { CountryDetail } from "../components/CountryDetail";
+import { LoadFailure } from "../components/LoadFailure";
 
-export function GoldReservesTab({ onCountrySelect }) {
-  const [reserves, setReserves] = useState(null);
-  const [loading, setLoading] = useState(true);
+export function GoldReservesTab({ onCountrySelect, latestAll = {} }) {
+  const { data: reserves, error, loading } = useApiResource(`/gold-reserves`);
   const [selected, setSelected] = useState(null);
 
-  useEffect(() => {
-    apiFetch(`/gold-reserves`)
-      .then(r => r.json())
-      .then(d => { setReserves(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
   if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading gold reserves...</div>;
-  if (!reserves) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>No gold reserves data. Run POST /api/fetch/gold-reserves</div>;
+  if (error || !reserves) {
+    return <LoadFailure what="gold reserves" error={error}
+      detail="If the table is genuinely empty, run POST /api/fetch/gold-reserves." />;
+  }
 
   const rows = reserves.reserves || [];
   const total = reserves.total_metric_tonnes;
@@ -55,7 +51,7 @@ export function GoldReservesTab({ onCountrySelect }) {
 
       {/* Inline country detail */}
       {selected && (
-        <CountryDetail iso={selected.country_code} onClose={() => setSelected(null)} latestAll={{}} />
+        <CountryDetail iso={selected.country_code} onClose={() => setSelected(null)} latestAll={latestAll} />
       )}
 
       {/* Bar chart top 20 */}
