@@ -1242,3 +1242,65 @@ the same span.
 quoted as a running spread" — rather than the generic "Not factored into
 stress score", which was true of both a country nobody quotes and a country
 whose quote was thrown away.
+
+### D-0062 — The 10Y CDS and term-structure surfaces are removed
+
+**Choice.** The 10Y CDS column, the Term Structure column, the curve-inversion
+summary tile, the `INVERTED` badge and the term-structure component of the CDS
+score are all gone.
+
+**Established, not assumed.** Fetching the live board and reading its headers:
+
+```
+Country | S&P | 5Y CDS | Var 1m | Var 6m | PD (*) | Date
+any mention of 10Y anywhere in the payload? False
+```
+
+It is a 5Y board. The string "10Y" does not occur in what the source sends.
+The 500.0 values that used to populate those columns were never 10Y data —
+they were the ISDA standard running coupon read from the wrong column by an
+earlier scraper, and the current fetcher's docstring already said so.
+
+**Rejected.** Keeping the columns as permanently empty. A column of dashes
+reads as *missing data* — something that might arrive tomorrow — rather than
+as a tenor this source does not carry. `F-0074` is what happens when a reader
+tries to fill such a gap.
+
+**The scoring component goes with them.** `+3` for an inverted curve could not
+be reached: the only inversions it ever produced were a frozen July
+placeholder subtracted from a current 5Y. A branch that cannot fire is not
+conservatism, it is decoration that reads as rigour.
+
+**A real 10Y would need a different source.** Sovereign 10Y CDS exists, from
+licensed vendors. That is a procurement decision, not a scraping one, and
+nothing here should pretend otherwise.
+
+### D-0063 — The board's other columns are captured and used
+
+**Choice.** The fetcher now reads the S&P rating, Var 1m, Var 6m and implied
+PD it had been discarding on every run, and persists implied PD and the
+six-month change as `{COUNTRY}_CDS_PD` and `{COUNTRY}_CDS_VAR6M`.
+
+The CDS tab shows **6M Change** and **Implied PD** in the two column slots the
+dead 10Y and Term Structure columns vacated, and the summary tile counts
+*Widening >20% (6M)* instead of inversions.
+
+**Var 6m is the genuinely new data.** CDS ingest began 2026-07-10, so a
+six-month change predates everything stored here. It is the one widening
+measure available that is not derived from our own short history.
+
+**PD is stored rather than derived**, although it is the spread times 1/60
+(`F-0080`). Deriving it would put that constant in this codebase, where it
+would silently stop matching the source if WGB ever changed its recovery
+assumption. Storing the source's own number keeps the assumption where it
+belongs.
+
+**The extras are optional by construction.** A board that drops these columns
+costs us the extras, not the spread — there is a test for exactly that,
+because the spread is the thing the score depends on.
+
+**Not taken.** The board lists **33 sovereigns** and `CDS_INSTRUMENTS`
+configures 21. `A-0014`'s objection that CDS coverage is only 33% of scored
+countries is therefore partly self-inflicted, and widening the configured set
+is the cheapest available improvement to it. Left for a ruling with the rest
+of `A-0014`.

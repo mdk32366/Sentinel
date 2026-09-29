@@ -143,6 +143,11 @@ class CdsAllItem(BaseModel):
     country_iso: str
     country_name: str
     cds_5y: float
+    # D-0063: carried by the source and previously discarded. implied_pd_pct
+    # is the spread rescaled by a constant 1/60 (F-0080) - readable, not
+    # independent, and never scored.
+    implied_pd_pct: Optional[float] = None
+    var_6m_pct: Optional[float] = None
     cds_10y: Optional[float] = None
     cds_term_spread: Optional[float] = None
     as_of: str

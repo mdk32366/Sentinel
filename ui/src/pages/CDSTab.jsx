@@ -70,7 +70,7 @@ export function CDSTab({ onCountrySelect }) {
   // Sorting
   const sortedData = [...data].sort((a, b) => {
     if (sort === "cds5y") return (b.cds_5y || 0) - (a.cds_5y || 0);
-    if (sort === "term") return (b.cds_term_spread || 0) - (a.cds_term_spread || 0);
+    if (sort === "var6m") return (b.var_6m_pct || 0) - (a.var_6m_pct || 0);
     if (sort === "country") return a.country_name.localeCompare(b.country_name);
     return 0;
   });
@@ -95,16 +95,11 @@ export function CDSTab({ onCountrySelect }) {
         {[
           { label: "Countries with CDS", val: data.length },
           { label: "Highest 5Y CDS", val: `${Math.max(...data.map(d => d.cds_5y || 0))} bps` },
-          {
-            label: "Inverted Curves",
-            // F-0074: every 10Y series on this board froze at the ISDA running
-            // coupon in July 2026 and is now refused. With no admitted 10Y
-            // there is no term structure to invert, and printing "0" would
-            // claim we looked and found none.
-            val: data.some(d => d.cds_term_spread != null)
-              ? data.filter(d => (d.cds_term_spread || 0) < 0).length
-              : "no 10Y",
-          },
+          // D-0062: the curve-inversion tile is gone. With no 10Y from
+          // this source there is no term structure to invert, so it counted
+          // instances of something unmeasurable. Widening is the signal this
+          // board CAN support, and the one the score actually uses.
+          { label: "Widening >20% (6M)", val: data.filter(d => (d.var_6m_pct || 0) > 20).length },
           { label: "Very High (>300 bps)", val: data.filter(d => (d.cds_5y || 0) > 300).length },
         ].map((s, i) => (
           <div key={i} style={{ background: "#0F1923", border: "1px solid #1A2530", borderTop: "2px solid #C8A96E", borderRadius: 2, padding: "14px 20px", flex: "1 1 150px" }}>
@@ -126,15 +121,14 @@ export function CDSTab({ onCountrySelect }) {
               <tr>
                 <ColHeader label="Country" align="left" />
                 <ColHeader label="5Y CDS" tip="5-year sovereign CDS spread (basis points)" sortKey="cds5y" activeSort={sort} onSort={setSort} align="right" />
-                <ColHeader label="10Y CDS" tip="10-year sovereign CDS spread (basis points)" align="right" />
-                <ColHeader 
-  label="Term Structure" 
-  tip="10Y CDS − 5Y CDS. Negative = inverted curve (often a sign of acute sovereign stress)" 
-  sortKey="term" 
-  activeSort={sort} 
-  onSort={setSort} 
-  align="right" 
-/>
+                {/* D-0062: the 10Y CDS and Term-Structure columns are gone.
+                    The World Government Bonds board publishes only 5Y - the
+                    string "10Y" does not occur anywhere in its payload - so
+                    both rendered a dash in every row of every load, which
+                    reads as missing data rather than as a tenor this source
+                    does not carry. */}
+                <ColHeader label="6M Change" tip="Change in the 5Y spread over six months, as published by the source. This predates Sentinel own CDS history, which begins 2026-07-10, so it is the one widening measure here not derived from our own data." sortKey="var6m" activeSort={sort} onSort={setSort} align="right" />
+                <ColHeader label="Implied PD" tip="The source implied 5-year probability of default. It is the 5Y spread rescaled by a constant of about 1/60, not a second opinion - carried because a percentage is readable and basis points are not. Deliberately NOT scored: doing so would double-count the level band." align="right" />
                 <ColHeader label="Stress Tier" tip="This country's tier on the COMPOSITE tab. CDS is dimension 7 of that score." align="right" />
                 <ColHeader label="CDS Share" tip="How much of this country's composite stress score comes from its CDS spread. 100% means the country is ranked on CDS alone." align="right" />
                 <ColHeader label="Signal" align="left" />
@@ -143,7 +137,6 @@ export function CDSTab({ onCountrySelect }) {
             <tbody>
               {sortedData.map((c, i) => {
                 const isHigh = (c.cds_5y || 0) > 300;
-                const isInverted = (c.cds_term_spread || 0) < 0;
                 return (
                   <tr 
                     key={i} 
@@ -161,11 +154,15 @@ export function CDSTab({ onCountrySelect }) {
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: isHigh ? "#E07B5A" : "#8A9BAC", fontWeight: isHigh ? 600 : 400 }}>
                       {c.cds_5y ? `${c.cds_5y} bps` : "—"}
                     </td>
-                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: "#8A9BAC" }}>
-                      {c.cds_10y ? `${c.cds_10y} bps` : "—"}
+                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right" }}>
+                      {c.var_6m_pct != null ? (
+                        <span style={{ color: c.var_6m_pct > 20 ? "#E07B5A" : c.var_6m_pct < 0 ? "#5DB87A" : "#8A9BAC" }}>
+                          {c.var_6m_pct > 0 ? "+" : ""}{c.var_6m_pct.toFixed(1)}%
+                        </span>
+                      ) : <span style={{ color: "#2A3540" }}>-</span>}
                     </td>
-                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: isInverted ? "#FF4444" : "#8A9BAC", fontWeight: isInverted ? 600 : 400 }}>
-                      {c.cds_term_spread != null ? `${c.cds_term_spread > 0 ? "+" : ""}${c.cds_term_spread} bps` : "—"}
+                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: "#8A9BAC" }}>
+                      {c.implied_pd_pct != null ? c.implied_pd_pct.toFixed(2) + '%' : '-'}
                     </td>
                     <td style={{ padding: "10px 16px", textAlign: "right" }}>
                       {(() => {
@@ -197,12 +194,7 @@ export function CDSTab({ onCountrySelect }) {
                       })()}
                     </td>
                     <td style={{ padding: "10px 16px" }}>
-                      {isInverted && (
-                        <span style={{ fontFamily: "monospace", fontSize: 10, color: "#FF4444", background: "#FF444418", border: "1px solid #FF444444", borderRadius: 2, padding: "1px 6px" }}>
-                          INVERTED
-                        </span>
-                      )}
-                      {isHigh && !isInverted && (
+                      {isHigh && (
                         <span style={{ fontFamily: "monospace", fontSize: 10, color: "#E07B5A", background: "#E07B5A18", border: "1px solid #E07B5A44", borderRadius: 2, padding: "1px 6px" }}>
                           HIGH
                         </span>

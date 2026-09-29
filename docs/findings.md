@@ -2356,3 +2356,42 @@ visible rather than fixing it.
 
 **Not fixed.** Retiring or repairing a scoring dimension is a modelling
 decision, recorded in `A-0014` for a ruling.
+
+### F-0080 — Implied PD is the spread rescaled, and the source's own PD column proves Russia is not a spread
+
+**Claim.** The WGB board publishes an implied 5-year probability of default
+beside every spread. Across all 30 names it is the spread times a constant —
+about 1/60:
+
+```
+country          5Y bps      PD%     PD/bps
+Sweden             7.36     0.12    0.01630
+Germany            9.64     0.16    0.01660
+Mexico            91.03     1.52    0.01670
+Brazil           124.90     2.08    0.01665
+South Africa     130.86     2.18    0.01666
+Turkey           245.17     4.09    0.01668
+Egypt            307.29     5.12    0.01666
+Russia         13775.17   100.00    0.00726
+```
+
+**Two conclusions, and the second is the interesting one.**
+
+**PD is not independent information.** It is a rescaling, so scoring it would
+double-count the CDS level band exactly. It is carried and displayed because
+*"a 2.18% chance of default"* means something to a reader and *"130.86bps"*
+does not — readability, not signal. `tests/test_cds_board_columns.py` asserts
+the ratio holds and asserts `composite_stress.py` never reads the PD series.
+
+**Russia breaks the ratio because the source clamps its own column at
+100.00%.** 13,775.17 × 0.01666 would be 229%, which is not a probability, so
+the board caps it. The source's own model refuses to interpret the number as a
+spread — which is independent corroboration of `F-0074`'s refusal, arrived at
+from the opposite direction and without any assumption of mine.
+
+**Sample size.** 30 names on the live board; the stored fixture corroborates
+the same ratio at 0.01652–0.01717.
+
+**What it changes.** Nothing scores differently. It settles what PD is for, so
+the next person to see a probability column does not wire it into the model as
+a second opinion.

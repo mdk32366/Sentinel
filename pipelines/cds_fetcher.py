@@ -131,16 +131,61 @@ def admit_cds_quote(value, as_of, now=None):
 _HEADER_COUNTRY = re.compile(r"country", re.I)
 _HEADER_5Y = re.compile(r"5\s*y(?:ear)?s?\s*cds|5\s*years?\s*credit\s*default", re.I)
 _HEADER_DATE = re.compile(r"^date$", re.I)
+# D-0063: the board has always carried these and the fetcher discarded them.
+_HEADER_VAR1M = re.compile(r"var\s*1\s*m", re.I)
+_HEADER_VAR6M = re.compile(r"var\s*6\s*m", re.I)
+_HEADER_PD = re.compile(r"^pd\b", re.I)
+_HEADER_RATING = re.compile(r"s&p|rating", re.I)
 _ISO_DATE = re.compile(r"(\d{4}-\d{2}-\d{2})")
 
 
 @dataclass(frozen=True)
 class CdsQuote:
+    """One row of the WGB sovereign CDS board.
+
+    D-0063: the board publishes Country, S&P rating, 5Y CDS, Var 1m, Var 6m,
+    implied PD and date. Only the spread and the date were being read. The
+    rest arrived on every fetch and was thrown away.
+
+    `implied_pd_pct` is **not independent information** — measured across all
+    30 names on the board it is the spread times a constant 1/60, from Sweden
+    at 7.36bps/0.12% to Egypt at 307.29bps/5.12%. It is worth carrying because
+    "a 2.18% chance of default" is a readable number and "130.86bps" is not;
+    it is not worth SCORING, because scoring it would double-count the level
+    band exactly. See F-0080.
+
+    `var_6m_pct` is genuinely new: CDS ingest began on 2026-07-10, so a
+    six-month change predates everything stored here.
+    """
+
     country: str
     spread_bps: Decimal
     as_of: date
     tenor: str = "5Y"
     source: str = CDS_SOURCE
+    var_1m_pct: Optional[Decimal] = None
+    var_6m_pct: Optional[Decimal] = None
+    implied_pd_pct: Optional[Decimal] = None
+    rating: Optional[str] = None
+
+
+def _write_point(db: Session, metric_id: int, when: datetime, value) -> Tuple[int, int]:
+    """Upsert one observation. Returns (inserted, updated).
+
+    One writer for the spread and for D-0063's extra series, so a third
+    series cannot arrive with its own subtly different version of this.
+    """
+    existing = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric_id,
+        TimeSeries.date == when,
+        TimeSeries.country_id == None,
+    ).first()
+    if existing:
+        existing.value = value
+        existing.updated_at = datetime.utcnow()
+        return 0, 1
+    db.add(TimeSeries(metric_id=metric_id, country_id=None, date=when, value=value))
+    return 1, 0
 
 
 def cds_instrument_codes() -> List[str]:
@@ -278,6 +323,19 @@ def _parse_bps(raw) -> Optional[Decimal]:
     return val
 
 
+def _parse_pct(raw) -> Optional[Decimal]:
+    """A board percentage cell: "+13.76 %", "-16.17 %", "0.12 %"."""
+    if raw is None:
+        return None
+    text = str(raw).replace("%", "").replace("+", "").replace(",", "").strip()
+    if not text or text in {"-", "--", "n/a"}:
+        return None
+    try:
+        return Decimal(text)
+    except (InvalidOperation, ValueError):
+        return None
+
+
 def _parse_as_of(raw) -> Optional[date]:
     if raw is None:
         return None
@@ -340,6 +398,11 @@ def parse_wgb_cds_table(html: str) -> List[CdsQuote]:
     country_idx = _column_index(labels, _HEADER_COUNTRY, default=1)
     cds5_idx = _column_index(labels, _HEADER_5Y, default=3)
     date_idx = _column_index(labels, _HEADER_DATE, default=len(labels) - 1 if labels else None)
+    # Optional: a board without them still parses, it just carries less.
+    var1m_idx = _column_index(labels, _HEADER_VAR1M, default=None)
+    var6m_idx = _column_index(labels, _HEADER_VAR6M, default=None)
+    pd_idx = _column_index(labels, _HEADER_PD, default=None)
+    rating_idx = _column_index(labels, _HEADER_RATING, default=None)
     if country_idx is None or cds5_idx is None or date_idx is None:
         logger.warning("WGB CDS table: could not identify Country / 5Y CDS / Date columns")
         return []
@@ -360,7 +423,21 @@ def parse_wgb_cds_table(html: str) -> List[CdsQuote]:
         if key in seen:
             continue
         seen.add(key)
-        quotes.append(CdsQuote(country=country, spread_bps=spread, as_of=as_of))
+
+        def optional(idx, parse):
+            if idx is None or idx >= len(cells):
+                return None
+            return parse(cells[idx].get_text(" ", strip=True))
+
+        quotes.append(CdsQuote(
+            country=country,
+            spread_bps=spread,
+            as_of=as_of,
+            var_1m_pct=optional(var1m_idx, _parse_pct),
+            var_6m_pct=optional(var6m_idx, _parse_pct),
+            implied_pd_pct=optional(pd_idx, _parse_pct),
+            rating=optional(rating_idx, lambda t: t or None),
+        ))
     return quotes
 
 
@@ -528,6 +605,7 @@ def run_cds_fetch(db: Session) -> dict:
                 errors.append(f"{metric_name}: not on {CDS_SOURCE} 5Y board")
                 continue
 
+            prefix = metric_name.replace("_CDS_5Y", "")
             metric = ensure_metric(
                 db,
                 code=metric_name,
@@ -539,24 +617,34 @@ def run_cds_fetch(db: Session) -> dict:
             )
 
             as_of_dt = datetime.combine(quote.as_of, datetime.min.time())
-            existing = db.query(TimeSeries).filter(
-                TimeSeries.metric_id == metric.id,
-                TimeSeries.date == as_of_dt,
-                TimeSeries.country_id == None,
-            ).first()
+            ins, upd = _write_point(db, metric.id, as_of_dt, quote.spread_bps)
+            total_inserted += ins
+            total_updated += upd
 
-            if existing:
-                existing.value = quote.spread_bps
-                existing.updated_at = datetime.utcnow()
-                total_updated += 1
-            else:
-                db.add(TimeSeries(
-                    metric_id=metric.id,
-                    country_id=None,
-                    date=as_of_dt,
-                    value=quote.spread_bps,
-                ))
-                total_inserted += 1
+            # D-0063: the board's own implied PD and six-month change, which
+            # arrived on every fetch and were discarded.
+            #
+            # PD is stored rather than derived even though it is the spread
+            # times a constant 1/60 (F-0080): it is the source's number, and
+            # re-deriving it would put that constant somewhere in this
+            # codebase where it could silently stop matching the source.
+            for suffix, value, label, why in (
+                ("PD", quote.implied_pd_pct, "Implied Default Probability",
+                 "implied 5Y probability of default"),
+                ("VAR6M", quote.var_6m_pct, "5Y CDS 6-Month Change",
+                 "percentage change in the 5Y spread over six months"),
+            ):
+                if value is None:
+                    continue
+                extra = ensure_metric(
+                    db,
+                    code=f"{prefix}_CDS_{suffix}",
+                    name=f"{country} {label}",
+                    description=f"{country} {why}, from {CDS_SOURCE}",
+                )
+                ins, upd = _write_point(db, extra.id, as_of_dt, value)
+                total_inserted += ins
+                total_updated += upd
 
             db.commit()
             ok += 1
