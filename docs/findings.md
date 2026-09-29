@@ -1767,3 +1767,64 @@ once and is not checked against the tree.
 **Fixed.** Deleted. `ui/src/architecture.test.js` now fails if any file
 outside `lib/api.js` spells an absolute API host, which is what surfaced it —
 the guard was written for `F-0052` and caught this instead.
+
+### F-0071 — Every date on every chart displayed a day early, west of UTC
+
+**Claim.** `formatDate` did `new Date(d).toLocaleDateString(...)`. ECMAScript
+defines a bare `YYYY-MM-DD` as **UTC midnight**, and `toLocaleDateString`
+renders it in the viewer's zone — so anywhere west of UTC, every date on every
+axis, tooltip and footer was one day early.
+
+`pivotByDate` strips the time from the API's `2026-08-01T00:00:00`, which is
+correct for a date-keyed join, and that is what leaves `formatDate` holding a
+bare date.
+
+**Artifact.** Reported by the owner as *"My latest data is July 31"* for Fed
+Funds. Production held `2026-08-01`. End to end:
+
+```
+API gives:      2026-08-01T00:00:00
+pivotByDate ->  2026-08-01
+formatDate  ->  Jul 31, 26
+```
+
+Across zones:
+
+```
+America/Los_Angeles    getDate() = 31   renders as Jul 31, 26
+UTC                    getDate() = 1    renders as Aug 1, 26
+```
+
+**Sample size.** One function, 15 call sites, five files. Every date the UI
+shows.
+
+**Why it read as much worse than one day.** On a daily series, one day early
+is a rounding annoyance. On a **monthly** series it crosses a month boundary:
+FRED dates a monthly average to the first of the month, so August's fed funds
+figure rendered as "Jul 31" — a one-month-old number looking two months old,
+and a healthy pipeline looking stalled.
+
+**The part worth more than the fix.** *The bug does not exist at UTC, and CI
+runs at UTC.* Old code and new code are byte-identical in behaviour there, so
+no assertion could have distinguished them on the machine that gates merges.
+A guard written without noticing that would have been green forever while the
+defect sat in production — `F-0006`'s shape, in a dimension nobody was
+looking at.
+
+**Fixed.** `asLocalDate` takes the calendar day from the string rather than
+from a timezone conversion. Every date in this application is a calendar
+date — the day an observation is attributed to — not an instant.
+
+`vite.config.js` now pins the suite to `TZ=America/New_York`, and
+`format.test.js` asserts that pin is in force before relying on it: if the
+timezone ever stops taking effect, one test says so rather than five quietly
+becoming decoration. Reverting the parse turns all five red:
+
+```
+AssertionError: expected 6 to be 7
+AssertionError: 2026-08-01: expected 31 to be 1
+```
+
+**Not fixed here.** Only display. Nothing stored, scored or compared used
+`formatDate`, and `priorObservation`, `yearAgo` and `pivotByDate` all compare
+date strings or `Date.parse` results symmetrically, so no arithmetic shifted.

@@ -6,8 +6,33 @@
  * and nothing about the output says so.
  */
 
+/**
+ * Parse one of this application's dates as a LOCAL calendar date.
+ *
+ * `F-0071`: every date here is a calendar date — the day an observation is
+ * attributed to — not an instant. But `new Date("2026-08-01")` is defined by
+ * ECMAScript to parse a bare date as **UTC midnight**, and
+ * `toLocaleDateString` then renders it in the viewer's zone. Anywhere west of
+ * UTC that is the previous evening, so every date displayed one day early.
+ *
+ * It was loudest on the monthly series. FRED dates a monthly average to the
+ * first of the month, so August's fed funds average rendered as "Jul 31" —
+ * making a one-month-old figure look two months old.
+ *
+ * Accepts `YYYY-MM-DD` and `YYYY-MM-DDTHH:MM:SS`, which is what the API and
+ * `pivotByDate` produce, and takes the calendar day from the string itself
+ * rather than from a timezone conversion.
+ */
+export function asLocalDate(value) {
+  if (typeof value === "string") {
+    const parts = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+    if (parts) return new Date(+parts[1], +parts[2] - 1, +parts[3]);
+  }
+  return new Date(value);
+}
+
 export function formatDate(d) {
-  return new Date(d).toLocaleDateString("en-US", {
+  return asLocalDate(d).toLocaleDateString("en-US", {
     month: "short",
     day: "numeric",
     year: "2-digit",

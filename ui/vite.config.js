@@ -11,5 +11,14 @@ export default defineConfig({
     // the other way to do this and is deprecated in Vitest 5.
     environment: 'node',
     globals: false,
+    // F-0071: the suite runs in a FIXED timezone west of UTC.
+    //
+    // The date bug it protects against — a bare "2026-08-01" parsed as UTC
+    // midnight and rendered a day earlier in local time — does not exist at
+    // UTC. CI runners default to UTC, so with the ambient zone the guard
+    // would have been green on the machine that matters while the defect sat
+    // in production. format.test.js asserts this is in force rather than
+    // trusting it.
+    env: { TZ: 'America/New_York' },
   },
 })

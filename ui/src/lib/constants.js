@@ -67,7 +67,7 @@ export const METRICS = [
     color: "#5DB87A",
     unit: "%",
     scored: false,
-    tip: "The Fed's policy rate. The reference point for every spread on this page, and the line between what the Fed controls and what the bond market controls — a distinction the COUNTRY tab's scenario panel is built around.",
+    tip: "FRED's FEDFUNDS: the effective federal funds rate as a MONTHLY AVERAGE, dated to the first of the month and published in the first week of the next one. It is the line between what the Fed controls and what the bond market controls — but it is not a live rate, and it will always read older than the daily yields beside it. A-0013.",
     stressRole: "Not scored. The stress model reads market yields, not policy rates.",
   },
   {
@@ -103,7 +103,7 @@ export const METRICS = [
     color: "#C47EB8",
     unit: "",
     scored: false,
-    tip: "US headline CPI, as an index level rather than a rate — the COUNTRY tab carries the year-on-year figure. Inflation is what erodes the real value of the Treasuries foreign central banks hold, and with it the case for holding them.",
+    tip: "US headline CPI, monthly, as an index level rather than a rate — the COUNTRY tab carries the year-on-year figure. Released mid-month for the month before, so it runs a month or more behind the daily cards. Inflation erodes the real value of the Treasuries foreign central banks hold, and with it the case for holding them.",
     stressRole: "Not scored. This is the debasement half of the thesis, not a stress factor.",
   },
   {
