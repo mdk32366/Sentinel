@@ -12,6 +12,8 @@ import requests
 import logging
 from datetime import datetime, timedelta
 from decimal import Decimal
+from sqlalchemy import and_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 from database.models import Metric, TimeSeries, UpdateLog
 from config import settings
@@ -149,6 +151,104 @@ def fetch_fred_series(series_id: str, start_date: str, end_date: str,
     raise last_error
 
 
+# Postgres caps a statement at 65535 bind parameters. Five columns per row
+# leaves enormous headroom at this size; the chunking exists so a future daily
+# series with a longer history cannot quietly cross it.
+UPSERT_CHUNK = 1000
+
+
+def upsert_observations(db: Session, metric_id: int, rows: list) -> tuple:
+    """Write `rows` for one metric, replacing any that already exist.
+
+    `rows` is a list of `(date, Decimal)`. Returns `(inserted, updated)`.
+
+    F-0073. This used to be check-then-insert: SELECT for each observation,
+    then INSERT or mutate. Two overlapping FRED runs - and every deploy starts
+    one, on top of the nightly schedule - could both see "absent" and both
+    insert. That produced 1,190 duplicate rows before anyone noticed, because
+    the unique index was not enforcing anything for `country_id IS NULL`.
+
+    On Postgres the write is now a single `ON CONFLICT DO UPDATE`, so the
+    database decides, not a check that was true a moment ago. **This depends
+    on the index created by F-0073**: `ON CONFLICT (metric_id, country_id,
+    date)` can only arbitrate on a NULL `country_id` because that index is
+    `NULLS NOT DISTINCT`. Without it Postgres would not match the conflict and
+    would insert a duplicate exactly as before.
+
+    Every other dialect keeps the old path. SQLite - which is what this
+    suite's in-memory databases are - shares Postgres' NULL-distinct
+    semantics, so an `ON CONFLICT` there would not arbitrate either and would
+    silently be the thing it is meant to replace. Better one explicit branch
+    than a fix that only appears to apply everywhere.
+    """
+    if not rows:
+        return 0, 0
+
+    # A revision can report the same date twice in one payload. Postgres
+    # refuses to let ON CONFLICT DO UPDATE touch a row twice in a single
+    # statement -- "cannot affect row a second time" -- so the batch has to be
+    # unique before it is sent. Last value for a date wins, which is what the
+    # per-observation loop did implicitly.
+    #
+    # This belongs here rather than in the caller: a helper that raises on
+    # input its only caller happens never to send is a trap for the second
+    # caller.
+    deduped = {}
+    for date, value in rows:
+        deduped[date] = value
+    rows = sorted(deduped.items())
+
+    # Counted from what is already stored rather than from what the write
+    # returned, so the two dialects report the same numbers.
+    dates = [date for date, _ in rows]
+    existing = set()
+    for start in range(0, len(dates), UPSERT_CHUNK):
+        chunk = dates[start:start + UPSERT_CHUNK]
+        existing.update(
+            row[0] for row in db.execute(
+                select(TimeSeries.date).where(and_(
+                    TimeSeries.metric_id == metric_id,
+                    TimeSeries.country_id.is_(None),
+                    TimeSeries.date.in_(chunk),
+                ))
+            ).all()
+        )
+
+    inserted = sum(1 for date, _ in rows if date not in existing)
+    updated = len(rows) - inserted
+    now = datetime.utcnow()
+
+    if db.get_bind().dialect.name == "postgresql":
+        payload = [
+            {"metric_id": metric_id, "country_id": None, "date": date,
+             "value": value, "created_at": now, "updated_at": now}
+            for date, value in rows
+        ]
+        for start in range(0, len(payload), UPSERT_CHUNK):
+            chunk = payload[start:start + UPSERT_CHUNK]
+            stmt = pg_insert(TimeSeries.__table__).values(chunk)
+            db.execute(stmt.on_conflict_do_update(
+                index_elements=["metric_id", "country_id", "date"],
+                set_={"value": stmt.excluded.value,
+                      "updated_at": stmt.excluded.updated_at},
+            ))
+        return inserted, updated
+
+    for date, value in rows:
+        existing_row = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == metric_id,
+            TimeSeries.date == date,
+            TimeSeries.country_id.is_(None),
+        ).first()
+        if existing_row:
+            existing_row.value = value
+            existing_row.updated_at = now
+        else:
+            db.add(TimeSeries(metric_id=metric_id, country_id=None,
+                              date=date, value=value))
+    return inserted, updated
+
+
 def run_fred_fetch(db: Session, days_back: int = 1825) -> dict:
     """Main FRED fetch pipeline. Fetches last 5 years by default."""
     start_time = datetime.utcnow()
@@ -164,6 +264,7 @@ def run_fred_fetch(db: Session, days_back: int = 1825) -> dict:
             metric = ensure_metric(db, metric_data)
             observations = fetch_fred_series(metric_data["code"], start_date, end_date)
 
+            rows = []
             for obs in observations:
                 value_str = obs.get("value", ".")
                 if value_str == ".":
@@ -173,25 +274,11 @@ def run_fred_fetch(db: Session, days_back: int = 1825) -> dict:
                     date = datetime.strptime(obs["date"], "%Y-%m-%d")
                 except Exception:
                     continue
+                rows.append((date, value))
 
-                existing = db.query(TimeSeries).filter(
-                    TimeSeries.metric_id == metric.id,
-                    TimeSeries.date == date,
-                    TimeSeries.country_id == None,
-                ).first()
-
-                if existing:
-                    existing.value = value
-                    existing.updated_at = datetime.utcnow()
-                    total_updated += 1
-                else:
-                    db.add(TimeSeries(
-                        metric_id=metric.id,
-                        country_id=None,
-                        date=date,
-                        value=value,
-                    ))
-                    total_inserted += 1
+            inserted, updated = upsert_observations(db, metric.id, rows)
+            total_inserted += inserted
+            total_updated += updated
 
             db.commit()
             logger.info(f"FRED {metric_data['code']}: fetched {len(observations)} observations")

@@ -1121,3 +1121,57 @@ adjusted", and — the one that matters — that it does **not** promise weekly
 *releases*. "Weekly" invites exactly the reading that produced `A-0013`, so
 the tip says "the Fed publishes M2 once a month" and a test keeps it saying
 that.
+
+### D-0059 — The FRED write is an upsert, and only on the dialect that can be
+
+**Choice.** `pipelines/fred_fetcher.py` writes observations through
+`upsert_observations()`. On Postgres that is a single
+`INSERT ... ON CONFLICT (metric_id, country_id, date) DO UPDATE`. On every
+other dialect it keeps the previous check-then-insert.
+
+**Why the branch is not laziness.** `ON CONFLICT` can only arbitrate on a NULL
+`country_id` because `ix_metric_country_date` is `NULLS NOT DISTINCT`
+(`F-0073`). SQLite has the same NULL-distinct default and no equivalent, so an
+`ON CONFLICT` written there would **silently fail to arbitrate** and insert
+the duplicate it was added to prevent. One explicit branch beats a fix that
+only appears to apply everywhere.
+
+**Verified against production before shipping**, because the tests here run on
+SQLite and cannot exercise the Postgres path at all. The statement the new
+code emits, run against a real DFF row inside a rolled-back transaction:
+
+```
+rows 66400 -> 66400   value 3.88 -> 4.88
+VERDICT: UPDATED IN PLACE
+rows after rollback: 66400
+```
+
+Row count unchanged, value replaced. Without `D-0058`'s predecessor — the
+`NULLS NOT DISTINCT` index — that same statement would have inserted a
+duplicate, which is exactly the chain worth stating: the constraint is not
+merely related to this change, it is what makes it work.
+
+**The dedupe lives in the helper, not the caller.** A FRED payload can carry
+one date twice across a revision boundary, and Postgres refuses to let
+`ON CONFLICT DO UPDATE` touch a row twice in one statement — *"cannot affect
+row a second time"*. Last value for a date wins, which is what the
+per-observation loop did implicitly. It sits inside `upsert_observations`
+because a helper that raises on input its only current caller happens never to
+send is a trap for the second caller.
+
+**Counts come from a SELECT, not from the write.** `inserted` and `updated`
+feed `update_logs`, and `ON CONFLICT` does not report which branch it took per
+row without a `RETURNING` and an `xmax` trick. Reading the existing dates once
+per metric gives the same numbers on both dialects, which matters more than
+saving a query.
+
+**Rejected.** Leaving it at the constraint. With `F-0073` applied but the
+fetcher unchanged, two overlapping runs no longer duplicate — they raise
+`IntegrityError`, the metric's batch rolls back, and the run logs `partial`.
+Loud rather than silent is the right direction, but it is still a failure
+mode, and every deploy starts a FRED run on top of the nightly schedule, so
+overlap is ordinary rather than exotic.
+
+**Not changed.** The N+1 SELECT is gone as a side effect — one query per
+metric instead of one per observation, ~1,800 fewer round trips for DFF alone
+— but performance was not the reason and no timing claim is made here.
