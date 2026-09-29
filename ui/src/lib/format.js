@@ -24,6 +24,9 @@ export function formatValue(v, unit) {
   if (unit === "%") return `${v.toFixed(2)}%`;
   if (unit === "$/bbl") return `$${v.toFixed(2)}`;
   if (unit === "B$") return `$${(v / 1000).toFixed(1)}T`;
+  // Gold trades in four figures. Cents are noise at that scale and the
+  // separator is what makes 4261 readable at a glance in a ticker row.
+  if (unit === "$/oz") return `$${Math.round(v).toLocaleString("en-US")}`;
   return v.toFixed(2);
 }
 

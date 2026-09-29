@@ -36,6 +36,24 @@ describe("formatValue", () => {
     expect(formatValue(119.5133, "")).toBe("119.51");
   });
 
+  it("renders gold in whole dollars with a separator", () => {
+    // Four figures. Cents are noise and the separator is what makes it
+    // readable at a glance in a ticker row.
+    expect(formatValue(4261.05, "$/oz")).toBe("$4,261");
+    expect(formatValue(987.4, "$/oz")).toBe("$987");
+  });
+
+  it("rounds gold rather than truncating", () => {
+    expect(formatValue(4261.6, "$/oz")).toBe("$4,262");
+  });
+
+  it("does not confuse $/oz with $/bbl", () => {
+    // Oil keeps its cents; gold does not. Sharing a branch would print
+    // "$4261.05" in a column sized for five characters.
+    expect(formatValue(96.41, "$/bbl")).toBe("$96.41");
+    expect(formatValue(96.41, "$/oz")).toBe("$96");
+  });
+
   it("returns null for a missing value rather than printing 0", () => {
     // A zero yield is plausible on its face, which is what makes it dangerous.
     expect(formatValue(null, "%")).toBeNull();

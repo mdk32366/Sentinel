@@ -834,3 +834,34 @@ under it was not.
 **Why it is worth a decision.** A chart whose last label predates its last
 point invites exactly the question it was asked twice this week. Freshness that
 the data has but the display does not show is still a freshness problem.
+
+### D-0053 — Gold spot joins the MARKETS tickers
+
+**Choice.** `GOLD_SPOT_USD` becomes the twelfth ticker, filling the slot
+`D-0037` left open on the second row. `formatValue` gains a `$/oz` branch
+rendering whole dollars with a thousands separator — `$4,145` — because gold
+trades in four figures where cents are noise and the separator is what makes it
+readable at a glance.
+
+**Rejected.** Reusing the `$/bbl` branch. It keeps cents, which is right for
+oil at $96.41 and prints `$4261.05` in a column sized for five characters.
+
+**What forced the call.** Owner's request, and it only became reasonable
+recently: before `D-0041` the series was a manual monthly CSV that had been
+frozen since July (`F-0004`). A markets ticker showing a three-month-old
+monthly average would have been worse than no ticker. It is a live daily LBMA
+fix now.
+
+**Layout.** Twelve tickers across six columns is two full rows — exactly the
+capacity `D-0037` recorded. A thirteenth still spills to a third row and still
+needs that decision revisited rather than the grid silently widened again.
+
+**On the chart, deliberately opt-in.** Gold is roughly 800 times the scale of a
+yield, so plotting both on one axis flattens the yields to a flat line. It is
+not in the default selection, and the `% CHANGE` toggle exists for anyone who
+wants them together.
+
+**Verified against production before shipping:** the card renders
+`Gold Spot $4,145 ▼ 9.17% vs 31d`. The "31d" is `D-0050` working — the nearest
+observation at or before thirty days back was 31 days out, and the label says
+so rather than claiming thirty.
