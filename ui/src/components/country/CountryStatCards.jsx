@@ -38,7 +38,9 @@ export function CountryStatCards({ latestTic, ticMom, latestGold, ticHistory, co
       // the ISDA running coupon in July 2026, and pairing that against a
       // current 5Y produced "inversions" that were an artefact of the gap.
       sub: cds.cds5y == null
-        ? "Not factored into stress score"
+        ? (cds.coverage && cds.coverage !== "quoted"
+            ? cds.coverage
+            : "Not factored into stress score")
         : cds.termSpread != null
           ? `Term ${signed(cds.termSpread, 0)}bps${cds.termSpread < 0 ? " (inverted)" : ""}`
           : "5Y only — no paired 10Y on this board",

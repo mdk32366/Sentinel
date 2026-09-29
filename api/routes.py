@@ -29,10 +29,12 @@ from pipelines.cds_fetcher import (
     run_cds_fetch,
     get_cds_coverage,
     admit_cds_quote,
+    cds_country_for_code,
     latest_cds_observation,
     pair_cds_tenors,
-    cds_country_for_code,
 )
+# F-0078: ISO -> the CDS metric namespace token ("TUR" -> "TURKEY").
+from pipelines.composite_stress import CDS_NAME_BY_ISO
 from pipelines.stress_score_v2 import get_latest_metric_value
 # ORDER-03 B2 / F-0020: previously imported inside the handler bodies, which
 # hid these dependencies from any static read of the imports.
@@ -937,20 +939,73 @@ def get_country_tic_history(
 from fastapi import Query
 from typing import Optional
 
+# D-0061: how much CDS history the country panel charts. Ninety days is
+# what the board retains in practice and matches the widening window the
+# scorer measures over, so the chart and the score describe the same span.
+CDS_HISTORY_DAYS = 90
+
+
 @router.get("/cds", response_model=CdsCountryResponse)
 async def get_latest_cds(country: str = Query(..., description="Country ISO code (e.g. TUR, MEX, BRA)"), db: Session = Depends(get_db)):
     """
     Returns the latest 5Y and 10Y CDS values for a country.
     Used by the frontend to enrich Grok analysis prompts.
     """
+    # F-0078: CDS metrics encode the country by NAME ("TURKEY_CDS_5Y"), and
+    # this endpoint is called with an ISO code by the only thing that calls it
+    # — the country panel. It built "TUR_CDS_5Y", which does not exist, so the
+    # 5Y CDS tile read "No coverage" for every country, always. The docstring
+    # promised ISO codes; the lookup never accepted one.
+    #
+    # Accept both: the ISO code it is actually sent, and the namespace token
+    # anyone reading the metric names would reach for.
     country_upper = country.upper()
+    prefix = CDS_NAME_BY_ISO.get(country_upper, country_upper)
 
-    cds5y_code = f"{country_upper}_CDS_5Y"
-    cds10y_code = f"{country_upper}_CDS_10Y"
+    cds5y_code = f"{prefix}_CDS_5Y"
+    cds10y_code = f"{prefix}_CDS_10Y"
 
     obs5 = latest_cds_observation(db, cds5y_code)
     obs10 = latest_cds_observation(db, cds10y_code)
+
+    # F-0074, third reader. This path reads the same rows as the scorer and
+    # /cds/all and had no admissibility check of its own.
+    coverage_5y = admit_cds_quote(
+        obs5.get("value") if obs5 else None,
+        obs5.get("date") if obs5 else None,
+    )
+    coverage_10y = admit_cds_quote(
+        obs10.get("value") if obs10 else None,
+        obs10.get("date") if obs10 else None,
+    )
+    if coverage_5y:
+        obs5 = None
+    if coverage_10y:
+        obs10 = None
+
     cds5y, cds10y, term_spread = pair_cds_tenors(obs5, obs10)
+
+    # D-0061: the 5Y series, so the country panel can chart it alongside
+    # holdings and gold. Returned from THIS endpoint rather than having the
+    # frontend query /timeseries directly, because the ISO -> metric-name map
+    # lives here and a second copy of it in JavaScript is F-0062 again.
+    #
+    # Only when the latest quote was admitted: charting a history whose most
+    # recent point was refused would show a line the tile above it denies.
+    history = []
+    if coverage_5y is None:
+        metric = db.query(Metric).filter(Metric.code == cds5y_code).first()
+        if metric:
+            cutoff = datetime.utcnow() - timedelta(days=CDS_HISTORY_DAYS)
+            rows = db.query(TimeSeries).filter(
+                TimeSeries.metric_id == metric.id,
+                TimeSeries.country_id == None,
+                TimeSeries.date >= cutoff,
+            ).order_by(TimeSeries.date.asc()).all()
+            history = [
+                {"date": r.date.isoformat(), "value": float(r.value)}
+                for r in rows
+            ]
 
     if cds5y is None and cds10y is None:
         return {
@@ -958,7 +1013,9 @@ async def get_latest_cds(country: str = Query(..., description="Country ISO code
             "5Y": None,
             "10Y": None,
             "term_spread": None,
-            "message": "No CDS data available for this country"
+            "coverage": coverage_5y or "no coverage",
+            "history": [],
+            "message": f"No usable CDS for this country: {coverage_5y or 'no coverage'}",
         }
 
     as_of = None
@@ -982,4 +1039,7 @@ async def get_latest_cds(country: str = Query(..., description="Country ISO code
         "term_spread": term_spread,
         "as_of": as_of,
         "source": source,
+        "coverage": "quoted",
+        "coverage_10y": coverage_10y,
+        "history": history,
     }

@@ -31,10 +31,14 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
     ? { background: "#080E14", minHeight: "100%" }
     : { background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: 24, marginTop: 12 };
 
+  const cdsRows = (cds.history || []).map((point) => ({
+    date: String(point.date).split("T")[0],
+    bps: point.value,
+  }));
   const ticRows = ticSeries(ticHistory);
   const goldRows = goldSeries(goldHistory);
   const reservesRows = reservesSeries(reservesHistory);
-  const hasAnySeries = Boolean(ticRows.length || goldRows.length || reservesRows.length);
+  const hasAnySeries = Boolean(ticRows.length || goldRows.length || reservesRows.length || cdsRows.length);
 
   const yieldCode = SOVEREIGN_YIELD_CODES[iso];
 
@@ -86,6 +90,16 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `${v.toFixed(0)}t`}
           tooltipFormat={(v) => `${v.toFixed(1)}t`}
           tooltipLabel="Gold"
+        />
+        <SeriesChart
+          title={`5Y SOVEREIGN CDS (bps) — ${cdsRows.length} observations`}
+          rows={cdsRows}
+          dataKey="bps"
+          stroke="#C47EB8"
+          tickFormat={(v) => `${v.toFixed(0)}`}
+          tooltipFormat={(v) => `${v.toFixed(1)} bps`}
+          tooltipLabel="5Y CDS"
+          footnote="The market's own price for insuring this sovereign's default · dimension 7 of the composite score"
         />
         <SeriesChart
           title="TOTAL RESERVES EX-GOLD ($M) — non-dollar reserve diversification"
