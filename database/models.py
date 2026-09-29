@@ -59,7 +59,18 @@ class TimeSeries(Base):
     __table_args__ = (
         Index('ix_metric_date', 'metric_id', 'date', unique=False),
         Index('ix_country_date', 'country_id', 'date', unique=False),
-        Index('ix_metric_country_date', 'metric_id', 'country_id', 'date', unique=True),
+        # F-0073: NULLS NOT DISTINCT is load-bearing. Every macro series has
+        # country_id IS NULL, and Postgres treats NULLs as DISTINCT in a
+        # unique index by default - so without this the constraint exists,
+        # reads as correct, and never rejects a duplicate for any of them.
+        # 1,190 had accumulated before anyone looked.
+        #
+        # SQLite ignores the dialect kwarg and shares the same NULL semantics,
+        # so the in-memory test databases do NOT enforce this. It is covered
+        # by asserting the emitted DDL and against production; it cannot be
+        # covered by inserting into SQLite.
+        Index('ix_metric_country_date', 'metric_id', 'country_id', 'date',
+              unique=True, postgresql_nulls_not_distinct=True),
     )
     
     def __repr__(self):

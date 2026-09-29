@@ -22,11 +22,28 @@
 --       before=67332 deleted=1190 after=66142
 --       duplicate groups remaining: 0
 --
---   Statement 2 (the index) — NOT APPLIED. Not authorised, deliberately
---       separate. Until it runs the constraint still does not bind, and
---       fred_fetcher.py's check-then-insert can reintroduce duplicates at its
---       ordinary rate — roughly the 16 rows that had accumulated across five
---       metrics before this. The cleanup is not permanent without it.
+--   Statement 2 (the index) — APPLIED to production 2026-09-29, owner
+--       authorised. Preconditions checked first: 0 pipeline runs in flight,
+--       0 duplicate groups. DROP and CREATE ran in one transaction, so there
+--       was no window without a unique index.
+--
+--         CREATE UNIQUE INDEX ix_metric_country_date ON public.timeseries
+--           USING btree (metric_id, country_id, date) NULLS NOT DISTINCT
+--
+--       Verified to BIND, rather than assumed — a duplicate insert attempted
+--       in a rolled-back transaction:
+--
+--         RESULT: rejected -> IntegrityError
+--                 duplicate key value violates unique constraint
+--                 "ix_metric_country_date"
+--         COUNTRY-SCOPED: still rejected -> IntegrityError
+--         rows after rollbacks: 66400
+--
+--       database/models.py carries postgresql_nulls_not_distinct=True so a
+--       fresh database gets the same semantics; tests/test_timeseries_
+--       uniqueness.py asserts the emitted DDL. SQLite shares Postgres' NULL
+--       semantics and ignores the kwarg, so the in-memory test databases do
+--       NOT enforce this.
 --
 --   Re-running statement 1 is safe and idempotent: with no duplicates present
 --   its subquery returns no rows and it deletes nothing.
