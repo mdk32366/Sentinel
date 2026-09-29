@@ -350,7 +350,16 @@ def get_cds_score(db: Session, iso: str) -> dict:
             >250 bps:  10 pts   (elevated)
             >500 bps:  15 pts   (significant distress)
         Widening (5Y up >20% over ~90d):      +5 pts
-        Term-structure inversion (10Y < 5Y):  +3 pts
+
+    D-0062: the term-structure component is GONE. It scored an inverted curve
+    (10Y < 5Y) at +3, and the source has no 10Y to invert - the WGB board
+    publishes Country, rating, 5Y, Var 1m, Var 6m, implied PD and date, and
+    the string "10Y" does not occur in its payload at all. The only inversions
+    it ever produced were a frozen July placeholder subtracted from a current
+    5Y (F-0074).
+
+    A scoring branch that cannot be reached is not conservative, it is
+    decoration that reads as rigour.
 
     Thresholds are intentionally conservative and additive to the existing
     tier math (no re-normalization). Returns zero cleanly when a country has
@@ -398,14 +407,12 @@ def get_cds_score(db: Session, iso: str) -> dict:
         if widening_pct > 20:
             score += 5
 
-    # Term-structure inversion: near-term priced riskier than far-term
+    # D-0062: no 10Y from this source, so no term structure and no inversion
+    # kicker. Kept as an explicit None rather than deleted from the payload,
+    # because the API contract still carries the field and a reader needs to
+    # see that it is absent by design rather than missing by accident.
     term_spread = None
     inverted = False
-    if cds_10y is not None:
-        term_spread = cds_10y - cds_5y
-        if term_spread < 0:
-            score += 3
-            inverted = True
 
     # Human-readable signal for the active-signals list / UI
     signal = None

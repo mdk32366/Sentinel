@@ -815,10 +815,23 @@ async def get_all_cds(db: Session = Depends(get_db)):
             as_of = obs10["date"].isoformat() if obs10.get("date") else None
             source = obs10.get("source")
 
+        # D-0063: the board's own implied PD and six-month change. Only shown
+        # alongside an admitted spread - a PD attached to a quote we refused
+        # would be the refused number wearing a percentage sign.
+        implied_pd = None
+        var_6m = None
+        if coverage_5y is None:
+            pd_obs = latest_cds_observation(db, f"{country_code}_CDS_PD")
+            v6_obs = latest_cds_observation(db, f"{country_code}_CDS_VAR6M")
+            implied_pd = pd_obs.get("value") if pd_obs else None
+            var_6m = v6_obs.get("value") if v6_obs else None
+
         results.append({
             "country_iso": country_code,
             "country_name": cds_country_for_code(metric5y.code),
             "cds_5y": cds5y,
+            "implied_pd_pct": float(implied_pd) if implied_pd is not None else None,
+            "var_6m_pct": float(var_6m) if var_6m is not None else None,
             "cds_10y": cds10y,
             "cds_term_spread": term_spread,
             "as_of": as_of,
