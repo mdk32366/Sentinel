@@ -4,6 +4,7 @@ import {
   changeSuffix,
   changeWindowLabel,
   latestByCode,
+  pivotByDate,
   priorObservation,
   seriesByCode,
 } from "./series";
@@ -141,5 +142,63 @@ describe("seriesByCode / latestByCode", () => {
     expect(latest.DGS10).toBe(5.15);
     expect(latest.M2SL).toBe(23342.8);
     expect(latest.NOPE).toBeUndefined();
+  });
+});
+
+describe("pivotByDate", () => {
+  const raw = [
+    { date: "2026-09-02T00:00:00", value: 4.1, metric_code: "DGS10" },
+    { date: "2026-09-01T00:00:00", value: 3.9, metric_code: "DGS10" },
+    { date: "2026-09-01T00:00:00", value: 3.2, metric_code: "DGS2" },
+  ];
+
+  it("gives one row per date carrying every code seen that day", () => {
+    expect(pivotByDate(raw)).toEqual([
+      { date: "2026-09-01", DGS10: 3.9, DGS2: 3.2 },
+      { date: "2026-09-02", DGS10: 4.1 },
+    ]);
+  });
+
+  it("sorts ascending regardless of the order the API returned", () => {
+    const dates = pivotByDate(raw).map((r) => r.date);
+    expect(dates).toEqual([...dates].sort());
+  });
+
+  it("joins on the DAY, not on the timestamp", () => {
+    // The two copies in App.jsx both split on "T" before keying. A join that
+    // kept the time component would produce two rows for the same day, each
+    // carrying one code and a hole where the other belongs - which is what
+    // F-0007 did to the yield table.
+    const rows = pivotByDate([
+      { date: "2026-09-01T00:00:00", value: 1, metric_code: "A" },
+      { date: "2026-09-01T13:30:00", value: 2, metric_code: "B" },
+    ]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({ date: "2026-09-01", A: 1, B: 2 });
+  });
+
+  it("survives an empty or absent payload", () => {
+    expect(pivotByDate([])).toEqual([]);
+    expect(pivotByDate()).toEqual([]);
+    expect(pivotByDate(null)).toEqual([]);
+  });
+
+  it("skips malformed points rather than keying on undefined", () => {
+    // A row with no date used to become the key "undefined" and sort into the
+    // series as a real observation.
+    const rows = pivotByDate([
+      { value: 9, metric_code: "DGS10" },
+      null,
+      { date: "2026-09-01T00:00:00", value: 3.9, metric_code: "DGS10" },
+    ]);
+    expect(rows).toEqual([{ date: "2026-09-01", DGS10: 3.9 }]);
+  });
+
+  it("keeps a null value as a hole, not as a missing key", () => {
+    // Recharts' connectNulls depends on the key being present and null.
+    const rows = pivotByDate([
+      { date: "2026-09-01T00:00:00", value: null, metric_code: "DGS10" },
+    ]);
+    expect(rows[0]).toHaveProperty("DGS10", null);
   });
 });

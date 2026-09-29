@@ -101,3 +101,28 @@ export function changeWindowLabel(actualDays) {
   if (actualDays == null) return "";
   return `vs ${actualDays}d`;
 }
+
+/**
+ * Collapse the `/timeseries` envelope into one row per date.
+ *
+ * The API returns a flat list of `{date, value, metric_code}` across every
+ * requested code. Recharts wants one object per date carrying each code as a
+ * key. This transformation existed twice in `App.jsx`, character for
+ * character, in the ticker effect and in the chart fetch — two copies of a
+ * date-keyed join, which is exactly the shape `F-0007` was.
+ *
+ * Dates are truncated to their day, so two observations of the same code on
+ * the same day collapse and the last one wins. That is the existing
+ * behaviour, kept deliberately: the series are daily and a duplicate date is
+ * a source problem, not something to paper over here.
+ */
+export function pivotByDate(raw = []) {
+  const byDate = {};
+  for (const point of raw || []) {
+    if (!point || !point.date) continue;
+    const day = String(point.date).split("T")[0];
+    if (!byDate[day]) byDate[day] = { date: day };
+    byDate[day][point.metric_code] = point.value;
+  }
+  return Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+}

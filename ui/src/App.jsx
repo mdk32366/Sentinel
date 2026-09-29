@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 // ORDER-03 Part F step 1: one module owns the base URL (F-0052).
 import { apiFetch } from "./lib/api";
-import { METRICS, RANGES, TABS } from "./lib/constants";
+import { METRICS, RANGES, SOVEREIGN_YIELD_CODES, TABS } from "./lib/constants";
 import { CustomTooltip } from "./components/CustomTooltip";
 import { StatCard } from "./components/StatCard";
 import { Ticker } from "./components/Ticker";
@@ -14,7 +14,7 @@ import { CrossAssetTab } from "./pages/CrossAssetTab";
 import { GoldReservesTab } from "./pages/GoldReservesTab";
 import { HoldingsTab } from "./pages/HoldingsTab";
 import { formatDate } from "./lib/format";
-import { seriesByCode, latestByCode, priorObservation, changeBetween, changeSuffix, changeWindowLabel } from "./lib/series";
+import { seriesByCode, latestByCode, pivotByDate, priorObservation, changeBetween, changeSuffix, changeWindowLabel } from "./lib/series";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 
 
@@ -38,37 +38,28 @@ export default function App() {
   };
 
   useEffect(() => {
-    const allCodes = [...METRICS.map(m => m.code),"IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N","IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N","IRLTLT01NLM156N","IRLTLT01NOM156N","IRLTLT01SEM156N","IRLTLT01CHM156N","IRLTLT01BEM156N","IRLTLT01KRM156N"].join(",");
+    // F-0062: the fourteen sovereign codes are SOVEREIGN_YIELD_CODES. They
+    // were inlined here twice, and the constant existed the whole time.
+    const allTrackedCodes = [...METRICS.map(m => m.code), ...Object.values(SOVEREIGN_YIELD_CODES)];
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 120);
-    apiFetch(`/timeseries?metric_codes=${allCodes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
+    apiFetch(`/timeseries?metric_codes=${allTrackedCodes.join(",")}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then(r => r.json())
       .then(raw => {
-        const byDate = {};
-        raw.forEach(({ date, value, metric_code }) => {
-          const d = date.split("T")[0];
-          if (!byDate[d]) byDate[d] = { date: d };
-          byDate[d][metric_code] = value;
+        const rows = pivotByDate(raw);
+        // F-0055: `prior` is the observation ~30 days back BY DATE, and it
+        // carries the gap it actually found. This used to be points.at(-2) -
+        // the previous row - which on a daily series is yesterday, while the
+        // card said "vs 30d".
+        const series = seriesByCode(rows, allTrackedCodes);
+        const latest = latestByCode(series);
+        const prior = {};
+        allTrackedCodes.forEach((code) => {
+          const found = priorObservation(series[code], 30);
+          if (found) prior[code] = found;
         });
-const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-const allTrackedCodes = [...METRICS.map(m => m.code),
-  "IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N",
-  "IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N",
-  "IRLTLT01NLM156N","IRLTLT01NOM156N","IRLTLT01SEM156N","IRLTLT01CHM156N",
-  "IRLTLT01BEM156N","IRLTLT01KRM156N"
-];
-// F-0055: `prior` is the observation ~30 days back BY DATE, and it carries the
-// gap it actually found. This used to be points.at(-2) - the previous row -
-// which on a daily series is yesterday, while the card said "vs 30d".
-const series = seriesByCode(rows, allTrackedCodes);
-const latest = latestByCode(series);
-const prior = {};
-allTrackedCodes.forEach((code) => {
-  const found = priorObservation(series[code], 30);
-  if (found) prior[code] = found;
-});
-setLatestAll({ latest, prior });
+        setLatestAll({ latest, prior });
       }).catch(() => {});
   }, []);
 
@@ -80,14 +71,7 @@ setLatestAll({ latest, prior });
       const start = new Date();
       start.setDate(start.getDate() - range.days);
       const res = await apiFetch(`/timeseries?metric_codes=${activeMetrics.join(",")}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`);
-      const raw = await res.json();
-      const byDate = {};
-      raw.forEach(({ date, value, metric_code }) => {
-        const d = date.split("T")[0];
-        if (!byDate[d]) byDate[d] = { date: d };
-        byDate[d][metric_code] = value;
-      });
-      let rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
+      let rows = pivotByDate(await res.json());
       if (normalized && rows.length > 0) {
         const base = {};
         activeMetrics.forEach(m => { base[m] = rows.find(r => r[m] != null)?.[m]; });
