@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 // ORDER-03 Part F step 1: one module owns the base URL (F-0052).
 import { apiFetch } from "./lib/api";
+import { buildYieldSeries } from "./lib/yieldSeries";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from "recharts";
 
 
@@ -795,35 +796,10 @@ function USADashboard() {
     { label: "Cut to 0% (ZIRP)", ff: 0.0, color: "#FF4444", desc: "2020-2022 playbook: M2 surged 27%, CPI hit 9%, 10Y rose from 0.5% to 3.5%. The bond market doesn't care what the Fed says." },
   ];
 
-  // Build chart data.
-  //
-  // F-0007: this used to zip the series by ARRAY INDEX off DGS10 -
-  // data["FEDFUNDS"]?.[i]?.value and so on. DGS10 is daily (~1,250 points over
-  // five years) and FEDFUNDS is monthly (~60), so the sixty monthly values
-  // were painted onto the first sixty DAILY dates: Fed Funds appeared
-  // compressed into the left ~5% of the chart, against dates it never had, and
-  // was null for the rest. DGS2 drifted the same way whenever the two series
-  // had different missing days.
-  //
-  // Joining on the date keeps every point where it belongs. The monthly series
-  // is then sparse against a daily axis, which is correct and is why every
-  // <Line> carries connectNulls - it draws through its real monthly points.
-  const yieldData = (() => {
-    const byDate = new Map();
-    const merge = (code, key) => {
-      for (const point of data[code] || []) {
-        if (!point?.date) continue;
-        if (!byDate.has(point.date)) byDate.set(point.date, { date: point.date });
-        byDate.get(point.date)[key] = point.value;
-      }
-    };
-    merge("DGS10", "10Y");
-    merge("DGS30", "30Y");
-    merge("DGS2", "2Y");
-    merge("FEDFUNDS", "Fed Funds");
-    merge("DFII10", "Real Yield");
-    return [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
-  })();
+  // Build chart data. The date join lives in lib/yieldSeries.js so it can be
+  // tested (F-0007, F-0053); it used to be an inline index zip here.
+  const yieldData = buildYieldSeries(data);
+
   const m2Data = (data["M2SL"]||[]).map(d => ({ date: d.date, value: d.value }));
   const m2YoyData = m2Data.map((d, i) => {
     if (i < 12) return { date: d.date, growth: null };

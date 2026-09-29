@@ -45,6 +45,24 @@ jobs:
       # ORDER-01 A5 / F-0006: discovery, not a hand-maintained list. Two test
       # files sat outside the gate for weeks and read as coverage. A new test
       # is now in the gate by default rather than by memory.
+      # F-0053: the frontend had no tests at all, so nothing could catch a
+      # regression in the 2,583-line App.jsx or the modules pulled out of it.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ui
+      - name: Run frontend tests
+        run: npm test
+        working-directory: ui
+      - name: Build the frontend
+        run: npm run build
+        working-directory: ui
+
       - name: Run the test suite
         # -t . matters: without it discovery imports the test modules as
         # top-level names, tests/__init__.py never runs, and the Step 12

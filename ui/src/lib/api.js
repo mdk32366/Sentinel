@@ -28,12 +28,15 @@ function stripTrailingSlash(value) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
-function resolveBase() {
-  const configured = import.meta.env?.VITE_API_BASE;
+export function resolveBase(env = import.meta.env, location = globalThis.location) {
+  const configured = env?.VITE_API_BASE;
   if (configured) return stripTrailingSlash(configured);
 
-  if (import.meta.env?.DEV) {
-    const { protocol, hostname } = window.location;
+  // No DOM (a test runner, or any non-browser import): there is no host to
+  // read, so there is nothing to infer. Same-origin is the honest answer and
+  // it keeps importing this module side-effect-free.
+  if (env?.DEV && location?.hostname) {
+    const { protocol, hostname } = location;
     return `${protocol}//${hostname}:${DEV_API_PORT}/api`;
   }
 

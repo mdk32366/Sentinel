@@ -689,3 +689,45 @@ two digests and the exact commands to fix it; reverting clears it.
 **What it does not prove.** That the committed bundle was built *correctly*
 from that source — only that the source has not moved since. Building in CI is
 what would close that.
+
+### D-0049 — The UI is built in the image; `api/static/` is no longer committed
+
+**Choice.** A `node:22-slim` stage runs `npm ci && npm run build` and the result
+is copied to `/app/api/static/`. `api/static/` is removed from git and added to
+both `.gitignore` and `.dockerignore`, so the build output is the only thing
+that can ever be there. `D-0048`'s manifest guard and
+`tools/record_ui_build.py` are retired — they existed to detect a problem that
+no longer exists.
+
+**Rejected.** Keeping the committed bundle alongside the build stage. That
+leaves two writers into the same image path — `COPY . .` brings the committed
+copy, `COPY --from=ui` brings the built one — and which wins is decided by line
+order in the Dockerfile. Ambiguity that is invisible is worse than the original
+defect.
+
+Also rejected: keeping `D-0048` as a belt-and-braces check. Its own docstring
+said it *"does not prove the bundle was built from that source correctly"* —
+and Principle 6 is explicit that a guard naming its own failure mode has a
+finding against itself. Keeping a guard for a closed problem trains people to
+ignore it.
+
+**What forced the call.** `F-0027`, and Principle 1. The UI had two canonical
+copies, `ui/src` and `api/static/`, both committed, with nothing structural
+keeping them in agreement. That is the same shape as `F-0004`'s shadow data
+directory and `F-0050`'s frozen calendar file. The manual rebuild step was
+performed by hand four times on 2026-09-28 alone; Principle 3's blood line is
+*"a step that depends on you remembering it will eventually be forgotten."*
+
+**Cost, accepted by the owner on 2026-09-29.** Deploys now depend on the npm
+registry as well as PyPI, and take longer. `package-lock.json` is committed and
+the stage uses `npm ci`, so the same commit produces the same bundle.
+
+**Layer ordering is deliberate.** `package.json` and the lockfile are copied
+before the source, so a change to `ui/src` rebuilds the bundle without
+reinstalling dependencies.
+
+**Proved from source, not by reasoning.** A marker was added to `ui/src` with
+**no local `npm run build`** — the local `dist/` still held the previous bundle
+— and the image was rebuilt. The marker appeared in the bundle inside the
+image. That is the only evidence that the image builds from source rather than
+from a committed artefact.
