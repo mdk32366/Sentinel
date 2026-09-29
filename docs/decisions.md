@@ -1175,3 +1175,45 @@ overlap is ordinary rather than exotic.
 **Not changed.** The N+1 SELECT is gone as a side effect — one query per
 metric instead of one per observation, ~1,800 fewer round trips for DFF alone
 — but performance was not the reason and no timing claim is made here.
+
+### D-0060 — CDS is shown as part of the score, and the country panel is where the surfaces meet
+
+**Choice.** Four changes, answering *"is the CDS surface telling any of the
+sovereign stress story, and can it be made evident?"*
+
+1. **The methodology panel lists all six scored dimensions** and all three
+   multipliers, from one list that a test cross-checks against the scorer
+   (`F-0076`).
+2. **The country panel carries a `StressContribution` block**: the country's
+   tier, its composite score, and a segmented bar breaking that score into the
+   dimensions that produced it - CDS among them, with its share.
+3. **The CDS tab gains two columns**: the country's composite tier, and what
+   its CDS spread contributed in points and as a share. A country ranked on
+   CDS alone renders at 100% and in the CDS colour.
+4. **A refused quote explains itself** rather than rendering as a dash.
+
+**Why the country panel and not a new tab.** The COMPOSITE tab ranks countries
+and the CDS tab lists spreads; neither said how the two relate, and a third
+surface would have been a fourth thing that does not relate to the others. The
+country panel already gathers holdings, gold, reserves, spread and CDS for one
+sovereign - it was the only place that was already answering "what is going on
+with this country", and it was doing it without ever mentioning the score.
+
+**The breakdown is derived from the same fields the tiering used**, not
+recomputed. A second implementation of the scoring arithmetic in JavaScript
+would drift, and the drift would be invisible precisely because both numbers
+would look plausible.
+
+**Rejected.** Showing every dimension including the zeroes. A country with one
+contributing dimension would render five empty segments, and the panel's job
+is to say what is driving the score rather than to enumerate what is not.
+
+**Rejected.** Joining the CDS tab to the composite on ISO code. The CDS metric
+namespace uses its own country token - `RUSSIA`, not `RUS` - and
+`CdsAllItem`'s docstring says so explicitly. The join is on country name,
+which both carry.
+
+**What this does not do.** It does not make CDS coverage better. Sixteen
+countries have an admitted quote out of forty-eight scored, and four of those
+contribute points. The surface now states that honestly instead of implying
+breadth it does not have.

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
+import { MAX_RAW_SCORE, STRESS_DIMENSIONS, STRESS_MULTIPLIERS } from "../lib/dimensions";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
 import { LoadFailure } from "../components/LoadFailure";
@@ -44,24 +45,25 @@ export function CompositeTab({ onCountrySelect }) {
       {/* Score methodology */}
       <div style={{ background:"#0A1520", border:"1px solid #1A2530", borderRadius:2, padding:"14px 20px", marginBottom:20, display:"flex", gap:28, flexWrap:"wrap" }}>
         <div style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", letterSpacing:"0.1em", alignSelf:"center" }}>SCORE =</div>
-        {[
-          { label:"Treasury", desc:"MoM decline + consecutive months", max:"0–50 pts", color:"#C8A96E" },
-          { label:"Gold Reserves", desc:"QoQ decline + consecutive quarters", max:"0–40 pts", color:"#E8C547" },
-          { label:"Sovereign Spread", desc:">50bps vs US 10Y + widening", max:"0–20 pts", color:"#7EB8C9" },
-          { label:"Petrodollar", desc:"Oil price drop for oil-dependent nations", max:"0–20 pts", color:"#E07B5A" },
-        ].map(s => (
+        {STRESS_DIMENSIONS.map(s => (
           <div key={s.label} style={{ display:"flex", alignItems:"center", gap:8 }}>
             <div style={{ width:8, height:8, borderRadius:"50%", background:s.color, flexShrink:0 }} />
             <div>
-              <div style={{ fontFamily:"monospace", fontSize:11, color:"#E8E0D0" }}>{s.label} <span style={{ color:"#3A4D5C" }}>{s.max}</span></div>
+              <div style={{ fontFamily:"monospace", fontSize:11, color:"#E8E0D0" }}>{s.label} <span style={{ color:"#3A4D5C" }}>0–{s.max} pts</span></div>
               <div style={{ fontFamily:"monospace", fontSize:10, color:"#5A6878" }}>{s.desc}</div>
             </div>
           </div>
         ))}
         <div style={{ display:"flex", alignItems:"center", gap:8, borderLeft:"1px solid #1A2530", paddingLeft:20 }}>
           <div>
-            <div style={{ fontFamily:"monospace", fontSize:11, color:"#E07B5A" }}>× 1.5 cross-asset (T + gold selling)</div>
-            <div style={{ fontFamily:"monospace", fontSize:11, color:"#FF4444" }}>× 2.0 divergence (gold sold into rising price)</div>
+            {STRESS_MULTIPLIERS.map(m => (
+              <div key={m.label} style={{ fontFamily:"monospace", fontSize:11, color:m.color }}>
+                {m.label} <span style={{ color:"#5A6878" }}>({m.desc})</span>
+              </div>
+            ))}
+            <div style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", marginTop:4 }}>
+              max {MAX_RAW_SCORE} raw · capped at 150
+            </div>
           </div>
         </div>
       </div>

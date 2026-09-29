@@ -6,9 +6,16 @@ import { ColHeader } from "../components/ColHeader";
 
 const FETCH_KEY = "cds";
 
+/** ISO-3166 for the CDS namespace's own country token (see CdsAllItem). */
+const TIER_COLORS = { CRISIS: "#FF4444", STRESSED: "#E07B5A", ELEVATED: "#E8C547", WATCH: "#5A6878" };
+
 export function CDSTab({ onCountrySelect }) {
   const rows = useApiResource(`/cds/all`);
   const coverageResource = useApiResource(`/cds/coverage`);
+  // D-0060: this tab listed spreads and the COMPOSITE tab ranked countries,
+  // and nothing said how the two related. CDS is dimension 7 of the composite
+  // and for some countries it is most of the score.
+  const composite = useApiResource(`/stress/composite`);
   const { running, results, run } = useAsyncAction();
   const [sort, setSort] = useState("cds5y");
 
@@ -18,6 +25,15 @@ export function CDSTab({ onCountrySelect }) {
   // fix it. That is a deliberate exception to F-0063, not an oversight.
   const data = Array.isArray(rows.data) ? rows.data : [];
   const coverage = coverageResource.data;
+
+  // Keyed by the composite's own iso. The CDS namespace token ("RUSSIA") is
+  // not ISO-3166, so the join is on country NAME, which both carry.
+  const scored = {};
+  for (const tier of ["crisis", "stressed", "elevated", "watch"]) {
+    for (const row of composite.data?.[tier] || []) {
+      scored[(row.country_name || "").toUpperCase()] = row;
+    }
+  }
   const loading = rows.loading || coverageResource.loading;
   const fetching = Boolean(running[FETCH_KEY]);
   const fetchResult = results[FETCH_KEY];
@@ -79,7 +95,16 @@ export function CDSTab({ onCountrySelect }) {
         {[
           { label: "Countries with CDS", val: data.length },
           { label: "Highest 5Y CDS", val: `${Math.max(...data.map(d => d.cds_5y || 0))} bps` },
-          { label: "Inverted Curves", val: data.filter(d => (d.cds_term_spread || 0) < 0).length },
+          {
+            label: "Inverted Curves",
+            // F-0074: every 10Y series on this board froze at the ISDA running
+            // coupon in July 2026 and is now refused. With no admitted 10Y
+            // there is no term structure to invert, and printing "0" would
+            // claim we looked and found none.
+            val: data.some(d => d.cds_term_spread != null)
+              ? data.filter(d => (d.cds_term_spread || 0) < 0).length
+              : "no 10Y",
+          },
           { label: "Very High (>300 bps)", val: data.filter(d => (d.cds_5y || 0) > 300).length },
         ].map((s, i) => (
           <div key={i} style={{ background: "#0F1923", border: "1px solid #1A2530", borderTop: "2px solid #C8A96E", borderRadius: 2, padding: "14px 20px", flex: "1 1 150px" }}>
@@ -110,6 +135,8 @@ export function CDSTab({ onCountrySelect }) {
   onSort={setSort} 
   align="right" 
 />
+                <ColHeader label="Stress Tier" tip="This country's tier on the COMPOSITE tab. CDS is dimension 7 of that score." align="right" />
+                <ColHeader label="CDS Share" tip="How much of this country's composite stress score comes from its CDS spread. 100% means the country is ranked on CDS alone." align="right" />
                 <ColHeader label="Signal" align="left" />
               </tr>
             </thead>
@@ -139,6 +166,35 @@ export function CDSTab({ onCountrySelect }) {
                     </td>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: isInverted ? "#FF4444" : "#8A9BAC", fontWeight: isInverted ? 600 : 400 }}>
                       {c.cds_term_spread != null ? `${c.cds_term_spread > 0 ? "+" : ""}${c.cds_term_spread} bps` : "—"}
+                    </td>
+                    <td style={{ padding: "10px 16px", textAlign: "right" }}>
+                      {(() => {
+                        const hit = scored[(c.country_name || "").toUpperCase()];
+                        if (!hit) return <span style={{ fontFamily: "monospace", fontSize: 11, color: "#2A3540" }}>not ranked</span>;
+                        const col = TIER_COLORS[hit.tier] ?? "#5A6878";
+                        return (
+                          <span style={{ fontFamily: "monospace", fontSize: 10, color: col, background: `${col}18`, border: `1px solid ${col}44`, borderRadius: 2, padding: "1px 6px" }}>
+                            {hit.tier}
+                          </span>
+                        );
+                      })()}
+                    </td>
+                    <td style={{ padding: "10px 16px", textAlign: "right", fontFamily: "monospace", fontSize: 12 }}>
+                      {(() => {
+                        const hit = scored[(c.country_name || "").toUpperCase()];
+                        const total = Number(hit?.composite_score) || 0;
+                        const cds = Number(hit?.cds_score) || 0;
+                        if (!hit || cds <= 0) return <span style={{ color: "#2A3540" }}>—</span>;
+                        const pct = total > 0 ? (cds / total) * 100 : 0;
+                        // Sole-driver countries are the point of this column:
+                        // they are on the COMPOSITE tab because of CDS alone.
+                        const sole = pct >= 99;
+                        return (
+                          <span style={{ color: sole ? "#C47EB8" : "#8A9BAC", fontWeight: sole ? 700 : 400 }}>
+                            {cds} pts · {pct.toFixed(0)}%
+                          </span>
+                        );
+                      })()}
                     </td>
                     <td style={{ padding: "10px 16px" }}>
                       {isInverted && (

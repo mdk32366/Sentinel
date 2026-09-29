@@ -66,6 +66,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 import json
 
+# F-0074: the CDS admissibility rule lives with the CDS pipeline, so the
+# scorer and the API cannot drift into judging the same rows differently.
+from pipelines.cds_fetcher import (
+    MAX_CDS_AGE_DAYS,
+    MAX_PLAUSIBLE_CDS_BPS,
+    admit_cds_quote,
+)
 from database.models import (
     Metric, TimeSeries, Country, CompositeSnapshot, UpdateLog,
 )
@@ -288,22 +295,6 @@ CDS_NAME_BY_ISO = {
 }
 
 
-# ── CDS quote admissibility (F-0074) ──────────────────────────────────────────
-# The WGB board publishes every trading day. A quote older than this is a
-# series that stopped, not a market that went quiet, and scoring it presents
-# a months-old number as today's price.
-#
-# Ten days spans a long weekend plus a week of outage without tripping.
-MAX_CDS_AGE_DAYS = 10
-
-# A running spread cannot meaningfully exceed 100% of notional. Past that a
-# credit is quoted points-upfront and a figure read as a running spread is a
-# category error rather than a large number. Russia printed 13,775bps —
-# 137.75% — frozen to one decimal for 23 consecutive days including weekends,
-# after its CDS triggered and settled at auction in 2022.
-MAX_PLAUSIBLE_CDS_BPS = 10000.0
-
-
 def _latest_and_prior(db: Session, code: str, days_back: int = 90):
     """Return (latest_value, prior_value_or_None, as_of_date_or_None).
 
@@ -342,30 +333,6 @@ def _latest_and_prior(db: Session, code: str, days_back: int = 90):
     latest = float(history[-1].value)
     prior = float(history[0].value) if len(history) >= 2 else None
     return latest, prior, history[-1].date
-
-
-def admit_cds_quote(value, as_of, now=None):
-    """Is this quote usable as today's running spread? Returns a reason or None.
-
-    Separated out so the two rules can be stated once and tested without a
-    database. A rejected quote scores zero and says why, rather than scoring
-    zero indistinguishably from a country nobody quotes.
-    """
-    if value is None or as_of is None:
-        return "no coverage"
-
-    now = now or datetime.utcnow()
-    age_days = (now - as_of).days
-    if age_days > MAX_CDS_AGE_DAYS:
-        return f"stale ({age_days}d old)"
-
-    if value >= MAX_PLAUSIBLE_CDS_BPS:
-        return "not quoted as a running spread"
-
-    if value <= 0:
-        return "non-positive quote"
-
-    return None
 
 
 def get_cds_score(db: Session, iso: str) -> dict:
