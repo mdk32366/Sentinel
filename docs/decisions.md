@@ -1304,3 +1304,44 @@ configures 21. `A-0014`'s objection that CDS coverage is only 33% of scored
 countries is therefore partly self-inflicted, and widening the configured set
 is the cheapest available improvement to it. Left for a ruling with the rest
 of `A-0014`.
+
+### D-0064 — Every sovereign the board carries is configured
+
+**Choice.** `CDS_INSTRUMENTS` goes from 21 entries to 31, covering all 30
+sovereigns the World Government Bonds board publishes, plus Saudi Arabia,
+which it does not (`F-0075`).
+
+Added: Austria, Belgium, Denmark, Finland, Ireland, Israel, Netherlands,
+Portugal, Sweden, United Kingdom.
+
+**Why it was worth doing first among `A-0014`'s options.** That assumption
+cites CDS coverage at 33% of scored countries as an argument against the
+dimension. Ten of those absences were not a data problem — nobody had
+configured them. Arguing about whether a dimension deserves its weight while a
+third of its available inputs are switched off is arguing about the wrong
+thing.
+
+**What it buys, stated honestly: coverage, not signal.** Every one of the ten
+prints well under the 100bps band — Sweden 7.36, Denmark 8.91, Netherlands
+10.34, United Kingdom 21.08, Israel 59.08. None will score at current levels,
+and that is the correct outcome: the dimension should be silent on these
+because they are calm, not because nobody asked.
+
+It also means the denominator in any future coverage argument is real. A
+country that is quoted and scoring zero is evidence; a country that was never
+requested is not.
+
+**The ISO map moves with it.** `CDS_NAME_BY_ISO` gains all ten, so the country
+panel can reach them — `tests/test_cds_country_lookup.py` fails in both
+directions if a configured country has no ISO or an ISO maps to a token
+nothing stores, which is what made this change mechanical rather than
+error-prone.
+
+**The board list is recorded, not fetched, in the test.** A test that hit the
+live board would fail on the source's outage rather than on our regression.
+What is pinned is what the board was observed to carry on 2026-09-29, and that
+the only configured absentee is the one `F-0075` recorded deliberately.
+
+**Correction to an earlier count.** I reported the board as listing 33
+sovereigns. It carries **30** — the earlier figure counted header and spacer
+rows in the raw table.
