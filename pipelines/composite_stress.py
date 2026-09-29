@@ -292,6 +292,17 @@ CDS_NAME_BY_ISO = {
     "KOR": "SOUTH_KOREA", "IND": "INDIA", "IDN": "INDONESIA", "USA": "UNITED_STATES",
     "CAN": "CANADA", "MEX": "MEXICO", "BRA": "BRAZIL", "AUS": "AUSTRALIA",
     "ZAF": "SOUTH_AFRICA",
+    # D-0064
+    "AUT": "AUSTRIA",
+    "BEL": "BELGIUM",
+    "DNK": "DENMARK",
+    "FIN": "FINLAND",
+    "IRL": "IRELAND",
+    "ISR": "ISRAEL",
+    "NLD": "NETHERLANDS",
+    "PRT": "PORTUGAL",
+    "SWE": "SWEDEN",
+    "GBR": "UNITED_KINGDOM",
 }
 
 

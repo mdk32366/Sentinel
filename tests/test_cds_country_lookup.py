@@ -85,5 +85,51 @@ class TheLookupResolvesBothForms(unittest.TestCase):
         self.assertEqual(self.resolve("XXX"), "XXX")
 
 
+class TheConfiguredSetCoversTheBoard(unittest.TestCase):
+    """D-0064.
+
+    The World Government Bonds board carried 30 sovereigns and
+    CDS_INSTRUMENTS configured 21. A-0014 cited CDS coverage at 33% of scored
+    countries as an argument against the dimension; ten of those absences were
+    simply never configured.
+
+    This records what the board was observed to carry on 2026-09-29. It is a
+    recorded expectation, not a live check - a test that fetched the board
+    would fail on the source's outage rather than on our regression.
+    """
+
+    OBSERVED_ON_BOARD = {
+        "Austria", "Belgium", "Denmark", "Finland", "Ireland", "Israel",
+        "Netherlands", "Portugal", "Sweden", "United Kingdom",
+        "France", "Germany", "Greece", "Italy", "Spain", "Switzerland",
+        "Russia", "Turkey", "Egypt", "China", "Japan", "South Korea",
+        "India", "Indonesia", "United States", "Canada", "Mexico",
+        "Brazil", "Australia", "South Africa",
+    }
+
+    def test_every_observed_sovereign_is_configured(self):
+        missing = self.OBSERVED_ON_BOARD - set(CDS_INSTRUMENTS)
+        self.assertEqual(
+            missing, set(),
+            f"on the board on 2026-09-29 but not configured: {sorted(missing)}",
+        )
+
+    def test_the_ten_added_by_d0064_are_present(self):
+        # Named individually so a bulk edit that drops them fails loudly.
+        for name in ("Austria", "Belgium", "Denmark", "Finland", "Ireland",
+                     "Israel", "Netherlands", "Portugal", "Sweden",
+                     "United Kingdom"):
+            with self.subTest(country=name):
+                self.assertIn(name, CDS_INSTRUMENTS)
+
+    def test_the_only_configured_absentee_is_the_recorded_one(self):
+        # Saudi Arabia is configured and has never been on the board, which is
+        # why F-0075 made it an explicit exclusion. Anything ELSE configured
+        # but absent would be a silent gap.
+        from pipelines.cds_fetcher import KNOWN_ABSENT_FROM_5Y_BOARD
+        configured_absentees = set(CDS_INSTRUMENTS) - self.OBSERVED_ON_BOARD
+        self.assertEqual(configured_absentees, set(KNOWN_ABSENT_FROM_5Y_BOARD))
+
+
 if __name__ == "__main__":
     unittest.main()

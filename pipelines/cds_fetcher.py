@@ -49,6 +49,24 @@ CDS_INSTRUMENTS = {
     "Brazil": {"5Y": {"code": "BRAZIL_CDS_5Y"}},
     "Australia": {"5Y": {"code": "AUSTRALIA_CDS_5Y"}},
     "South Africa": {"5Y": {"code": "SOUTH_AFRICA_CDS_5Y"}},
+    # D-0064: every remaining sovereign the board carries. A-0014 counted
+    # CDS coverage at 33% of scored countries as an argument against the
+    # dimension; ten of the absences were simply never configured.
+    #
+    # All ten print well under the 100bps band, so this buys COVERAGE and
+    # no scoring signal at current levels - which is the honest reason to
+    # do it: the dimension should be silent on these because they are
+    # calm, not because nobody asked.
+    "Austria": {"5Y": {"code": "AUSTRIA_CDS_5Y"}},
+    "Belgium": {"5Y": {"code": "BELGIUM_CDS_5Y"}},
+    "Denmark": {"5Y": {"code": "DENMARK_CDS_5Y"}},
+    "Finland": {"5Y": {"code": "FINLAND_CDS_5Y"}},
+    "Ireland": {"5Y": {"code": "IRELAND_CDS_5Y"}},
+    "Israel": {"5Y": {"code": "ISRAEL_CDS_5Y"}},
+    "Netherlands": {"5Y": {"code": "NETHERLANDS_CDS_5Y"}},
+    "Portugal": {"5Y": {"code": "PORTUGAL_CDS_5Y"}},
+    "Sweden": {"5Y": {"code": "SWEDEN_CDS_5Y"}},
+    "United Kingdom": {"5Y": {"code": "UNITED_KINGDOM_CDS_5Y"}},
 }
 
 
