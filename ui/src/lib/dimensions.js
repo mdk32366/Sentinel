@@ -5,10 +5,15 @@
  * `pipelines/composite_stress.py` sums **six** and then applies multipliers:
  *
  *     raw_score = tic_score + gold_score + monetary_score
- *               + spread_score + petro_score + cds_score
+ *               + petro_score + cds_score
  *
  * Monetary/M2 (0-35), Sovereign CDS (0-20) and the non-dollar reserve
- * multiplier were all absent from the explanation. A reader could not
+ * multiplier were all absent from the explanation.
+ *
+ * `D-0066` then retired Sovereign Spread from scoring: it could not fire
+ * for any country (`F-0079`). It is still measured and shown - the spread
+ * itself is a real fact - but it is not a scoring dimension, so it is not
+ * in this list. A reader could not
  * reconcile a score of 179.7 with a panel whose parts sum to 130, and CDS —
  * which is the entire score for some countries — appeared nowhere.
  *
@@ -38,13 +43,6 @@ export const STRESS_DIMENSIONS = [
     max: 35,
     color: "#6A8FC4",
     desc: "Broad money growth — domestic debasement",
-  },
-  {
-    key: "spread_score",
-    label: "Sovereign Spread",
-    max: 20,
-    color: "#7EB8C9",
-    desc: ">50bps vs US 10Y + widening",
   },
   {
     key: "petro_score",

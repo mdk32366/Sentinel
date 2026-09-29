@@ -4,7 +4,7 @@ The COMPOSITE tab's panel is headed `SCORE =` and listed four dimensions. The
 scorer sums six:
 
     raw_score = tic_score + gold_score + monetary_score
-              + spread_score + petro_score + cds_score
+              + petro_score + cds_score
 
 Monetary/M2 (0-35), Sovereign CDS (0-20) and the non-dollar reserve multiplier
 were absent from the explanation. A reader could not reconcile a score of
@@ -62,9 +62,10 @@ class TheUiListsEveryScoredDimension(unittest.TestCase):
             f"the panel lists {sorted(extra)} but the scorer does not sum them",
         )
 
-    def test_there_are_six_of_them(self):
-        self.assertEqual(len(declared_dimensions()), 6)
-        self.assertEqual(len(summed_terms()), 6)
+    def test_there_are_five_of_them(self):
+        # Six until D-0066 retired Sovereign Spread from scoring (F-0079).
+        self.assertEqual(len(declared_dimensions()), 5)
+        self.assertEqual(len(summed_terms()), 5)
 
 
 class TheDeclaredMaximaMatchTheScorer(unittest.TestCase):
@@ -74,7 +75,6 @@ class TheDeclaredMaximaMatchTheScorer(unittest.TestCase):
         "tic_score": 50,
         "gold_score": 40,
         "monetary_score": 35,
-        "spread_score": 20,
         "petro_score": 20,
         "cds_score": 20,
     }
@@ -88,7 +88,7 @@ class TheDeclaredMaximaMatchTheScorer(unittest.TestCase):
         # quoting an old number (F-0068's shape).
         header = SCORER.read_text(encoding="utf-8")[:4000]
         for label, cap in (("Treasury", 50), ("Gold Reserves", 40),
-                           ("Monetary / M2", 35), ("Sovereign Spread", 20),
+                           ("Monetary / M2", 35),
                            ("Petrodollar", 20), ("Sovereign CDS", 20)):
             with self.subTest(dimension=label):
                 self.assertIn(f"0-{cap} pts", header)
@@ -96,7 +96,8 @@ class TheDeclaredMaximaMatchTheScorer(unittest.TestCase):
     def test_the_raw_maximum_is_the_sum_of_the_parts(self):
         source = DIMENSIONS_JS.read_text(encoding="utf-8")
         self.assertIn("MAX_RAW_SCORE", source)
-        self.assertEqual(sum(self.EXPECTED.values()), 185)
+        # 185 until D-0066 retired the 20-point spread dimension.
+        self.assertEqual(sum(self.EXPECTED.values()), 165)
 
 
 class CdsIsPresentedAsScored(unittest.TestCase):

@@ -24,15 +24,15 @@ const BRAZIL = {
   country_iso: "BRA", country_name: "Brazil", tier: "WATCH",
   composite_score: 5.0, multiplier: 1.0,
   tic_score: 0, gold_score: 0, monetary_score: 0,
-  spread_score: 0, petro_score: 0, cds_score: 5,
+  petro_score: 0, cds_score: 5,
   cds_coverage: "quoted",
 };
 
 const TURKEY = {
   country_iso: "TUR", country_name: "Turkey", tier: "CRISIS",
-  composite_score: 178.0, multiplier: 1.5,
+  composite_score: 158.0, multiplier: 1.5,
   tic_score: 50, gold_score: 40, monetary_score: 35,
-  spread_score: 20, petro_score: 0, cds_score: 5,
+  petro_score: 0, cds_score: 5,
   cds_coverage: "quoted",
 };
 
@@ -40,7 +40,7 @@ const RUSSIA = {
   country_iso: "RUS", country_name: "Russia", tier: "CRISIS",
   composite_score: 139.7, multiplier: 2.0,
   tic_score: 50, gold_score: 20, monetary_score: 0,
-  spread_score: 0, petro_score: 0, cds_score: 0,
+  petro_score: 0, cds_score: 0,
   cds_coverage: "not quoted as a running spread",
 };
 
@@ -49,7 +49,7 @@ describe("StressContribution", () => {
     stubComposite({ crisis: [TURKEY], stressed: [], elevated: [], watch: [] });
     render(<StressContribution iso="TUR" />);
     await waitFor(() => expect(screen.getByText("CRISIS")).toBeTruthy());
-    expect(screen.getByText("178.0")).toBeTruthy();
+    expect(screen.getByText("158.0")).toBeTruthy();
     expect(screen.getByText(/× 1.5 applied/)).toBeTruthy();
   });
 
