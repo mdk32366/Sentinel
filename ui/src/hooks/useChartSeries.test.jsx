@@ -33,13 +33,14 @@ describe("normalizeRows", () => {
   });
 
   it("drops a series whose base is zero rather than dividing by it", () => {
-    // FEDFUNDS sat at 0.00 through 2020-2021. Rebasing on it is a division by
-    // zero, and Infinity plotted against yields makes the chart unreadable.
+    // The effective fed funds rate was pinned near zero through 2020-2021 -
+    // low enough that rebasing on it produces either Infinity or a number
+    // large enough to flatten every other series on the chart.
     const out = normalizeRows(
-      [{ date: "2026-09-01", FEDFUNDS: 0 }, { date: "2026-09-02", FEDFUNDS: 0.25 }],
-      ["FEDFUNDS"],
+      [{ date: "2026-09-01", DFF: 0 }, { date: "2026-09-02", DFF: 0.25 }],
+      ["DFF"],
     );
-    expect(out.every((r) => r.FEDFUNDS === undefined)).toBe(true);
+    expect(out.every((r) => r.DFF === undefined)).toBe(true);
   });
 
   it("keeps the date on every row so the axis does not collapse", () => {

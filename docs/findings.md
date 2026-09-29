@@ -1828,3 +1828,56 @@ AssertionError: 2026-08-01: expected 31 to be 1
 **Not fixed here.** Only display. Nothing stored, scored or compared used
 `formatDate`, and `priorObservation`, `yearAgo` and `pivotByDate` all compare
 date strings or `Date.parse` results symmetrically, so no arithmetic shifted.
+
+### F-0072 — The Fed Funds card was 25bp wrong, not merely a month stale
+
+**Claim.** The MARKETS Fed Funds card read `FEDFUNDS`, FRED's monthly average.
+On 2026-09-29 it displayed **3.63%**. The effective federal funds rate was
+**3.88%**, and the Fed's target range was **3.75–4.00%**.
+
+**Artifact.** Production database:
+
+```
+2026-08-01 3.63000000
+2026-07-01 3.63000000
+2026-06-01 3.63000000
+```
+
+Live FRED, queried the same day:
+
+```
+DFF        latest 2026-09-25  value 3.88
+EFFR       latest 2026-09-28  value 3.88
+DFEDTARU   latest 2026-09-29  value 4
+DFEDTARL   latest 2026-09-29  value 3.75
+FEDFUNDS   latest 2026-08-01  value 3.63
+```
+
+**Sample size.** One card, one day, one 25bp gap. The gap opens whenever the
+Fed moves and closes the following month, so its size is a function of when
+you look rather than of anything being broken.
+
+**Why `A-0013` understated it.** That assumption was written the same day and
+called this a disclosure problem — the grid does not distinguish monthly cards
+from daily ones, so a monthly card reads as a stale daily one. True, and not
+the whole thing. A reader who fully understood that `FEDFUNDS` is last
+month's average would *still* be reading 3.63% on a board where the fiscal
+calculator converts yields into an interest bill and the scenario panel argues
+about the Fed's next move. Disclosure fixes the misreading. It does not fix
+the number.
+
+**Found by the owner asking twice.** The first question — *"my latest data is
+July 31"* — was answered by `F-0071`, a genuine display defect, and by the
+observation that `FEDFUNDS` is monthly by construction. Both were true, and
+together they were a complete-sounding answer that stopped one question short.
+The second question, *"isn't there a daily fed funds ticker?"*, is the one
+that produced this. There is; it is `DFF`; it was never ingested.
+
+**The shape worth remembering.** Two correct explanations can compose into a
+wrong conclusion. "The display was off by one day" and "the series is monthly
+by design" are both accurate, and together they account for the symptom
+entirely — which is exactly what made it easy to stop there rather than ask
+whether the right series was being shown at all.
+
+**Fixed** by `D-0057`. Guarded by a test asserting every card's code is
+fetched by some pipeline.

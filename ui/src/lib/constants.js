@@ -62,12 +62,12 @@ export const METRICS = [
     stressRole: "Scored: the short leg of DGS10 - DGS2. Below zero is an inversion; at -1.00pp the yield-curve factor pins at maximum stress.",
   },
   {
-    code: "FEDFUNDS",
+    code: "DFF",
     label: "Fed Funds",
     color: "#5DB87A",
     unit: "%",
     scored: false,
-    tip: "FRED's FEDFUNDS: the effective federal funds rate as a MONTHLY AVERAGE, dated to the first of the month and published in the first week of the next one. It is the line between what the Fed controls and what the bond market controls — but it is not a live rate, and it will always read older than the daily yields beside it. A-0013.",
+    tip: "The effective federal funds rate, daily — what overnight money actually traded at, inside the target range the Fed sets. This is the line between what the Fed controls and what the bond market controls, which is the distinction the COUNTRY tab's scenario panel is built on. D-0057 moved this card off FRED's monthly average, which had it reading 3.63% while the rate was 3.88%.",
     stressRole: "Not scored. The stress model reads market yields, not policy rates.",
   },
   {

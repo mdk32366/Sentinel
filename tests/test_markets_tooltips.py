@@ -159,19 +159,18 @@ if __name__ == "__main__":
 
 
 class MonthlyCardsSayTheyAreMonthly(unittest.TestCase):
-    """A-0013 / F-0071.
+    """A-0013 / D-0057.
 
-    Three of the twelve series are monthly and nine are daily. They sit in one
-    grid with no visual distinction, so a monthly card reads as a stale daily
-    one — which is exactly how the question arrived: "is there no real time
-    ticker on Fed Funds? My latest data is July 31."
+    The twelve cards sit in one grid with no visual distinction between a
+    daily series and a monthly one, so a monthly card reads as a stale daily
+    one. That is how the question arrived: "is there no real time ticker on
+    Fed Funds? My latest data is July 31."
 
-    FRED's FEDFUNDS is a monthly AVERAGE dated to the first of the month.
-    Nothing was broken; the card could not have been more current. The tooltip
-    now says so, and this stops that disclosure being dropped.
+    Two of the twelve are still monthly. They disclose it in their own text,
+    which is the only place a reader can find out.
     """
 
-    MONTHLY = {"FEDFUNDS", "CPIAUCSL", "M2SL"}
+    MONTHLY = {"CPIAUCSL", "M2SL"}
 
     def test_the_monthly_series_disclose_their_cadence(self):
         metrics = parse_metrics()
@@ -183,17 +182,68 @@ class MonthlyCardsSayTheyAreMonthly(unittest.TestCase):
                     f"{code} is a monthly series and its tooltip does not say so",
                 )
 
-    def test_fed_funds_says_plainly_that_it_is_not_live(self):
-        tip = parse_metrics()["FEDFUNDS"]["tip"]
-        self.assertIn("not a live rate", tip)
+    def test_no_other_card_claims_to_be_monthly(self):
+        # The inverse. A daily card describing itself as monthly is the same
+        # failure pointing the other way, and the Fed Funds card spent one
+        # commit in exactly that state.
+        #
+        # Scoped to the FIRST SENTENCE, which is where a card says what it is.
+        # A blunter check fails on the Fed Funds tip, which legitimately
+        # mentions the monthly average further down to explain what D-0057
+        # changed — and a test that forbids explaining a fix is a test that
+        # makes the tooltips worse.
+        for code, metric in parse_metrics().items():
+            if code in self.MONTHLY:
+                continue
+            with self.subTest(code=code):
+                opening = metric["tip"].split(".")[0].lower()
+                self.assertNotIn(
+                    "monthly", opening,
+                    f"{code} is a daily series but introduces itself as monthly",
+                )
 
-    def test_the_monthly_set_matches_what_the_fetcher_declares(self):
-        # If a daily replacement is ever ingested - DFF, EFFR, DFEDTARU - this
-        # fails rather than leaving a card describing a cadence it no longer
-        # has.
+
+class FedFundsIsTheDailySeries(unittest.TestCase):
+    """D-0057.
+
+    The Fed Funds card showed FRED's FEDFUNDS — the MONTHLY AVERAGE. On
+    2026-09-29 that read **3.63%** while the effective rate was **3.88%**: not
+    merely a month behind, but 25bp wrong about where policy actually sits, on
+    a board whose fiscal calculator is denominated in yields.
+
+    The card now reads DFF, the daily effective rate. FEDFUNDS is still
+    ingested — it is what most published analysis quotes — but it is not what
+    the UI shows.
+    """
+
+    def test_the_card_reads_the_daily_series(self):
+        self.assertIn("DFF", parse_metrics())
+        self.assertNotIn("FEDFUNDS", parse_metrics())
+
+    def test_the_daily_series_is_actually_ingested(self):
+        # A card reading a code no pipeline fetches renders a permanent dash,
+        # which is the quietest possible way to break this.
         fetcher = (ROOT / "pipelines" / "fred_fetcher.py").read_text(encoding="utf-8")
-        for code in ("DFF", "EFFR", "DFEDTARU", "DFEDTARL"):
-            self.assertNotIn(
-                f'"{code}"', fetcher,
-                f"{code} is now ingested - revisit the FEDFUNDS card (A-0013)",
-            )
+        self.assertTrue(
+            '"DFF"' in fetcher,
+            "the Fed Funds card reads DFF but fred_fetcher.py does not fetch it",
+        )
+
+    def test_the_monthly_average_is_still_collected(self):
+        fetcher = (ROOT / "pipelines" / "fred_fetcher.py").read_text(encoding="utf-8")
+        self.assertTrue(
+            '"FEDFUNDS"' in fetcher,
+            "FEDFUNDS stopped being ingested - D-0057 kept it deliberately",
+        )
+
+    def test_every_code_the_ui_shows_is_one_a_pipeline_fetches(self):
+        # Generalised from the above, because the specific failure - a card
+        # pointing at a code nothing ingests - is not unique to Fed Funds.
+        fetcher = (ROOT / "pipelines" / "fred_fetcher.py").read_text(encoding="utf-8")
+        gold = (ROOT / "pipelines" / "gold_price_fetcher.py").read_text(encoding="utf-8")
+        for code in parse_metrics():
+            with self.subTest(code=code):
+                self.assertTrue(
+                    f'"{code}"' in fetcher or f'"{code}"' in gold,
+                    f"the {code} card has no pipeline fetching it",
+                )

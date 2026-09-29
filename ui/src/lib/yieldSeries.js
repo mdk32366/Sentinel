@@ -12,9 +12,18 @@
  * chart, against dates it never had, and was null for the rest. DGS2 drifted
  * the same way whenever the two series had different missing days.
  *
- * Joining on the date keeps every point where it belongs. The monthly series is
- * then sparse against a daily axis, which is correct — every <Line> carries
- * connectNulls, so it draws through its real monthly points.
+ * Joining on the date keeps every point where it belongs. A sparse series
+ * against a daily axis is correct — every <Line> carries connectNulls, so it
+ * draws through the points it really has.
+ *
+ * `D-0057` replaced FEDFUNDS with DFF here, so the Fed Funds line is daily
+ * like the rest of the curve and the sixty-against-1,250 mismatch is gone.
+ * **The date join still matters and has not become redundant**: DFF has no
+ * weekend or holiday observations, FRED publishes it a few days behind the
+ * Treasury yields, and DFII10 has gaps of its own. Any two of those differing
+ * by a single missing day is enough for an index zip to start pairing the
+ * wrong dates — the same defect, but quieter, because a one-day slip does not
+ * look obviously wrong the way a line squeezed into the left 5% did.
  *
  * Extracted from App.jsx so it can be tested at all (F-0053).
  */
@@ -24,7 +33,7 @@ export const YIELD_SERIES = [
   ["DGS10", "10Y"],
   ["DGS30", "30Y"],
   ["DGS2", "2Y"],
-  ["FEDFUNDS", "Fed Funds"],
+  ["DFF", "Fed Funds"],
   ["DFII10", "Real Yield"],
 ];
 
