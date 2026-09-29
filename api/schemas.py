@@ -147,6 +147,11 @@ class CdsAllItem(BaseModel):
     cds_term_spread: Optional[float] = None
     as_of: str
     source: str
+    # F-0074: why a tenor is blank, when it is blank. A country nobody quotes
+    # and a country whose quote was refused as stale or as not-a-running-spread
+    # both render as "—", and the reader has to be able to tell which.
+    coverage_5y: Optional[str] = None
+    coverage_10y: Optional[str] = None
 
 
 class CdsTenor(BaseModel):

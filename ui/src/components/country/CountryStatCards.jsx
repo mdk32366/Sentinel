@@ -33,11 +33,15 @@ export function CountryStatCards({ latestTic, ticMom, latestGold, ticHistory, co
       label: "5Y CDS",
       val: cds.cds5y != null ? `${cds.cds5y.toFixed(0)}bps` : "No coverage",
       color: cds.cds5y == null ? "#3A4D5C" : cds.cds5y > 250 ? "#E07B5A" : cds.cds5y > 100 ? "#C8A96E" : "#7EB8C9",
+      // F-0074: the term structure is shown only when a 10Y from the SAME
+      // source and as-of date exists. Every 10Y series on this board froze at
+      // the ISDA running coupon in July 2026, and pairing that against a
+      // current 5Y produced "inversions" that were an artefact of the gap.
       sub: cds.cds5y == null
         ? "Not factored into stress score"
         : cds.termSpread != null
           ? `Term ${signed(cds.termSpread, 0)}bps${cds.termSpread < 0 ? " (inverted)" : ""}`
-          : null,
+          : "5Y only — no paired 10Y on this board",
     },
   ];
 

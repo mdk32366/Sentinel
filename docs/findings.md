@@ -2179,3 +2179,52 @@ the result so the exclusion is visible rather than merely silent.
 on the board, the run logs a warning saying the exclusion is out of date. An
 exclusion nobody re-validates becomes the next stale artefact, which is the
 whole subject of `F-0074` sitting directly above this.
+
+### F-0076 — The methodology panel explained four dimensions of a six-dimension model
+
+**Claim.** The COMPOSITE tab's panel is headed `SCORE =` and listed Treasury,
+Gold Reserves, Sovereign Spread and Petrodollar. The scorer sums six:
+
+```
+raw_score = tic_score + gold_score + monetary_score
+          + spread_score + petro_score + cds_score
+```
+
+Monetary/M2 (0-35), Sovereign CDS (0-20) and the non-dollar reserve
+multiplier (dimension 6) appeared nowhere in the explanation.
+
+**Artifact.** The listed parts cap at 130. The raw maximum is **185**, before
+a multiplier of up to 2.0 and a further 1.2x for rebuilding non-dollar
+reserves, capped at 150. Turkey scored 178.0 against a panel that could not
+account for more than 130.
+
+**Sample size.** One panel, two missing dimensions and one missing multiplier.
+
+**Why CDS is the one that mattered.** It is dimension 7, worth up to 20
+points, and for Brazil it is **100% of the composite score** - the country is
+ranked because of its CDS spread and nothing else. A reader looking for why
+Brazil appeared on the board would have found no dimension in the panel that
+could produce it.
+
+This is why the answer to *"is the CDS surface telling any of the sovereign
+stress story?"* was yes and invisible at the same time. The signal was
+load-bearing; the explanation omitted it.
+
+**Same shape as `F-0068`.** There, comments annotated the fiscal thresholds
+with numbers twice their real value. Here, a panel annotated the model with
+two-thirds of its dimensions. In both cases the code was right, the screen was
+right, and the explanation beside it was wrong - which is the failure mode
+that survives testing, because nothing tests prose.
+
+**Fixed.** `ui/src/lib/dimensions.js` is the single list, rendered by the
+panel and by the per-country breakdown. `tests/test_composite_dimensions.py`
+parses it and cross-checks the keys and caps against
+`pipelines/composite_stress.py` **in both directions** - a dimension the
+scorer sums and the panel omits fails, and so does a dimension the panel
+claims and the scorer does not compute.
+
+Verified to bite by deleting the CDS entry:
+
+```
+AssertionError: 'cds_score' not found in {'tic_score': 50, ...}
+```

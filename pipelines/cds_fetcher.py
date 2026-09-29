@@ -78,6 +78,46 @@ ISDA_RUNNING_COUPONS = frozenset({Decimal("25"), Decimal("100"), Decimal("500"),
 # nobody re-checks becomes its own stale artefact.
 KNOWN_ABSENT_FROM_5Y_BOARD = frozenset({"Saudi Arabia"})
 
+# ── CDS quote admissibility (F-0074) ──────────────────────────────────────────
+# The WGB board publishes every trading day. A quote older than this is a
+# series that stopped, not a market that went quiet, and scoring it presents
+# a months-old number as today's price.
+#
+# Ten days spans a long weekend plus a week of outage without tripping.
+MAX_CDS_AGE_DAYS = 10
+
+# A running spread cannot meaningfully exceed 100% of notional. Past that a
+# credit is quoted points-upfront and a figure read as a running spread is a
+# category error rather than a large number. Russia printed 13,775bps —
+# 137.75% — frozen to one decimal for 23 consecutive days including weekends,
+# after its CDS triggered and settled at auction in 2022.
+MAX_PLAUSIBLE_CDS_BPS = 10000.0
+
+
+def admit_cds_quote(value, as_of, now=None):
+    """Is this quote usable as today's running spread? Returns a reason or None.
+
+    Separated out so the two rules can be stated once and tested without a
+    database. A rejected quote scores zero and says why, rather than scoring
+    zero indistinguishably from a country nobody quotes.
+    """
+    if value is None or as_of is None:
+        return "no coverage"
+
+    now = now or datetime.utcnow()
+    age_days = (now - as_of).days
+    if age_days > MAX_CDS_AGE_DAYS:
+        return f"stale ({age_days}d old)"
+
+    if value >= MAX_PLAUSIBLE_CDS_BPS:
+        return "not quoted as a running spread"
+
+    if value <= 0:
+        return "non-positive quote"
+
+    return None
+
+
 _HEADER_COUNTRY = re.compile(r"country", re.I)
 _HEADER_5Y = re.compile(r"5\s*y(?:ear)?s?\s*cds|5\s*years?\s*credit\s*default", re.I)
 _HEADER_DATE = re.compile(r"^date$", re.I)

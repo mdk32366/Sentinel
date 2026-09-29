@@ -28,6 +28,7 @@ from pipelines.scheduler import scheduler
 from pipelines.cds_fetcher import (
     run_cds_fetch,
     get_cds_coverage,
+    admit_cds_quote,
     latest_cds_observation,
     pair_cds_tenors,
     cds_country_for_code,
@@ -780,6 +781,25 @@ async def get_all_cds(db: Session = Depends(get_db)):
         country_code = metric5y.code.replace("_CDS_5Y", "")
         obs5 = latest_cds_observation(db, metric5y.code)
         obs10 = latest_cds_observation(db, f"{country_code}_CDS_10Y")
+
+        # F-0074. The same rule the scorer applies, applied here too, because
+        # this endpoint reads the same rows by a different path — and a number
+        # on screen is a claim. Without this the CDS tab would keep displaying
+        # exactly what the composite had just refused to score: Russia at
+        # 13,775bps, and every 10Y frozen at the ISDA running coupon.
+        coverage_5y = admit_cds_quote(
+            obs5.get("value") if obs5 else None,
+            obs5.get("date") if obs5 else None,
+        )
+        coverage_10y = admit_cds_quote(
+            obs10.get("value") if obs10 else None,
+            obs10.get("date") if obs10 else None,
+        )
+        if coverage_5y:
+            obs5 = None
+        if coverage_10y:
+            obs10 = None
+
         cds5y, cds10y, term_spread = pair_cds_tenors(obs5, obs10)
         if cds5y is None and cds10y is None:
             continue
@@ -801,6 +821,9 @@ async def get_all_cds(db: Session = Depends(get_db)):
             "cds_term_spread": term_spread,
             "as_of": as_of,
             "source": source,
+            # Why a tenor is blank, when it is blank.
+            "coverage_5y": coverage_5y,
+            "coverage_10y": coverage_10y,
         })
 
     results.sort(key=lambda x: (x["cds_5y"] or 0), reverse=True)

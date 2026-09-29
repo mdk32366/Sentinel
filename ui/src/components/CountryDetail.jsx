@@ -6,6 +6,7 @@ import { AnalystBrief } from "./country/AnalystBrief";
 import { CountryStatCards } from "./country/CountryStatCards";
 import { LiquidationBanner } from "./country/LiquidationBanner";
 import { SeriesChart } from "./country/SeriesChart";
+import { StressContribution } from "./country/StressContribution";
 
 /**
  * One country: holdings, gold, reserves ex-gold, spread, CDS and a brief.
@@ -65,7 +66,9 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
         cds={cds}
       />
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16 }}>
+      <StressContribution iso={iso} />
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: 16, marginTop: 16 }}>
         <SeriesChart
           title={`TREASURY HOLDINGS ($B) — ${ticHistory?.data_points} months`}
           rows={ticRows}
