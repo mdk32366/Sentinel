@@ -1477,3 +1477,59 @@ columns are numbers that were being squeezed to 5px of padding.
 **It stays sticky.** Pinning Activity to the right edge is what lets the
 numeric columns scroll under a persistent explanation, which is worth more
 than the width it costs — the complaint was the proportion, not the position.
+
+### D-0069 — The analyst brief calls Anthropic, whose key is actually deployed
+
+**Choice.** `/api/analyze/country` posts to `https://api.anthropic.com/v1/messages`
+with `claude-haiku-4-5-20251001`, guarded on `ANTHROPIC_API_KEY`.
+
+**Why not set a Grok key instead.** It would work, and it would be the wrong
+repair: the UI has always credited Claude Haiku, an Anthropic key has always
+been deployed, and the only thing missing was code that used them. Adding a
+second provider's credential to satisfy code nobody had reconciled is paying
+to keep a mismatch.
+
+**Haiku, deliberately.** The brief is bounded at 750 tokens and rate-limited
+per client, and the work is summarising figures already gathered from the
+database by `_gather_brief_context` — not reasoning its way to them. The model
+is named once as `BRIEF_MODEL` so the footer's claim has something to be true
+about, and a test asserts the two agree.
+
+**What carried over unchanged.** The 422 on anything but a 3-letter ISO code
+(`F-0013` — the prompt is assembled server-side and free-form input is
+refused), the per-client hourly limit, and the deliberate absence of a
+`Depends(get_db)` so a 75-second await cannot hold one of ten pool
+connections.
+
+**What changed in the error path.** The handler logged `f"Grok API call
+failed: {e}"` and returned the provider's name to the client. It now logs the
+exception *type* and returns a flat "analysis failed" — `F-0010`'s lesson
+about exception text carrying request detail applies to any client, and the
+key now travels in a header where it is likelier to appear in one.
+
+### D-0070 — The cross-asset table trades its gauge for an explanation
+
+**Choice.** The `StressBar` gauge in the Score column is replaced by the
+number and its multiplier; every cell's padding drops from `10px 12px` to
+`8px 9px`; and the reclaimed space becomes an **Analysis** column.
+
+**Why the gauge went.** It occupied `minWidth: 140` to answer *"how full is
+this score out of 150"*, which is not a question anyone asks of a
+de-dollarisation table. The number plus a tier colour says the same thing in a
+quarter of the space, and the multiplier beside it says what a bar could not:
+whether the score is large because the signals are large, or because a 2×
+divergence multiplier was applied to modest ones.
+
+**The analysis is composed, not generated.** `lib/crossAssetNarrative.js`
+turns the row's own fields into a headline and its evidence. It is not an LLM
+call, and that is a decision rather than a shortcut: it must be identical for
+identical rows, cost nothing per render, and work when the brief endpoint is
+down — which, until `D-0069`, it always was.
+
+It lives in `lib/` with fourteen tests rather than as a ternary chain inside a
+`<td>`, because prose assembled inline is exactly what `F-0081` was.
+
+**The headline names the mechanism.** For DIVERGENCE it reads *"Selling gold
+into a +12.4% 3M rally — raising cash, not rebalancing"*. That distinction is
+the table's entire subject, and it was previously left for the reader to infer
+from a tier badge and two percentages in separate columns.

@@ -3,8 +3,8 @@ import { useApiResource } from "../hooks/useApiResource";
 import { tierColor, tierLabel } from "../lib/format";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
+import { describeCrossAsset } from "../lib/crossAssetNarrative";
 import { LoadFailure } from "../components/LoadFailure";
-import { StressBar } from "../components/StressBar";
 
 export function CrossAssetTab() {
   const { data, error, loading } = useApiResource(`/holdings/cross-asset-stress`);
@@ -95,7 +95,8 @@ export function CrossAssetTab() {
                     <ColHeader label="Gold t" tip="Central bank gold reserves in metric tonnes, from the most recent World Gold Council / IMF IFS quarterly report. Large holdings alongside zero Treasuries indicate deliberate reserve restructuring." align="right" />
                     <ColHeader label="Gold MoM" tip="Quarter-over-quarter % change in gold reserves. Negative = selling gold. When a country sells gold AND Treasuries simultaneously, cross-asset multiplier (1.5×) activates." align="right" />
                     <ColHeader label="Non-$ Reserves" tip="Total reserves excluding gold (TRESEG series, FRED). REBUILDING = non-dollar reserves growing >5% YoY — country is building an alternative reserve base. DEPLETING = shrinking >5% YoY — possible forced selling under distress." align="right" />
-                    <ColHeader label="Score" tip="Composite stress score (0–150). Base score from T-bill and gold signals, multiplied by 1.5× if cross-asset or 2.0× if divergence (selling gold into rising price). Higher = more severe de-dollarization stress." align="right" />
+                    <ColHeader label="Score" tip="Composite stress score (0-150). Base score from the T-bill and gold signals, multiplied by 1.5x for cross-asset or 2.0x for divergence. Shown as a number rather than a gauge: a bar answers \u0022how full\u0022 when the question is \u0022how much, and driven by what\u0022." align="right" />
+                    <ColHeader label="Analysis" tip="Why this country is on this table, composed from the figures in the row. Not an LLM call - it is a description of data already present, so it is identical for identical rows and works when the brief endpoint is down." align="left" />
                   </tr>
                 </thead>
                 <tbody>
@@ -107,26 +108,42 @@ export function CrossAssetTab() {
                       <tr key={c.country_iso} style={{ borderBottom:"1px solid #0F1923" }}
                         onMouseEnter={e => e.currentTarget.style.background="#0D1820"}
                         onMouseLeave={e => e.currentTarget.style.background="transparent"}>
-                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:13, color:"#E8E0D0" }}>
+                        <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:13, color:"#E8E0D0" }}>
                           {c.country_name}<span style={{ marginLeft:6, fontSize:10, color:"#3A4D5C" }}>{c.country_iso}</span>
                         </td>
-                        <td style={{ padding:"10px 12px" }}>
+                        <td style={{ padding:"8px 9px" }}>
                           <span style={{ fontFamily:"monospace", fontSize:10, color:tc, background:`${tc}18`, border:`1px solid ${tc}44`, borderRadius:2, padding:"2px 6px", whiteSpace:"nowrap" }}>{label}</span>
                         </td>
-                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>
+                        <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>
                           {c.no_tic_holdings
                             ? <span style={{ color:"#FF8C00", fontSize:10 }}>EXITED ⚠</span>
                             : c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(2)}%`:"—"}
                         </td>
-                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_consecutive_months??0)>=3?"#E07B5A":"#8A9BAC" }}>{(c.tic_consecutive_months??0)>0?`${c.tic_consecutive_months}mo`:"—"}</td>
-                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:"#8A9BAC" }}>{c.gold_tonnes!=null?`${c.gold_tonnes.toLocaleString()}t`:"—"}</td>
-                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:c.gold_mom_pct==null?"#3A4D5C":c.gold_mom_pct<0?"#E07B5A":"#5DB87A" }}>
+                        <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_consecutive_months??0)>=3?"#E07B5A":"#8A9BAC" }}>{(c.tic_consecutive_months??0)>0?`${c.tic_consecutive_months}mo`:"—"}</td>
+                        <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:"#8A9BAC" }}>{c.gold_tonnes!=null?`${c.gold_tonnes.toLocaleString()}t`:"—"}</td>
+                        <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:c.gold_mom_pct==null?"#3A4D5C":c.gold_mom_pct<0?"#E07B5A":"#5DB87A" }}>
                           {c.gold_mom_pct!=null?`${c.gold_mom_pct>0?"+":""}${c.gold_mom_pct.toFixed(2)}%`:"—"}
                         </td>
-                        <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.treseg_signal==="REBUILDING"?"#FF4444":c.treseg_signal==="DEPLETING"?"#E07B5A":"#3A4D5C" }}>
+                        <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.treseg_signal==="REBUILDING"?"#FF4444":c.treseg_signal==="DEPLETING"?"#E07B5A":"#3A4D5C" }}>
                           {c.treseg_signal==="NO_DATA"||!c.treseg_signal ? "—" : `${c.treseg_signal} ${c.treseg_trend_pct!=null?(c.treseg_trend_pct>0?"+":"")+c.treseg_trend_pct+"%":""}`}
                         </td>
-                        <td style={{ padding:"10px 12px", minWidth:140 }}><StressBar score={c.stress_score??0} max={150} /></td>
+                        <td style={{ padding:"8px 10px", fontFamily:"monospace", textAlign:"right", whiteSpace:"nowrap" }}>
+                          <span style={{ fontSize:15, fontWeight:700, color:tc }}>{(c.stress_score??0).toFixed(0)}</span>
+                          {c.multiplier > 1 && (
+                            <span style={{ fontSize:10, color:"#E07B5A", marginLeft:4 }}>{c.multiplier}\u00d7</span>
+                          )}
+                        </td>
+                        <td style={{ padding:"8px 10px", fontFamily:"monospace", fontSize:11, color:"#8A9BAC", lineHeight:1.45, minWidth:230 }}>
+                          {(() => {
+                            const a = describeCrossAsset(c);
+                            return (
+                              <>
+                                <div style={{ color:"#C8D4DF" }}>{a.headline}</div>
+                                {a.detail && <div style={{ color:"#5A6878", fontSize:10, marginTop:2 }}>{a.detail}</div>}
+                              </>
+                            );
+                          })()}
+                        </td>
                       </tr>
                     );
                   })}

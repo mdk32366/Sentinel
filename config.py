@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     # API Keys
     fred_api_key: str = "your_fred_api_key_here"
     anthropic_api_key: str = ""
+    # D-0069 removed the only READER of this, but the field has to stay:
+    # a local .env still defines GROK_API_KEY, and Settings forbids extra
+    # inputs, so deleting the field stops the app booting anywhere that
+    # variable is still present. Unread, retained, and documented as such.
     grok_api_key: str = ""
 
     # Basic Auth (set via Fly.io secrets)
