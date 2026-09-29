@@ -156,3 +156,44 @@ class TooltipsDescribeTheRealMechanism(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class MonthlyCardsSayTheyAreMonthly(unittest.TestCase):
+    """A-0013 / F-0071.
+
+    Three of the twelve series are monthly and nine are daily. They sit in one
+    grid with no visual distinction, so a monthly card reads as a stale daily
+    one — which is exactly how the question arrived: "is there no real time
+    ticker on Fed Funds? My latest data is July 31."
+
+    FRED's FEDFUNDS is a monthly AVERAGE dated to the first of the month.
+    Nothing was broken; the card could not have been more current. The tooltip
+    now says so, and this stops that disclosure being dropped.
+    """
+
+    MONTHLY = {"FEDFUNDS", "CPIAUCSL", "M2SL"}
+
+    def test_the_monthly_series_disclose_their_cadence(self):
+        metrics = parse_metrics()
+        for code in self.MONTHLY:
+            with self.subTest(code=code):
+                tip = metrics[code]["tip"].lower()
+                self.assertIn(
+                    "monthly", tip,
+                    f"{code} is a monthly series and its tooltip does not say so",
+                )
+
+    def test_fed_funds_says_plainly_that_it_is_not_live(self):
+        tip = parse_metrics()["FEDFUNDS"]["tip"]
+        self.assertIn("not a live rate", tip)
+
+    def test_the_monthly_set_matches_what_the_fetcher_declares(self):
+        # If a daily replacement is ever ingested - DFF, EFFR, DFEDTARU - this
+        # fails rather than leaving a card describing a cadence it no longer
+        # has.
+        fetcher = (ROOT / "pipelines" / "fred_fetcher.py").read_text(encoding="utf-8")
+        for code in ("DFF", "EFFR", "DFEDTARU", "DFEDTARL"):
+            self.assertNotIn(
+                f'"{code}"', fetcher,
+                f"{code} is now ingested - revisit the FEDFUNDS card (A-0013)",
+            )

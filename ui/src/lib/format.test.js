@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  asLocalDate,
+  formatDate,
   formatValue,
   scoreColor,
   spreadBasisPoints,
@@ -149,5 +151,58 @@ describe("spreadColor", () => {
   it("distinguishes 'no data' from 'negative spread'", () => {
     // Both are calm-looking; only one means we know something.
     expect(spreadColor(null)).not.toBe(spreadColor(-10));
+  });
+});
+
+describe("asLocalDate / formatDate — F-0071", () => {
+  it("the suite is running west of UTC, so this guard is actually armed", () => {
+    // Clause (c). At UTC the old code and the new code are IDENTICAL, so no
+    // assertion below can tell them apart there. CI runners default to UTC.
+    // vite.config.js pins TZ=America/New_York; if that ever stops taking
+    // effect, this says so instead of the rest quietly becoming decoration.
+    expect(new Date("2026-08-01").getTimezoneOffset()).toBeGreaterThan(0);
+  });
+
+  /**
+   * These assert the DATE COMPONENTS, not the rendered string.
+   *
+   * A test asserting `formatDate("2026-08-01")` contains "Aug 1" passes under
+   * UTC and every positive offset even with the bug present — so on a CI
+   * runner set to UTC it would have gone green throughout. Asserting the
+   * components bites in every timezone, including the one CI happens to use.
+   */
+  it("takes the calendar day from the string, not from a timezone conversion", () => {
+    const d = asLocalDate("2026-08-01");
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(7);   // August
+    expect(d.getDate()).toBe(1);
+  });
+
+  it("treats a bare date and a midnight timestamp as the same day", () => {
+    // pivotByDate strips the time, so both forms reach formatDate.
+    for (const form of ["2026-08-01", "2026-08-01T00:00:00"]) {
+      expect(asLocalDate(form).getDate(), form).toBe(1);
+      expect(asLocalDate(form).getMonth(), form).toBe(7);
+    }
+  });
+
+  it("does not roll a month boundary backwards", () => {
+    // The case the user hit: FRED dates a monthly average to the 1st, so the
+    // bug turned August's fed funds figure into "Jul 31" on screen.
+    expect(formatDate("2026-08-01")).toMatch(/Aug 1/);
+    expect(formatDate("2026-08-01")).not.toMatch(/Jul/);
+  });
+
+  it("does not roll a year boundary backwards either", () => {
+    expect(formatDate("2026-01-01")).toMatch(/Jan 1, 26/);
+    expect(formatDate("2026-01-01")).not.toMatch(/25/);
+  });
+
+  it("still handles a Date object and a full ISO instant", () => {
+    expect(asLocalDate(new Date(2026, 7, 1)).getDate()).toBe(1);
+    // A Z-suffixed instant keeps its calendar day, because every date in this
+    // application IS a calendar date - the API stamps observations at
+    // midnight, it does not record the moment they were taken.
+    expect(asLocalDate("2026-08-01T00:00:00Z").getDate()).toBe(1);
   });
 });

@@ -315,3 +315,51 @@ argument survives, the specific threshold quoted on two panels does not.
 **How to settle it.** These are published figures. Either pull them from a
 source on a schedule like every other number here, or put a vintage on them
 in the footnote so the reader knows how old they are.
+
+### A-0013 — Three of the twelve MARKETS cards are monthly, and the grid does not say which
+
+**Assumption.** A reader can tell a monthly series from a daily one.
+
+They cannot. `FEDFUNDS`, `CPIAUCSL` and `M2SL` are monthly; the other nine are
+daily. All twelve sit in one grid with identical styling, so a monthly card
+reads as a stale daily one. Measured against production on 2026-09-29:
+
+| | latest |
+|---|---|
+| `DGS10`, `DGS2`, `GOLD_SPOT_USD` | 2026-09-28 |
+| `DTWEXBGS`, `DFII10` | 2026-09-25 |
+| `DCOILWTICO` | 2026-09-22 |
+| `FEDFUNDS`, `CPIAUCSL`, `M2SL` | **2026-08-01** |
+
+**How it surfaced.** The owner asked whether there is a real-time ticker on
+Fed Funds, because the card looked two months behind. Two things were true at
+once: `F-0071` was showing the date a day early and turning "Aug 1" into
+"Jul 31", and FRED's `FEDFUNDS` is a **monthly average** which cannot be more
+current than last month regardless.
+
+**Partly settled.** The cadence is now stated on the card, and
+`tests/test_markets_tooltips.py` fails if a monthly series stops disclosing
+it. That fixes the misreading, not the underlying gap.
+
+**What is still open — a decision, not a defect.** Whether a
+sovereign-stress board should carry the *monthly average* at all. FRED offers
+daily alternatives that are not ingested:
+
+- `DFF` — daily effective federal funds rate
+- `EFFR` — effective rate, NY Fed, volume-weighted median, daily
+- `DFEDTARU` / `DFEDTARL` — the target range bounds, daily
+
+`DFEDTARU`/`DFEDTARL` has the strongest claim: the COUNTRY tab's scenario
+panel models **target** cuts — Hold 4%, Cut to 2%, 1%, 0% — against a card
+showing a realised monthly average, so the panel and the tile are not quoting
+the same quantity.
+
+**Cost if left.** A reader takes the Fed Funds card as current policy. Its
+drift from the target range is at most a few basis points, so nothing on
+screen is badly wrong — but the card is a month behind whenever the Fed moves
+mid-month, which is precisely when someone would look at it.
+
+**How to settle it.** The owner rules on which series the card should show.
+Adding one is a `FRED_METRICS` entry and a backfill; the guard above fails the
+moment a daily code is ingested, so the card cannot keep describing a cadence
+it no longer has.
