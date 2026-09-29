@@ -1,36 +1,33 @@
-import { useState, useEffect } from "react";
-import { apiFetch } from "../lib/api";
+import { useApiResource } from "../hooks/useApiResource";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import { ColHeader } from "../components/ColHeader";
 
-export function AdminTab() {
-  const [logs, setLogs] = useState([]);
-  const [running, setRunning] = useState({});
-  const [results, setResults] = useState({});
-  const [stats, setStats] = useState(null);
+/**
+ * How long to wait after a pipeline returns before re-reading its log row.
+ *
+ * A-0011: this was a bare `setTimeout(loadLogs, 1000)` and the reason is not
+ * recorded anywhere. Kept at its original value rather than removed, because
+ * a pipeline whose log row is written after the response would silently show
+ * the PREVIOUS run, and nothing here proves it is not.
+ */
+const LOG_SETTLE_MS = 1000;
 
-  const loadLogs = () => {
-    apiFetch(`/pipeline-logs?limit=20`)
-      .then(r => r.json())
-      .then(setLogs)
-      .catch(() => {});
-    apiFetch(`/stats`).then(r => r.json()).then(setStats).catch(() => {});
+export function AdminTab() {
+  const logsResource = useApiResource(`/pipeline-logs?limit=20`);
+  const statsResource = useApiResource(`/stats`);
+  const { running, results, run } = useAsyncAction();
+
+  const logs = Array.isArray(logsResource.data) ? logsResource.data : [];
+  const stats = statsResource.data;
+
+  const refresh = () => {
+    logsResource.reload();
+    statsResource.reload();
   };
 
-  useEffect(() => { loadLogs(); }, []);
-
   const runPipeline = async (name, endpoint, method = "POST") => {
-    setRunning(p => ({ ...p, [name]: true }));
-    setResults(p => ({ ...p, [name]: null }));
-    try {
-      const r = await apiFetch(`${endpoint}`, { method });
-      const data = await r.json();
-      setResults(p => ({ ...p, [name]: { ok: r.ok, data } }));
-    } catch (e) {
-      setResults(p => ({ ...p, [name]: { ok: false, data: { error: e.message } } }));
-    } finally {
-      setRunning(p => ({ ...p, [name]: false }));
-      setTimeout(loadLogs, 1000);
-    }
+    await run(name, endpoint, { method });
+    setTimeout(refresh, LOG_SETTLE_MS);
   };
 
   const PIPELINES = [
@@ -125,7 +122,7 @@ export function AdminTab() {
       <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 0", marginTop: 8 }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
           <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>PIPELINE LOG</div>
-          <button onClick={loadLogs} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#3A4D5C", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>↻ refresh</button>
+          <button onClick={refresh} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#3A4D5C", borderRadius: 2, padding: "4px 10px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>↻ refresh</button>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
