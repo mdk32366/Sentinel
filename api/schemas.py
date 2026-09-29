@@ -259,7 +259,8 @@ class CompositeCountry(BaseModel):
     monetary_score: int
     spread_bps: Optional[float] = None
     spread_widening_bps: Optional[float] = None
-    spread_score: int
+    # D-0066: spread_score removed. A field that is always zero is a trap -
+    # a reader takes it for a dimension that happens to be quiet.
     oil_dependent: bool
     oil_signal: Optional[str] = None
     petro_score: int

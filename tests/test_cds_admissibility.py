@@ -23,6 +23,7 @@ import unittest
 from datetime import date, datetime, timedelta
 
 from pipelines.composite_stress import (
+    CDS_ELEVATED_BPS,
     MAX_CDS_AGE_DAYS,
     MAX_PLAUSIBLE_CDS_BPS,
     admit_cds_quote,
@@ -144,6 +145,53 @@ class BothCallersPassDifferentDateTypes(unittest.TestCase):
         self.assertIn("stale", reason)
         self.assertIn("75d", reason)
 
+
+class TheElevatedBandStartsAt200(unittest.TestCase):
+    """D-0065.
+
+    The band was 100bps, which is an ordinary emerging-market spread rather
+    than a stress signal. Measured against the live board on 2026-09-29:
+
+        India        87.7   below the old band, scoring nothing
+        Mexico       91.0   below
+        Brazil      129.6   ABOVE - ranked WATCH on a composite score of 5.0
+                            that came entirely from this band
+        South Africa 130.9  ABOVE
+        Turkey      248.1   above
+        Egypt       307.3   above
+
+    A threshold that separates 91 from 130 is not separating calm from
+    stressed; it is separating two ordinary spreads. At 200 the band fires
+    for Turkey and Egypt and nobody else on the current board.
+    """
+
+    def test_the_threshold_is_two_hundred(self):
+        self.assertEqual(CDS_ELEVATED_BPS, 200.0)
+
+    def test_the_false_positives_fall_below_it(self):
+        for country, bps in (("Brazil", 129.57), ("South Africa", 130.86)):
+            with self.subTest(country=country):
+                self.assertLess(bps, CDS_ELEVATED_BPS)
+
+    def test_the_genuinely_elevated_stay_above_it(self):
+        for country, bps in (("Turkey", 248.08), ("Egypt", 307.29)):
+            with self.subTest(country=country):
+                self.assertGreater(bps, CDS_ELEVATED_BPS)
+
+    def test_the_names_that_sat_just_under_the_old_band_are_unaffected(self):
+        # India and Mexico scored nothing before and score nothing now. The
+        # change must not be justified by moving countries it never touched.
+        for country, bps in (("India", 87.7), ("Mexico", 91.03)):
+            with self.subTest(country=country):
+                self.assertLess(bps, 100.0)
+                self.assertLess(bps, CDS_ELEVATED_BPS)
+
+    def test_the_ladder_is_still_monotone(self):
+        # 200 / 250 / 500. The bottom rung is narrow - 5 points across a
+        # 50bps window, then 5 more across 250bps - and that compression is
+        # recorded in D-0065 rather than silently re-spaced.
+        self.assertLess(CDS_ELEVATED_BPS, 250)
+        self.assertLess(250, 500)
 
 
 if __name__ == "__main__":

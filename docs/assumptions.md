@@ -449,3 +449,27 @@ entirely a normal CDS spread, and any country that happens to be quoted ranks
 above one that is not. Neither is large today — CDS contributes 25 of ~1,182
 points — but the ranking is the product, and a false positive in a
 sovereign-stress board is the expensive kind of wrong.
+
+**Partly settled 2026-09-29.** The owner ruled on two of the four options:
+
+* **(a) raise the first band — DONE**, `D-0065`. 100 → 200bps. Brazil and
+  South Africa stop scoring; Turkey and Egypt are unaffected.
+* **(d) retire Dimension 4 — DONE**, `D-0066`. Retired from scoring, kept as a
+  measurement.
+
+`D-0064` also removed the premise of objection 2 in part: coverage was 33% of
+scored countries because ten sovereigns on the board had never been
+configured. It is now **46%** (22 of 48).
+
+**Still open:**
+
+* **(b) make CDS confirming rather than originating.** With the band at 200 no
+  country is currently ranked on CDS alone, so the symptom is gone — but the
+  mechanism that produced it has not changed. A sovereign whose CDS crosses
+  200 while nothing else fires would again be ranked on CDS alone.
+* **(c) normalise by dimensions available.** Still not recommended at 46%
+  coverage: re-normalising amplifies the sample rather than correcting it.
+
+The additive-with-absolute-thresholds asymmetry also shrank with `D-0066`:
+the ceiling is now 165 for a CDS-covered country and 145 for one without,
+rather than 185 and 165.

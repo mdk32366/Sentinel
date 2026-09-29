@@ -16,7 +16,14 @@ Seven-dimension scoring system:
     >30% YoY M2 growth:       20 pts
     >50% YoY M2 growth:       35 pts
 
-  DIMENSION 4 — Sovereign Spread (0-20 pts)
+  DIMENSION 4 — Sovereign Spread (RETIRED from scoring, D-0066)
+    Measured and displayed, worth 0 pts. It scored a country more than 50bps
+    ABOVE the US 10Y and held yields only for the fourteen developed markets
+    in SOVEREIGN_YIELD_CODES, every one of which trades BELOW the US:
+    AUS -22.5bps, GBR -25.1, NOR -95.4, FRA -124.0, ITA -125.4, CAN -156.5.
+    Across all 48 scored countries it awarded 0 points to 0 countries. It
+    could only fire for emerging markets and held no yield data for any.
+    F-0079.
     Spread >50bps vs US 10Y:   5 pts  (mild risk premium)
     Spread >100bps vs US 10Y: 10 pts  (elevated)
     Spread >200bps vs US 10Y: 15 pts  (significant stress)
@@ -280,6 +287,25 @@ def get_sovereign_spread(db: Session, iso: str, us_10y: float | None) -> dict:
     }
 
 
+# D-0065: the 5Y level at which CDS starts contributing.
+#
+# It was 100bps, which is an ordinary emerging-market spread rather than a
+# stress signal. Brazil printed 129.6 and South Africa 130.9 - unremarkable
+# for those sovereigns - and Brazil was ranked WATCH on a composite score of
+# 5.0 that came ENTIRELY from that band. Meanwhile India at 87.7 and Mexico
+# at 91.0 sat just below it. A threshold separating 91 from 130 is not
+# separating calm from stressed; it is separating two ordinary spreads.
+#
+# At 200 the band fires for Turkey (248) and Egypt (307) and nobody else on
+# the current board.
+#
+# NOTE: this leaves a narrow 200-250 window worth 5 points before the 250
+# band takes over at 10. The ladder is compressed at the bottom as a result.
+# Recorded rather than silently re-spaced, because re-spacing the upper bands
+# is a separate judgement nobody has made.
+CDS_ELEVATED_BPS = 200.0
+
+
 # ── DIMENSION 7: Sovereign CDS ────────────────────────────────────────────────
 # CDS metrics are stored with country_id=None; the country is encoded in the
 # metric CODE (e.g. "FRANCE_CDS_5Y"), using country NAMES. The scorer keys on
@@ -357,9 +383,9 @@ def get_cds_score(db: Session, iso: str) -> dict:
     is a recognized acute-distress signal and adds a small amount.
 
         Absolute 5Y level:
-            >100 bps:   5 pts   (mild credit risk premium)
-            >250 bps:  10 pts   (elevated)
-            >500 bps:  15 pts   (significant distress)
+            >200 bps:   5 pts   (elevated - D-0065, was >100)
+            >250 bps:  10 pts   (significant)
+            >500 bps:  15 pts   (distress)
         Widening (5Y up >20% over ~90d):      +5 pts
 
     D-0062: the term-structure component is GONE. It scored an inverted curve
@@ -408,7 +434,7 @@ def get_cds_score(db: Session, iso: str) -> dict:
         score = 15
     elif cds_5y > 250:
         score = 10
-    elif cds_5y > 100:
+    elif cds_5y > CDS_ELEVATED_BPS:
         score = 5
 
     # Widening kicker: recent 5Y move relative to the start of the window
@@ -605,8 +631,10 @@ def compute_composite_stress(db: Session) -> dict:
                     monetary_score = 10
 
         # ── DIMENSION 4: Sovereign Spread ──────────────────────────────────
+        # D-0066: still MEASURED, no longer SCORED. The spread itself is
+        # worth showing - Japan sitting 300bps below the US 10Y is a real
+        # fact about the world - but it cannot earn points.
         spread_data = get_sovereign_spread(db, iso, us_10y)
-        spread_score = spread_data["score"]
         spread_bps = spread_data["spread_bps"]
         spread_widening = spread_data["widening_bps"]
 
@@ -634,7 +662,9 @@ def compute_composite_stress(db: Session) -> dict:
         else:
             multiplier = 1.0
 
-        raw_score = tic_score + gold_score + monetary_score + spread_score + petro_score + cds_score
+        # D-0066: spread_score is gone from the sum. See the note on
+        # DIMENSION 4 above - it could not fire for any country.
+        raw_score = tic_score + gold_score + monetary_score + petro_score + cds_score
         composite_score = raw_score * multiplier
 
         # Don't skip EXITED countries even if raw score is low —
@@ -715,7 +745,6 @@ def compute_composite_stress(db: Session) -> dict:
             # Spread
             "spread_bps": spread_bps,
             "spread_widening_bps": spread_widening,
-            "spread_score": round(spread_score, 1),
             # Petrodollar
             "oil_dependent": oil_dependent,
             "oil_signal": oil_signal,

@@ -1345,3 +1345,76 @@ the only configured absentee is the one `F-0075` recorded deliberately.
 **Correction to an earlier count.** I reported the board as listing 33
 sovereigns. It carries **30** — the earlier figure counted header and spacer
 rows in the raw table.
+
+### D-0065 — The CDS elevated band moves from >100bps to >200bps
+
+**Ruling.** The owner raised the first CDS level band to 200.
+
+**What it was.** `>100 bps: 5 pts`. Measured against the live board on
+2026-09-29:
+
+```
+India         87.7   below the old band
+Mexico        91.0   below
+Brazil       129.6   ABOVE — ranked WATCH on a composite of 5.0,
+                     entirely from this band
+South Africa 130.9   ABOVE
+Turkey       248.1   above
+Egypt        307.3   above
+```
+
+A threshold that separates 91 from 130 is not separating calm from stressed.
+It is separating two ordinary emerging-market spreads, and it was producing a
+false positive: Brazil appeared on the COMPOSITE tab because its CDS is normal
+for Brazil.
+
+**What changes.** Brazil and South Africa stop scoring. Turkey and Egypt are
+unaffected — both were already above 200, so this removes false positives
+without touching a single true one. Nothing else on the board moves.
+
+**Recorded rather than silently smoothed:** the ladder is now
+200 / 250 / 500, which leaves a narrow 50bps window worth 5 points before the
+250 band takes over at 10, and then 250bps for the next 5. The bottom rung is
+compressed. Re-spacing the upper bands is a separate judgement nobody has
+made, so it has not been made here — but the next person to look at this
+ladder should know it was left uneven deliberately.
+
+### D-0066 — Dimension 4, Sovereign Spread, is retired from scoring
+
+**Ruling.** The owner retired it.
+
+**Why.** `F-0079` measured it across all 48 scored countries: **0 countries,
+0 points**. It scores a sovereign more than 50bps **above** the US 10Y and
+holds yield data only for the fourteen developed markets in
+`SOVEREIGN_YIELD_CODES`, every one of which trades **below** the US:
+
+```
+AUS  -22.5bps    FRA  -124.0bps
+GBR  -25.1       ITA  -125.4
+NOR  -95.4       BEL  -148.0
+KOR  -95.4       CAN  -156.5
+```
+
+It could only fire for emerging markets and held no yield data for any. Twenty
+points that no country could earn.
+
+**Measured, not scored.** `spread_bps` is still computed and still displayed —
+Japan sitting 300bps below the US 10Y is a real fact about the world and the
+COMPOSITE tab shows it. What is gone is its ability to award points.
+
+**`spread_score` is removed from the payload and the schema, not set to
+zero.** A field that is always zero is a trap: a reader takes it for a
+dimension that happens to be quiet this week. `api/schemas.py` carries a note
+where it used to be.
+
+**Consequences.** The raw maximum drops from 185 to 165. Five scoring
+dimensions remain. `ui/src/lib/dimensions.js` loses the entry and
+`tests/test_composite_dimensions.py` — which cross-checks that list against
+the scorer in both directions — is what forced every dependent number to move
+with it.
+
+**What was NOT done.** Repairing it. Giving the spread dimension emerging-
+market yield data would make it fire, and would then measure roughly what CDS
+measures for roughly the same countries — `A-0014`'s third objection, which
+was hypothetical while the dimension was dead and would become real the moment
+it was revived. Retiring it is the choice that does not create that problem.

@@ -11,13 +11,17 @@ import {
 const row = (parts) => ({ composite_score: 0, ...parts });
 
 describe("STRESS_DIMENSIONS", () => {
-  it("covers all six scored dimensions", () => {
-    // F-0076: the panel listed four. tests/test_composite_dimensions.py
+  it("covers all five scored dimensions", () => {
+    // F-0076: the panel listed four of six. D-0066 then retired Sovereign
+    // Spread from scoring because it could not fire for any country
+    // (F-0079), leaving five. tests/test_composite_dimensions.py
     // cross-checks these keys against the Python scorer, which is the half
     // that cannot be asserted from here.
-    expect(STRESS_DIMENSIONS).toHaveLength(6);
+    expect(STRESS_DIMENSIONS).toHaveLength(5);
     expect(STRESS_DIMENSIONS.map((d) => d.key)).toContain("cds_score");
     expect(STRESS_DIMENSIONS.map((d) => d.key)).toContain("monetary_score");
+    // D-0066: measured and displayed, but no longer a scoring dimension.
+    expect(STRESS_DIMENSIONS.map((d) => d.key)).not.toContain("spread_score");
   });
 
   it("gives every dimension a label, a cap, a colour and a description", () => {
@@ -38,7 +42,8 @@ describe("STRESS_DIMENSIONS", () => {
   });
 
   it("MAX_RAW_SCORE is the sum of the caps", () => {
-    expect(MAX_RAW_SCORE).toBe(185);
+    // 185 until D-0066 removed the 20-point spread dimension.
+    expect(MAX_RAW_SCORE).toBe(165);
     expect(MAX_RAW_SCORE).toBe(STRESS_DIMENSIONS.reduce((s, d) => s + d.max, 0));
   });
 
