@@ -2061,3 +2061,12 @@ back and the run is logged `partial`. That is the correct direction (loud
 rather than silent, no data loss, since the other run wrote the rows) but it
 is a failure mode rather than a fix. Converting the insert to an upsert is the
 remaining work and is **not** done.
+
+**Remaining half closed 2026-09-29 by `D-0059`.** `fred_fetcher.py` now writes
+through `ON CONFLICT DO UPDATE` on Postgres, so two overlapping runs converge
+on the same row instead of racing to insert it. The `partial`-on-IntegrityError
+failure mode described above no longer applies.
+
+`F-0073` is fully closed: the duplicates are gone, the constraint binds, the
+model declares it so a fresh database inherits it, and the writer no longer
+depends on a check that was true a moment ago.
