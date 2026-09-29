@@ -381,3 +381,71 @@ panel and the card still quote different quantities, and the range is the
 freshest of the four series. It was not taken now because a range is two
 numbers in a slot built for one, which is a layout decision rather than a data
 one.
+
+### A-0014 — Whether Sovereign CDS should score, and how — awaiting a ruling
+
+**The question asked.** Should CDS be considered in composite stress?
+
+**The evidence says yes, and more strongly than expected.** CDS is the only
+market-priced dimension in the model that works at all. Dimension 4, Sovereign
+Spread, was designed to be the market-priced one and **cannot fire for any
+country** (`F-0079`). CDS is doing Dimension 4's job, for a more relevant set
+of sovereigns, and doing it daily rather than monthly.
+
+It is also the only dimension that is **forward-looking**. Treasury holdings,
+gold reserves and M2 are all lagging quantities reported weeks or months after
+the fact. CDS is the price someone is charging today to insure against a
+default tomorrow.
+
+**Three objections, all evidenced, none fatal.**
+
+**1. The lowest band fires on ordinary conditions.** `>100 bps: 5 pts`. Brazil
+prints 129.6 and South Africa 130.9 — unremarkable levels for those
+sovereigns. Brazil is ranked WATCH at a composite score of 5.0, **entirely**
+from that band. That is a false positive: the country is on the board because
+its CDS is normal for an emerging market rather than because anything is
+wrong. Egypt at 307 and Turkey at 248 are genuinely elevated; the band does
+not distinguish them from routine.
+
+**2. Coverage is 33% and the dimension is additive with no
+re-normalisation.** Sixteen of 48 scored countries have an admitted quote. The
+scorer's own docstring says the points are *"additive to the existing tier math
+(no re-normalization)"*, so a covered country has a 185-point ceiling and an
+uncovered one has 165, against **absolute** tier thresholds. Coverage itself
+pushes a country up the rankings.
+
+**3. It cannot double-count today, but only by accident.** Zero countries
+score on both CDS and Sovereign Spread — because the spread dimension scores
+nobody. If `F-0079` is ever fixed by giving the spread dimension EM yield
+data, the two will measure the same thing for the same countries, and 40
+points of correlated signal will land on whichever sovereigns are already
+under pressure.
+
+**Options, in the order I would take them.**
+
+- **(a) Raise the first band.** `>100` to something like `>200`. Removes
+  Brazil and South Africa as false positives and leaves Egypt and Turkey
+  scoring. One constant, no structural change. *This is the one I would do
+  first regardless of the others.*
+- **(b) Make CDS confirming rather than originating.** Let it amplify a score
+  built from the physical dimensions rather than create a ranking on its own —
+  the way the cross-asset multiplier works. A country that is selling
+  Treasuries *and* has widening CDS is the signal; wide CDS alone is a
+  different claim from the one this application makes. Fixes the Brazil case
+  structurally rather than by threshold.
+- **(c) Normalise by dimensions available.** Score as a share of the maximum
+  achievable given coverage, so a country is not out-ranked for being quoted.
+  Correct, and the largest change.
+- **(d) Retire or repair Dimension 4** (`F-0079`). If CDS is kept, the spread
+  dimension is redundant for the countries CDS covers and dead for everyone
+  else.
+
+**My recommendation:** (a) now, (b) as the real fix, (d) once (b) is settled.
+Not (c) unless coverage improves — re-normalising a 33%-covered dimension
+amplifies the sample it has rather than correcting it.
+
+**Cost of leaving it.** Brazil stays on the COMPOSITE tab at a score that is
+entirely a normal CDS spread, and any country that happens to be quoted ranks
+above one that is not. Neither is large today — CDS contributes 25 of ~1,182
+points — but the ranking is the product, and a false positive in a
+sovereign-stress board is the expensive kind of wrong.

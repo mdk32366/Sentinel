@@ -2274,3 +2274,85 @@ entire subject is sovereign default risk.
 
 The guard was built for a defect that already existed and caught a different
 one that did not exist yet.
+
+### F-0078 — The country panel's CDS tile was never once correct
+
+**Claim.** `GET /api/cds?country=` built its metric code as
+`f"{country.upper()}_CDS_5Y"`. CDS metrics encode the country by **name** —
+`TURKEY_CDS_5Y`. The endpoint's own docstring says the parameter is a
+*"Country ISO code (e.g. TUR, MEX, BRA)"*. Both cannot be true.
+
+**Artifact.** Against production, before the fix:
+
+```
+/cds?country=TUR      -> 5Y=None  No CDS data available for this country
+/cds?country=BRA      -> 5Y=None  No CDS data available for this country
+/cds?country=EGY      -> 5Y=None  No CDS data available for this country
+/cds?country=TURKEY   -> 5Y=248.08
+/cds?country=BRAZIL   -> 5Y=129.57
+```
+
+`CountryDetail` is the only caller and passes an ISO code.
+
+**Sample size.** Every country, every time. The 5Y CDS tile on the country
+panel has **never displayed a value**.
+
+**Why it went unnoticed for so long.** "No coverage" is a legitimate answer
+for most countries — 21 of 105 are on the board at all — so a tile that always
+said it looked exactly like a tile that was working. **A wrong answer that is
+also a plausible answer does not get reported.** That is the same property
+that let `F-0074`'s placeholders survive: a number is checked, an absence is
+not.
+
+**Fixed.** The lookup resolves an ISO code through `CDS_NAME_BY_ISO` and falls
+back to the raw token, so both forms work. `tests/test_cds_country_lookup.py`
+checks the map against the fetcher's instrument list in **both** directions —
+a mapping to a token nothing stores, and a country on the board no ISO can
+reach — plus that no ISO key doubles as a namespace token, which would resolve
+by accident and mask a missing entry.
+
+This was also the **third** reader of CDS rows with no admissibility check;
+it now applies the same `admit_cds_quote` as the scorer and `/cds/all`.
+
+### F-0079 — Two of the six scored dimensions cannot fire
+
+**Claim.** Measured across all 48 scored countries:
+
+| dimension | countries scoring | total points | max |
+|---|---|---|---|
+| Treasury | 44 | 1015.9 | 50 |
+| Gold Reserves | 4 | 70.7 | 40 |
+| Monetary / M2 | 6 | 70.0 | 35 |
+| **Sovereign Spread** | **0** | **0.0** | 20 |
+| **Petrodollar** | **0** | **0.0** | 20 |
+| Sovereign CDS | 4 | 25.0 | 20 |
+
+**Sovereign Spread is structurally dead, not merely quiet.** It scores a
+country more than 50bps **above** the US 10Y. It has sovereign yield data for
+exactly the fourteen countries in `SOVEREIGN_YIELD_CODES` — all developed
+markets — and every one of them is **below** the US:
+
+```
+AUS   -22.5bps    FRA  -124.0bps
+GBR   -25.1bps    ITA  -125.4bps
+NOR   -95.4bps    BEL  -148.0bps
+KOR   -95.4bps    CAN  -156.5bps
+```
+
+The dimension can only fire for emerging markets, and it holds no yield data
+for any of them. Twenty points that cannot be scored by anyone.
+
+**Sample size.** 48 countries, 14 with a computed spread, 0 scoring.
+
+**Petrodollar is conditional rather than structural** — it needs Brent falling
+alongside TIC selling, and Brent currently is not. It can fire; the spread
+dimension cannot.
+
+**Why this matters beyond the two dimensions.** Treasury contributes **1,015.9
+of roughly 1,182 total points — 86%**. The model presents itself as
+six-dimensional and is, in practice, one dimension plus decoration. The
+methodology panel now lists all six honestly (`F-0076`), which makes this
+visible rather than fixing it.
+
+**Not fixed.** Retiring or repairing a scoring dimension is a modelling
+decision, recorded in `A-0014` for a ruling.

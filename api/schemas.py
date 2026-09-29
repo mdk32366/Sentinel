@@ -161,6 +161,11 @@ class CdsTenor(BaseModel):
     source: Optional[str] = None
 
 
+class CdsHistoryPoint(BaseModel):
+    date: str
+    value: float
+
+
 class CdsCountryResponse(BaseModel):
     """GET /api/cds?country=X.
 
@@ -178,6 +183,12 @@ class CdsCountryResponse(BaseModel):
     message: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True)
+
+    # F-0074 / D-0061: why a tenor is blank, and the series behind the
+    # 5Y number so the country panel can chart it.
+    coverage: Optional[str] = None
+    coverage_10y: Optional[str] = None
+    history: List[CdsHistoryPoint] = []
 
 
 class CrossAssetItem(BaseModel):

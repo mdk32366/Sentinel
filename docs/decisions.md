@@ -1217,3 +1217,28 @@ which both carry.
 countries have an admitted quote out of forty-eight scored, and four of those
 contribute points. The surface now states that honestly instead of implying
 breadth it does not have.
+
+### D-0061 — CDS is on the country panel: tile, contribution and history
+
+**Choice.** The country panel now carries CDS three ways:
+
+1. **The 5Y tile works at all** (`F-0078`) — it had never resolved a country.
+2. **`StressContribution`** shows CDS as a share of the composite score
+   (`D-0060`).
+3. **A 5Y CDS history chart** sits beside holdings, gold and reserves.
+
+**The history comes from `/cds?country=`, not `/timeseries`.** The ISO → metric
+name map lives server-side, and a second copy of it in JavaScript is `F-0062`
+for the third time. The endpoint the panel already calls now returns the
+series.
+
+**The chart is withheld when the latest quote was refused.** Charting a
+history whose most recent point the tile above it denies would put a line on
+screen that the rest of the panel contradicts. Ninety days, matching the
+widening window the scorer measures over, so the chart and the score describe
+the same span.
+
+**A refused quote states its reason on the tile** — "stale (75d old)", "not
+quoted as a running spread" — rather than the generic "Not factored into
+stress score", which was true of both a country nobody quotes and a country
+whose quote was thrown away.

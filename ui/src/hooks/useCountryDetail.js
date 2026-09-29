@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "../lib/api";
 import { TRESEG_CODES } from "../lib/constants";
 
-const EMPTY_CDS = { cds5y: null, cds10y: null, termSpread: null };
+const EMPTY_CDS = { cds5y: null, cds10y: null, termSpread: null, coverage: null, history: [] };
 
 /**
  * Everything the country panel reads for one ISO code.
@@ -58,6 +58,11 @@ export function useCountryDetail(iso) {
         cds5y,
         cds10y,
         termSpread: cds5y != null && cds10y != null ? cds10y - cds5y : null,
+        // F-0074: WHY there is no number, when there is none. F-0078: this
+        // endpoint resolved nothing at all until the ISO code was mapped, so
+        // every country read "No coverage" regardless.
+        coverage: body?.coverage ?? null,
+        history: Array.isArray(body?.history) ? body.history : [],
       });
     });
 

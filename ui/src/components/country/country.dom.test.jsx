@@ -146,3 +146,36 @@ describe("AnalystBrief", () => {
     expect(screen.getByText(/Regenerate/)).toBeTruthy();
   });
 });
+
+describe("the CDS tile explains an absence", () => {
+  it("F-0078: shows the spread once the ISO code actually resolves", () => {
+    // /cds?country=TUR built "TUR_CDS_5Y", which does not exist, so this tile
+    // read "No coverage" for every country from the day it shipped.
+    render(<CountryStatCards ticHistory={null} cds={{ cds5y: 248.08, cds10y: null, termSpread: null, coverage: "quoted" }} />);
+    expect(screen.getByText("248bps")).toBeTruthy();
+  });
+
+  it("gives the refusal reason rather than a generic line", () => {
+    render(<CountryStatCards ticHistory={null}
+      cds={{ ...NO_CDS, coverage: "not quoted as a running spread" }} />);
+    expect(screen.getByText("not quoted as a running spread")).toBeTruthy();
+  });
+
+  it("reports a stale quote with its age", () => {
+    render(<CountryStatCards ticHistory={null} cds={{ ...NO_CDS, coverage: "stale (75d old)" }} />);
+    expect(screen.getByText("stale (75d old)")).toBeTruthy();
+  });
+
+  it("falls back to the generic line when there is genuinely no coverage", () => {
+    render(<CountryStatCards ticHistory={null} cds={{ ...NO_CDS, coverage: "no coverage" }} />);
+    expect(screen.getByText("no coverage")).toBeTruthy();
+  });
+
+  it("says 5Y only when there is no paired 10Y", () => {
+    // Every 10Y on this board was the ISDA coupon and is now refused, so this
+    // is the ordinary case rather than an edge one.
+    render(<CountryStatCards ticHistory={null}
+      cds={{ cds5y: 129.6, cds10y: null, termSpread: null, coverage: "quoted" }} />);
+    expect(screen.getByText(/5Y only — no paired 10Y/)).toBeTruthy();
+  });
+});
