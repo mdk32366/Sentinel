@@ -273,6 +273,27 @@ class CompositeCountry(BaseModel):
     selling_gold: bool
     cross_asset: bool
     divergence: bool
+    # F-0082. Everything below was produced by the scorer and STRIPPED here:
+    # a FastAPI response_model drops any field it does not declare, silently.
+    #
+    # The CDS dimension therefore never reached the UI at all. The COMPOSITE
+    # table's CDS column, the CDS tab's "CDS Share" column and the country
+    # panel's StressContribution breakdown were all reading a field the API
+    # removed on the way out - every one of them rendering a dash.
+    #
+    # `active_signals` is the Activity column's entire content, which is why
+    # that column was the widest on the table and almost always empty.
+    active_signals: List[str] = []
+    as_of: Optional[str] = None
+    brent_price: Optional[float] = None
+    brent_3m_pct: Optional[float] = None
+    cds_5y: Optional[float] = None
+    cds_10y: Optional[float] = None
+    cds_term_spread: Optional[float] = None
+    cds_widening_pct: Optional[float] = None
+    cds_score: float = 0
+    cds_coverage: Optional[str] = None
+    cds_coverage_10y: Optional[str] = None
 
 
 class CompositeStressResponse(BaseModel):
