@@ -23,7 +23,9 @@ import unittest
 from datetime import date, datetime, timedelta
 
 from pipelines.composite_stress import (
+    CDS_DISTRESS_BPS,
     CDS_ELEVATED_BPS,
+    CDS_SIGNIFICANT_BPS,
     MAX_CDS_AGE_DAYS,
     MAX_PLAUSIBLE_CDS_BPS,
     admit_cds_quote,
@@ -186,12 +188,36 @@ class TheElevatedBandStartsAt200(unittest.TestCase):
                 self.assertLess(bps, 100.0)
                 self.assertLess(bps, CDS_ELEVATED_BPS)
 
-    def test_the_ladder_is_still_monotone(self):
-        # 200 / 250 / 500. The bottom rung is narrow - 5 points across a
-        # 50bps window, then 5 more across 250bps - and that compression is
-        # recorded in D-0065 rather than silently re-spaced.
-        self.assertLess(CDS_ELEVATED_BPS, 250)
-        self.assertLess(250, 500)
+    def test_the_ladder_is_monotone_and_proportional(self):
+        # D-0067 re-spaced the upper rungs. 200/250/500 gave 5 points across
+        # 50bps and the next 5 across 250bps - steeply sensitive at the
+        # bottom and flat above it. 200/350/600 spaces them at 150 and 250.
+        self.assertLess(CDS_ELEVATED_BPS, CDS_SIGNIFICANT_BPS)
+        self.assertLess(CDS_SIGNIFICANT_BPS, CDS_DISTRESS_BPS)
+
+        first = CDS_SIGNIFICANT_BPS - CDS_ELEVATED_BPS
+        second = CDS_DISTRESS_BPS - CDS_SIGNIFICANT_BPS
+        self.assertGreaterEqual(first, 100, "the bottom rung is compressed again")
+        # No rung more than twice the width of the one below it.
+        self.assertLessEqual(second, first * 2)
+
+    def test_the_rungs_are_where_d0067_put_them(self):
+        self.assertEqual((CDS_ELEVATED_BPS, CDS_SIGNIFICANT_BPS, CDS_DISTRESS_BPS),
+                         (200.0, 350.0, 600.0))
+
+    def test_egypt_moves_down_a_rung_and_that_is_intended(self):
+        # Stated as a test because it is a tier change on a real country, not
+        # a rounding difference. Egypt prints 307.3: above 200, below 350, so
+        # 5 points rather than 10. Its composite sat at exactly 50.0 - the
+        # STRESSED floor - so it becomes ELEVATED.
+        egypt = 307.29
+        self.assertGreater(egypt, CDS_ELEVATED_BPS)
+        self.assertLess(egypt, CDS_SIGNIFICANT_BPS)
+
+    def test_turkey_is_unaffected_by_the_respacing(self):
+        turkey = 248.08
+        self.assertGreater(turkey, CDS_ELEVATED_BPS)
+        self.assertLess(turkey, CDS_SIGNIFICANT_BPS)
 
 
 if __name__ == "__main__":
