@@ -10,6 +10,7 @@ Offline: the network fetch is stubbed with TIC-shaped text this file builds, and
 the database is in-memory SQLite.
 """
 import datetime
+import re
 import unittest
 from unittest import mock
 
@@ -91,8 +92,15 @@ class TestTicStaleness(unittest.TestCase):
         next person back to the database to work it out."""
         errors = " ".join(self._run(days_ago=301).get("errors") or [])
         self.assertIn("ticdata.treasury.gov", errors)
-        self.assertIn("301 days old", errors)
         self.assertIn(str(MAX_SOURCE_AGE_DAYS), errors)
+
+        # Assert the SHAPE, not a literal count. The fixture's newest row is
+        # computed relative to now and snapped to the 1st of the month, so the
+        # exact age changes every day - an earlier version of this test
+        # hardcoded "301 days old" and failed the following morning.
+        match = re.search(r"is (\d+) days old", errors)
+        self.assertIsNotNone(match, f"age not reported in: {errors}")
+        self.assertGreater(int(match.group(1)), MAX_SOURCE_AGE_DAYS)
 
     def test_boundary_sits_where_the_constant_says(self):
         self.assertEqual(self._run(days_ago=MAX_SOURCE_AGE_DAYS - 25)["status"],

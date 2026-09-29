@@ -1,4 +1,20 @@
-﻿FROM python:3.11-slim as builder
+﻿# ORDER-03 F-0027 / D-0049. The UI is built HERE, from source, so a stale
+# bundle is impossible rather than merely detectable. Before this, api/static/
+# was committed and a deploy that forgot `npm run build` shipped the old
+# interface against a new API with no signal of any kind.
+#
+# package.json and the lockfile are copied first so `npm ci` is cached on its
+# own layer: a change to ui/src rebuilds the bundle without re-installing
+# dependencies. `npm ci` rather than `npm install` - it installs exactly the
+# lockfile, so the same commit produces the same bundle.
+FROM node:22-slim AS ui
+WORKDIR /ui
+COPY ui/package.json ui/package-lock.json ./
+RUN npm ci
+COPY ui/ ./
+RUN npm run build
+
+FROM python:3.11-slim as builder
 
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends gcc && rm -rf /var/lib/apt/lists/*
@@ -11,6 +27,12 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends libpq5 && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /root/.local /root/.local
 COPY . .
+
+# After `COPY . .`, so the built UI is what ends up being served. api/static/
+# is also in .dockerignore, so nothing else can land here - the build output is
+# the only source of this directory and there is no ordering subtlety to get
+# wrong later.
+COPY --from=ui /ui/dist/ /app/api/static/
 
 ENV PATH=/root/.local/bin:$PATH PYTHONUNBUFFERED=1 PORT=8000
 

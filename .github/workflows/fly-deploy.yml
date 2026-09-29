@@ -45,6 +45,32 @@ jobs:
       # ORDER-01 A5 / F-0006: discovery, not a hand-maintained list. Two test
       # files sat outside the gate for weeks and read as coverage. A new test
       # is now in the gate by default rather than by memory.
+      # F-0053: the frontend had no tests at all, so nothing could catch a
+      # regression in the 2,583-line App.jsx or the modules pulled out of it.
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+      - name: Install frontend dependencies
+        run: npm ci
+        working-directory: ui
+      - name: Run frontend tests
+        run: npm test
+        working-directory: ui
+      # Mirror exactly what the Dockerfile's Node stage does: build, then put
+      # the output where the app mounts it. main.py mounts
+      # StaticFiles(directory="api/static") and RAISES if it is missing - which
+      # is the correct behaviour, since an app that cannot serve its UI should
+      # not start quietly. That means CI has to produce the directory the same
+      # way production does, rather than the app tolerating its absence.
+      - name: Build the frontend into api/static
+        run: |
+          npm run build --prefix ui
+          mkdir -p api/static
+          cp -r ui/dist/. api/static/
+
       - name: Run the test suite
         # -t . matters: without it discovery imports the test modules as
         # top-level names, tests/__init__.py never runs, and the Step 12

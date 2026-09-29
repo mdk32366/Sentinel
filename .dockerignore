@@ -23,6 +23,11 @@ __pycache__/
 # Logs (F-0023: these have held the live FRED key)
 *.log
 
+# D-0049: the UI is built by the Node stage and copied to api/static/ in the
+# image. Excluding it from the build context means the built output is the only
+# thing that can ever be there.
+api/static/
+
 # Local snapshots only. data/incoming/ is NOT excluded: it is 4.2MB and
 # pipelines/gold_reserve_changes.py reads a workbook from it at runtime,
 # reached from api/routes.py. Excluding it breaks that endpoint in the image.

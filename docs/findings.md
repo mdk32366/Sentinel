@@ -403,11 +403,14 @@ bundle was built from, and `tests/test_ui_bundle_freshness.py` fails the gate
 when the source has moved since. Proved by tripping it — an unbuilt edit fails
 with both digests and the commands to fix it; reverting clears it.
 
-**Still open:** the Dockerfile has no Node stage. The guard makes a stale
-bundle *detectable*; a build stage would make it *impossible*, and would also
-prove the committed bundle actually corresponds to the source rather than
-merely coexisting with an unchanged copy of it. That change touches the deploy
-path and is deliberately not bundled with a guard.
+**CLOSED 2026-09-29 by `D-0049`.** A `node:22-slim` stage builds the UI inside
+the image, `api/static/` is no longer committed, and the manifest guard is
+retired. A stale bundle is now impossible rather than detectable.
+
+Verified by local `docker build` before anything touched the deploy path, then
+proved from source: a marker added to `ui/src` **without** a local
+`npm run build` — the local `dist/` still held the previous bundle — appeared
+in the bundle inside the rebuilt image.
 ### F-0028 — The application writes an unbounded log file inside the container
 
 **Claim.** `main.py:17` attaches `logging.FileHandler('treasury_monitor.log')`.
@@ -1223,9 +1226,25 @@ points and 60 monthly `FEDFUNDS` points over the same five years:
 | index zip (old) | 2021-09-01 → 2021-11-26 | 4.7% | **0 of 60** |
 | date join (new) | full range | 96.8% | **all of them** |
 
-**Status.** Open. This is the gap that makes ORDER-03 Part F steps 2-4 worth
-sequencing carefully: decomposing a 2,583-line file with no tests is the
-change most likely to break something silently.
+**CLOSED 2026-09-29.** `vitest` is installed, `npm test` runs in CI before the
+Python suite, and there are **18 frontend tests** covering the two modules
+pulled out of `App.jsx`:
+
+- `buildYieldSeries` — 8 cases, including the `F-0007` defect stated directly:
+  a monthly series must not be shifted onto early daily dates, the join is a
+  union rather than a left join off `DGS10`, and two series with different
+  missing days stay aligned. These fail against the old index-zip.
+- `resolveBase` — 10 cases, including that `127.0.0.1`, a LAN address and a
+  `.local` host all resolve correctly, which is `F-0052` stated as a test.
+
+**Found while writing them:** importing `lib/api.js` outside a browser threw,
+because `API_BASE` is computed at module load and there was no `location`. It
+now falls back to same-origin, so the module is importable anywhere. That is a
+real fragility nothing would have surfaced without a test runner.
+
+**Still true, and the reason Part F steps 2-4 remain careful work:** `App.jsx`
+is still ~2,550 lines and almost none of it is covered. What exists now is the
+harness and the extracted modules, not coverage.
 
 ### F-0054 — `.gitignore` swallowed the frontend's API module, and the merge said nothing
 
