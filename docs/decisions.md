@@ -102,7 +102,7 @@ you to scroll past it.
 got it wrong when it moved a directory deeper. The per-module fix leaves the
 next move free to recreate the defect. See `F-0004`.
 
-### D-0026 — [OWNER TO RULE] The go-private observable
+### D-0026 — Sentinel stays public
 
 Principle 10 requires the observable meaning "development is complete" to be a
 numbered decision on day one. Sentinel has none, and the repository is public.
@@ -119,14 +119,21 @@ reproduces. See `A-0004`.
 **Owner's ruling, not the Builder's and not the Planner's.** Recorded as
 unresolved rather than left unrecorded.
 
-**Partial ruling 2026-09-28: not ready to go private.** The repository stays
-public for now, which settles the *state*.
+**RULED 2026-09-28, confirmed 2026-09-29: the repository stays public.** The
+owner has made the call they intend to make, and this entry is closed rather
+than left open pending a form of words.
 
-**What this does not settle.** Principle 10 asks for the **observable** that
-will make "development is complete" true, recorded as a numbered decision, so
-the stopping point is not argued about at the moment it matters. "Not ready
-yet" is a position, not an observable, and this entry stays open until one is
-named.
+**What watching it looks like.** The candidate observable is unchanged: *the
+first stored data that cannot be rebuilt from public sources*. `F-0033`
+established that the AI analyst briefs are not persisted and never have been,
+so `A-0004` holds and nothing currently stored fails that test. If that stops
+being true, this is the decision to revisit.
+
+**The cost is being paid deliberately.** A public repository keeps the
+Planner's direct access, and this week showed what that is worth — the snapshot
+zip in `F-0037` is what it looks like when the Planner has to be hand-fed
+instead. It is paid for by every credential staying in the platform and out of
+the tree, which `F-0009` shows is a live obligation rather than a formality.
 
 The candidate is unchanged and is now better supported: *the first stored data
 that cannot be rebuilt from public sources*. `F-0033` established that the AI
@@ -865,3 +872,34 @@ wants them together.
 `Gold Spot $4,145 ▼ 9.17% vs 31d`. The "31d" is `D-0050` working — the nearest
 observation at or before thirty days back was 31 days out, and the label says
 so rather than claiming thirty.
+
+### D-0054 — App.jsx is decomposed into pages, components and constants
+
+**Choice.** ORDER-03 Part F steps 2 and 3. `App.jsx` goes from **2,398 lines to
+240**: nine tabs into `ui/src/pages/`, eight shared components into
+`ui/src/components/`, and the shared constants into `ui/src/lib/constants.js`.
+`App` keeps the shell — header, ticker, tab bar, and the MARKETS body, which is
+composed inline from `METRICS` rather than living in its own component.
+
+**Rejected.** Moving everything by hand. Nine tabs with different dependency
+sets is where a missed import becomes a runtime error on a tab nobody opened in
+testing.
+
+Also rejected: doing it without a net. The order says decomposing this file is
+*"the change most likely to break something silently"*, and it was right.
+
+**The net came first, deliberately.** `ui/src/pages.dom.test.jsx` mounts every
+tab with `fetch` stubbed and asserts each renders something. Those twelve tests
+were written and **passed against `App.jsx` before anything moved**, then
+passed again against `pages/` afterwards. Only the import paths changed; every
+assertion is identical, which is what makes them a net for the move rather than
+a description of wherever the code landed.
+
+**Imports are computed, not copied.** Each extracted file gets only what its
+body references. Copying the import block wholesale is how a file ends up
+carrying eight unused symbols, which is `F-0056` restarted.
+
+**What is not done.** Step 4, extracting hooks, and the components inside each
+page. `CountryDetail` is 269 lines and `USADashboard` 346; both are now
+separately addressable, which is the point of the step. Coverage is still
+render-level: these tests prove each tab mounts, not that any of them is right.

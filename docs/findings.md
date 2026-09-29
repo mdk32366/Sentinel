@@ -1242,9 +1242,19 @@ because `API_BASE` is computed at module load and there was no `location`. It
 now falls back to same-origin, so the module is importable anywhere. That is a
 real fragility nothing would have surfaced without a test runner.
 
-**Still true, and the reason Part F steps 2-4 remain careful work:** `App.jsx`
-is still ~2,550 lines and almost none of it is covered. What exists now is the
-harness and the extracted modules, not coverage.
+**Extended 2026-09-29 for `D-0054`.** `ui/src/pages.dom.test.jsx` adds twelve
+render tests under jsdom: every tab mounts with `fetch` stubbed and renders
+something, plus two checks that ABOUT still carries its static content
+including the retired-tab note from `D-0051`.
+
+These are not behaviour tests, and they are not meant to be. They assert the
+one property a mechanical refactor actually threatens — that each tab still
+*mounts* — and they were written to pass **before** the decomposition so they
+could be a net for it rather than a description of the result.
+
+**Still true:** `App.jsx` is now 240 lines, but the ~2,150 lines that moved into
+`pages/` and `components/` have render coverage only. Nothing asserts that any
+tab shows the right numbers.
 
 ### F-0054 — `.gitignore` swallowed the frontend's API module, and the merge said nothing
 
@@ -1424,3 +1434,86 @@ in the project found the most misleading defect of the day.
 
 **Fixed.** The helpers handle all six tiers, the live component calls them, and
 the two previously-uncovered tiers have tests.
+
+### F-0059 — Production carries no canary, so the Step 12 guard would refuse it
+
+**Claim.** The positive-identity guard in `D-0039` would stop a test run
+against production — verified against production itself rather than reasoned
+about.
+
+**Artifact.** 2026-09-29, over `fly ssh console`:
+`SELECT to_regclass('public.canary')` returned **None**. The same session
+reported 64,336 `timeseries` rows and 701 `update_logs` rows against the local
+database's ~40,000 and 18 — the separation recorded in `F-0012`, now measured
+on both sides rather than inferred from one.
+
+**Sample size.** One query against the live cluster.
+
+**Why it was worth doing.** `tests/test_disposable_guard.py` says outright that
+pointing the suite at production cannot be rehearsed in CI, because it would
+need production credentials in a test environment — the precise thing the guard
+exists to survive. What that test cannot do, a read-only query can: confirm the
+guard's trigger condition is genuinely true of production. The canary is
+absent, so `assert_disposable` raises, so the suite refuses.
+
+**What it still does not prove.** That the refusal happens *through a tunnel*.
+It proves the input the guard reads is the one that makes it refuse — and since
+the guard never reads an address, there is no tunnel-specific path left to
+test. That was the design point of `D-0039`.
+
+### F-0060 — The extraction script swallowed App's definition, and the error surfaced 50 lines away
+
+**Claim.** The first run of the Part F extractor moved `GoldReservesTab` into
+`pages/` **along with the opening line of `App` itself**, because its
+"next top-level declaration" boundary regex matched `function X` and
+`export function X` but not `export default function X`.
+
+**Artifact.** `App` is declared at `App.jsx:1590`, between `GoldReservesTab`
+(1468) and `CDSCoverageBanner` (1809). After extraction,
+`grep -c "export default function App" ui/src/pages/GoldReservesTab.jsx`
+returned **1**. The build failed with
+`[builtin:vite-transform] Unexpected token ╭─[ src/App.jsx:54:7 ]`, pointing at
+a `.catch()` fifty lines from the actual cause.
+
+**Sample size.** One run, one boundary form missed out of three.
+
+**Why it is worth recording.** The failure mode of a mechanical refactor is not
+usually a wrong result — it is a result that is *structurally* broken in a way
+the error message does not describe. A parse error at line 54 of a file whose
+real problem was at line 1590 is the generic shape of this, and reading the
+error rather than the diff would have sent anyone hunting in the wrong place.
+
+**Recovered by rolling back rather than patching forward.**
+`git checkout -- ui/src/App.jsx` and moving the generated directories aside
+cost nothing, because the extraction was scripted and repeatable. Patching the
+damaged output would have left the boundary bug in place for the next run.
+
+**Fixed.** The regex accepts `export default`, and `extract()` now asserts that
+`export default function App` is still present in what remains before writing
+`App.jsx` — so the same class of miss fails at the extractor with a sentence
+naming the cause, instead of in the build.
+
+### F-0061 — A test asserted on a file path, and the refactor broke it
+
+**Claim.** `tests/test_dgs30_d0016.py` verified `D-0016`'s requirement that 30Y
+is named on the About tab by reading `ui/src/App.jsx`. Moving `AboutTab` into
+`pages/` broke it, although the requirement it protects was never violated.
+
+**Artifact.**
+`AssertionError: '30Y/10Y/5Y/2Y Treasury yields' not found in <App.jsx source>`,
+after `D-0054`. The string was present the whole time, in
+`ui/src/pages/AboutTab.jsx`.
+
+**Sample size.** One test, one move.
+
+**What it says about the test rather than the refactor.** The requirement is
+"30Y is named in About". The test encoded "30Y is named in `App.jsx`", which
+was true only while About happened to live there. A test coupled to a location
+fails on reorganisation and passes on a regression that moves the content
+somewhere else — the wrong way round.
+
+**Fixed** by searching whichever About sources exist rather than naming one, so
+the next move does not break it either. The assertion is unchanged.
+
+**Worth noting it did its job anyway:** the Python suite caught a frontend
+reorganisation that lint, the build, and 74 frontend tests all passed.
