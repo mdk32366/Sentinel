@@ -44,9 +44,11 @@ stress. A React single-page UI is served from the same origin.
 Verified present and `Deployed` on 2026-09-26: `FRED_API_KEY`,
 `ANTHROPIC_API_KEY`, `AUTH_PASSWORD`, `AUTH_USERNAME`, `DATABASE_URL`.
 
-`GROK_API_KEY` is **not set**. `/api/analyze/country` therefore returns 503 in
-production regardless of code. Together with `F-0033`, the analyst brief has
-never produced output in production.
+`GROK_API_KEY` is **not set**, and since `D-0069` nothing reads it. The
+analyst brief calls Anthropic, using the `ANTHROPIC_API_KEY` that has been
+deployed all along. Before that it required the Grok key and returned 503 for
+every request - together with `F-0033`, the brief had never produced output
+in production.
 
 `AUTH_PASSWORD` is load-bearing since `F-0009`: `config.py` has no default, so
 the application refuses to start without it.
