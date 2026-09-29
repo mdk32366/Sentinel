@@ -98,14 +98,80 @@ does the equivalent inside the image. If `tests.test_lifespan_cold_start` and
 Pipeline detail lives on `/api/pipeline-status`, behind auth (`D-0035`,
 `F-0019`).
 
-## Schema management
+## Schema changes are manual
 
-`alembic==1.12.1` is pinned in `requirements.txt` and has **never been
-initialized** — there is no `alembic.ini` and no `versions/`. Schema comes from
-`Base.metadata.create_all()`, which creates missing tables and silently ignores
-changed columns. A column type change requires hand-written DDL against
-production. See `F-0022`; `D-0032` is the open ruling on whether to initialize
-Alembic or drop it and document manual DDL.
+Ruled 2026-09-29 (`D-0032`): alembic is removed. It was pinned and never
+initialized, so nothing is lost — there were no migrations to abandon.
+
+### How schema reaches the database
+
+`Base.metadata.create_all()`, called by `init_db()`. It does exactly two
+things worth knowing:
+
+- **Creates missing tables.** Adding a model and deploying is enough; this is
+  how `composite_snapshots` arrived (`D-0042`).
+- **Ignores everything else.** A changed column type, a widened `varchar`, a
+  new column on an existing table, a dropped column — `create_all` sees the
+  table exists and returns. **No error, no warning, no log line.**
+
+So additive *tables* are automatic and every other change is hand-written DDL.
+
+### Detecting drift
+
+`create_all()` will not tell you that `models.py` and the database disagree.
+This will:
+
+```
+python tools/check_schema_drift.py                 # local
+python tools/check_schema_drift.py --url "$URL"    # anywhere else
+```
+
+Exit code 1 on structural drift — a declared table or column the database does
+not have, or the reverse. Type differences are printed as **advisory** and do
+not fail: SQLAlchemy types and database introspection do not round-trip
+cleanly, and `DATETIME` versus `TIMESTAMP` on every timestamp column is normal
+rather than a problem.
+
+**Run it against production during any session that touches schema.** It has
+not been run there — `fly ssh console` is required and the Builder cannot
+reach it. Until then `A-0010` stays assumed.
+
+### Applying DDL to production
+
+**`psql` is not installed in the image.** Use `python3` with `psycopg2` over
+`fly ssh console`:
+
+```
+flyctl ssh console -a sentinel-holy-rain-4562
+python3 - <<'SQL'
+import os, psycopg2
+conn = psycopg2.connect(os.environ["DATABASE_URL"])
+conn.autocommit = False
+cur = conn.cursor()
+cur.execute("ALTER TABLE update_logs ALTER COLUMN error_message TYPE varchar(2000)")
+conn.commit()
+SQL
+```
+
+Before any DDL that is not purely additive, Principle 1 applies: say out loud
+that a **completed** backup exists, how old it is phrased as exposure, and what
+it does not cover. `D-0044` records that the recovery credential required by
+Day-One Step 16 does not yet exist, and that is a blocker on destructive work.
+
+### Where migration SQL lives
+
+`docs/ddl/` — one file per change, named `YYYY-MM-DD-description.sql`, with a
+comment naming the decision or finding that motivated it. A statement run
+against production and not written down is a schema change nobody can
+reconstruct.
+
+### The known outstanding change
+
+`update_logs.error_message` is `varchar(500)`. `A-0003` records that a
+multi-series FRED failure can overflow it, which makes the `UpdateLog` insert
+itself throw and loses the log row entirely. ORDER-01 B4 added truncation at
+480 characters so the row survives; widening the column is the other half and
+has not been done.
 
 ## Recovery access — UNANSWERED
 
