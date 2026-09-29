@@ -14,19 +14,26 @@ describe("buildYieldSeries", () => {
   it("puts every value on its own date", () => {
     const rows = buildYieldSeries({
       DGS10: daily(["2026-01-02", "2026-01-03", "2026-01-06"]),
-      FEDFUNDS: [{ date: "2026-01-06", value: 3.63 }],
+      DFF: [{ date: "2026-01-06", value: 3.63 }],
     });
     const withFf = rows.filter((r) => r["Fed Funds"] != null);
     expect(withFf).toHaveLength(1);
     expect(withFf[0].date).toBe("2026-01-06");
   });
 
-  it("does NOT shift a monthly series onto early daily dates", () => {
-    // The defect, stated as a test: FEDFUNDS has one point, dated late. Index
-    // zipping put it at index 0 — the FIRST daily date. The date join must not.
+  it("does NOT shift a sparse series onto early dates", () => {
+    // The defect, stated as a test: the secondary series has one point, dated
+    // late. Index zipping put it at index 0 — the FIRST date. The date join
+    // must not.
+    //
+    // D-0057 made Fed Funds daily, which removed the 60-against-1,250 case
+    // that produced F-0007. It did NOT remove this one: DFF has no weekend or
+    // holiday observations and FRED publishes it a few days behind the
+    // Treasury yields, so one missing day is enough to start pairing the
+    // wrong dates — quieter than the original, and just as wrong.
     const rows = buildYieldSeries({
       DGS10: daily(["2026-01-02", "2026-01-03", "2026-01-06", "2026-02-02"]),
-      FEDFUNDS: [{ date: "2026-02-02", value: 3.63 }],
+      DFF: [{ date: "2026-02-02", value: 3.63 }],
     });
     expect(rows[0]["Fed Funds"]).toBeUndefined();
     expect(rows.at(-1)["Fed Funds"]).toBe(3.63);
@@ -36,18 +43,19 @@ describe("buildYieldSeries", () => {
     const rows = buildYieldSeries({
       DGS10: daily(Array.from({ length: 60 }, (_, i) =>
         `2026-01-${String((i % 28) + 1).padStart(2, "0")}`)),
-      FEDFUNDS: [{ date: "2026-12-01", value: 3.0 }],
+      DFF: [{ date: "2026-12-01", value: 3.0 }],
     });
     expect(rows.at(-1).date).toBe("2026-12-01");
     expect(rows.at(-1)["Fed Funds"]).toBe(3.0);
   });
 
   it("includes dates that only a secondary series has", () => {
-    // A union, not a left join off DGS10. A monthly point on a day the daily
-    // series skipped must still appear.
+    // A union, not a left join off DGS10. A point on a day DGS10 skipped -
+    // a holiday one series observes and the other does not - must still
+    // appear.
     const rows = buildYieldSeries({
       DGS10: daily(["2026-01-02"]),
-      FEDFUNDS: [{ date: "2026-01-01", value: 3.63 }],
+      DFF: [{ date: "2026-01-01", value: 3.63 }],
     });
     expect(rows.map((r) => r.date)).toEqual(["2026-01-01", "2026-01-02"]);
   });

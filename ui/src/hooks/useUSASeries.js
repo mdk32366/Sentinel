@@ -5,7 +5,7 @@ import { byMetric } from "../lib/usaSeries";
 
 /** The codes the USA dashboard draws. */
 export const USA_CODES = [
-  "DGS30", "DGS10", "DGS2", "DGS5", "FEDFUNDS",
+  "DGS30", "DGS10", "DGS2", "DGS5", "DFF",
   "DFII10", "DTWEXBGS", "CPIAUCSL", "M2SL", "GOLD_SPOT_USD",
 ];
 

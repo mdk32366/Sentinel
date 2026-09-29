@@ -1015,3 +1015,59 @@ when it has one.
 is behind basic auth and no screenshot was taken. Placement is "below" for
 these cards because they sit at the top of the viewport, and the bubble is
 clamped 8px inside the window on both edges, but neither has been seen.
+
+### D-0057 — The Fed Funds card reads the daily rate, not the monthly average
+
+**Choice.** Ingest `DFF` — FRED's **daily** effective federal funds rate — and
+point the MARKETS card, the 10Y–FF spread, the default chart selection, the
+USA dashboard tile and the yield-curve chart's Fed Funds line at it.
+`FEDFUNDS` stays in the pipeline.
+
+**Why, and it is not the cadence.** Measured against live FRED on 2026-09-29:
+
+| series | latest | value |
+|---|---|---|
+| `FEDFUNDS` — what the card showed | 2026-08-01 | **3.63** |
+| `DFF` — daily effective | 2026-09-25 | 3.88 |
+| `EFFR` — NY Fed daily | 2026-09-28 | 3.88 |
+| `DFEDTARU` / `DFEDTARL` — target range | 2026-09-29 | 4.00 / 3.75 |
+
+Production held `3.63` flat since June. The card was not merely a month
+behind — it was **25bp wrong about where policy sits**, on a board whose
+fiscal calculator is denominated in yields and whose scenario panel argues
+about what the Fed does next. See `F-0072`.
+
+**Rejected: `EFFR`.** More precise — a volume-weighted median of actual
+transactions — and three days fresher than `DFF` on the day of measurement.
+Rejected because its history starts in 2000 and, more to the point, it is a
+*different* quantity from what the card showed yesterday. `DFF` is the same
+quantity unaveraged, so the five-year chart keeps its shape and nothing about
+the switch needs explaining to a reader.
+
+**Rejected: the target range (`DFEDTARU`/`DFEDTARL`).** It is the freshest of
+the four and has a real argument behind it — the COUNTRY tab's scenario panel
+models *target* cuts, so the panel and the card quote different quantities.
+Rejected for now because it changes a single-value card into a range, which is
+a layout question, and because the effective rate sits inside the range within
+a few basis points. Recorded in `A-0013` as still open rather than closed.
+
+**`FEDFUNDS` is kept deliberately.** The monthly average is what most
+published analysis quotes, and five years of history should not be discarded
+to fix a display choice. It is ingested and not shown.
+
+**Guarded.** `tests/test_markets_tooltips.py` now asserts that every code the
+twelve cards reference is one some pipeline actually fetches — a card pointing
+at an un-ingested code renders a permanent dash, which is the quietest
+possible way to break this. The guard that made this change necessary was the
+one written an hour earlier, which failed the moment `DFF` was added:
+
+```
+DFF is now ingested - revisit the FEDFUNDS card (A-0013)
+```
+
+**Side effect worth having.** The yield-curve chart's Fed Funds line was
+sixty monthly points against ~1,250 daily ones — the sparse case that produced
+`F-0007`. It is now daily like the rest of the curve. The date join is **not**
+redundant as a result: `DFF` skips weekends and holidays and publishes behind
+the Treasury yields, so an index zip would still pair the wrong dates, just
+less visibly.

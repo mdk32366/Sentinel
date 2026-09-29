@@ -56,7 +56,7 @@ export function USADashboard() {
       <USAKeyMetrics
         dgs10={latestValue(data["DGS10"])}
         dgs2={latestValue(data["DGS2"])}
-        fedfunds={latestValue(data["FEDFUNDS"])}
+        fedfunds={latestValue(data["DFF"])}
         realYield={latestValue(data["DFII10"])}
         m2Yoy={yoyPercent(m2)}
         m2Latest={latestValue(m2)}

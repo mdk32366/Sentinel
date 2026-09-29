@@ -363,3 +363,21 @@ mid-month, which is precisely when someone would look at it.
 Adding one is a `FRED_METRICS` entry and a backfill; the guard above fails the
 moment a daily code is ingested, so the card cannot keep describing a cadence
 it no longer has.
+
+**Settled 2026-09-29 by `D-0057`, in part.** The Fed Funds card now reads
+`DFF`, the daily effective rate, so it is no longer monthly and the question
+that produced this assumption is answered. `F-0072` records what the delay
+actually cost: the card was 25bp wrong, not merely late.
+
+Two of the twelve cards — `CPIAUCSL` and `M2SL` — are still monthly, and the
+grid still gives no visual sign of which cards are which. Their tooltips
+disclose it and a test enforces that they keep doing so, which is mitigation
+rather than a fix.
+
+**Still open:** whether the card should show the **target range**
+(`DFEDTARU`/`DFEDTARL`) rather than the effective rate. The COUNTRY tab's
+scenario panel models *target* cuts — Hold 4%, Cut to 2%, 1%, 0% — so the
+panel and the card still quote different quantities, and the range is the
+freshest of the four series. It was not taken now because a range is two
+numbers in a slot built for one, which is a layout decision rather than a data
+one.

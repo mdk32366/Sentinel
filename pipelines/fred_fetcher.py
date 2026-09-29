@@ -26,7 +26,12 @@ FRED_METRICS = [
     {"code": "DGS7",              "name": "7-Year Treasury Yield",          "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 7-year constant maturity"},
     {"code": "DGS5",              "name": "5-Year Treasury Yield",          "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 5-year constant maturity"},
     {"code": "DGS2",              "name": "2-Year Treasury Yield",          "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury securities at 2-year constant maturity"},
-    {"code": "FEDFUNDS",          "name": "Federal Funds Rate",             "category": "monetary",   "unit": "%", "source": "FRED",          "description": "Effective federal funds rate"},
+    # D-0057: DFF is the DAILY effective rate and is what the UI shows.
+    # FEDFUNDS is the MONTHLY AVERAGE of the same quantity - kept because it
+    # is what most published analysis quotes, and because five years of
+    # history should not be discarded to fix a display choice.
+    {"code": "DFF",               "name": "Federal Funds Rate (Daily)",     "category": "monetary",   "unit": "%", "source": "FRED",          "description": "Effective federal funds rate, daily"},
+    {"code": "FEDFUNDS",          "name": "Federal Funds Rate (Monthly Avg)", "category": "monetary", "unit": "%", "source": "FRED",          "description": "Effective federal funds rate, monthly average"},
     {"code": "DFII10",            "name": "10-Year Real Yield (TIPS)",      "category": "treasury",   "unit": "%", "source": "FRED",          "description": "Market yield on US Treasury inflation-indexed securities at 10-year constant maturity"},
     {"code": "DCOILWTICO",        "name": "WTI Crude Oil Price",            "category": "commodity",  "unit": "$/bbl", "source": "FRED",      "description": "Crude oil prices: West Texas Intermediate (WTI)"},
     {"code": "DTWEXBGS",          "name": "US Dollar Index",                "category": "fx",         "unit": "index", "source": "FRED",      "description": "Nominal broad US dollar index"},

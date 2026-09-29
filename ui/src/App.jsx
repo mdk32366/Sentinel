@@ -26,7 +26,7 @@ import { HoldingsTab } from "./pages/HoldingsTab";
 export default function App() {
   const [tab, setTab] = useState("MARKETS");
   const [countryIso, setCountryIso] = useState(null); // for cross-tab navigation
-  const [activeMetrics, setActiveMetrics] = useState(["DGS10", "DGS2", "FEDFUNDS", "DCOILWTICO"]);
+  const [activeMetrics, setActiveMetrics] = useState(["DGS10", "DGS2", "DFF", "DCOILWTICO"]);
   const [range, setRange] = useState(RANGES[1]);
   const [normalized, setNormalized] = useState(false);
 
@@ -143,7 +143,7 @@ export default function App() {
                   { label: "10Y–2Y", val: latest["DGS10"] - latest["DGS2"] },
                   { label: "10Y–5Y", val: latest["DGS5"] != null ? latest["DGS10"] - latest["DGS5"] : null },
                   { label: "5Y–2Y", val: latest["DGS5"] != null ? latest["DGS5"] - latest["DGS2"] : null },
-                  { label: "10Y–FF", val: latest["FEDFUNDS"] != null ? latest["DGS10"] - latest["FEDFUNDS"] : null },
+                  { label: "10Y–FF", val: latest["DFF"] != null ? latest["DGS10"] - latest["DFF"] : null },
                 ].filter(s => s.val != null).map(s => (
                   <div key={s.label} style={{ fontFamily: "monospace" }}>
                     <span style={{ fontSize: 11, color: "#3A4D5C", marginRight: 8 }}>{s.label}</span>
