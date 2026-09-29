@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
 import { MAX_RAW_SCORE, STRESS_DIMENSIONS, STRESS_MULTIPLIERS, cdsBandText } from "../lib/dimensions";
-import { freshness } from "../lib/freshness";
+import { DataAsOf } from "../components/DataAsOf";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
 import { LoadFailure } from "../components/LoadFailure";
@@ -217,21 +217,12 @@ export function CompositeTab({ onCountrySelect }) {
         }
       </div>
       <div style={{ marginTop:12, fontFamily:"monospace", fontSize:11, color:"#1E2D3D" }}>
-        Data as of {data.as_of}
-        {(() => {
-          // F-0083. A date is not a freshness statement. TIC is the source
-          // behind this as_of, and the Treasury dimension it feeds is by far
-          // the largest contributor to every score on this table - so when it
-          // stops advancing, saying so is not a footnote.
-          const f = freshness(data.as_of);
-          if (!f.age) return null;
-          return (
-            <span style={{ color: f.color, marginLeft: 6 }}>
-              ({f.text}{f.stale ? " — the TIC source has not published since then; Treasury scores are computed from it" : ""})
-            </span>
-          );
-        })()}
-        {" "}· Sources: US Treasury TIC · World Gold Council · FRED
+        <DataAsOf
+          asOf={data.as_of}
+          source="US Treasury TIC · World Gold Council · FRED"
+          note="the TIC source has not published since then; Treasury scores are computed from it"
+          style={{ marginTop: 0 }}
+        />
       </div>
     </div>
   );

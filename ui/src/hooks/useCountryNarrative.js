@@ -19,17 +19,21 @@ import { apiFetch } from "../lib/api";
  * previous country's brief is on screen under the new country's name.
  */
 export function useCountryNarrative(iso) {
-  const [state, setState] = useState({ iso, narrative: null, loading: false });
+  const [state, setState] = useState({ iso, narrative: null, loading: false, provider: null });
 
-  const current = state.iso === iso ? state : { narrative: null, loading: false };
+  const current = state.iso === iso ? state : { narrative: null, loading: false, provider: null };
 
-  const generate = useCallback(async () => {
-    setState({ iso, narrative: null, loading: true });
+  // D-0071: which provider produced the text on screen, reported by the
+  // server rather than assumed by the caller. The footer credits this, so a
+  // fallback or a default change cannot leave the UI claiming the wrong one
+  // (F-0084).
+  const generate = useCallback(async (provider) => {
+    setState({ iso, narrative: null, loading: true, provider: null });
     try {
       const response = await apiFetch(`/analyze/country`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ country: iso }),
+        body: JSON.stringify(provider ? { country: iso, provider } : { country: iso }),
       });
 
       if (!response.ok) {
@@ -41,16 +45,27 @@ export function useCountryNarrative(iso) {
             ? "Brief limit reached. Try again later."
             : "Analysis unavailable.",
           loading: false,
+          provider: null,
         });
         return;
       }
 
       const body = await response.json();
-      setState({ iso, narrative: body.text || "Analysis unavailable.", loading: false });
+      setState({
+        iso,
+        narrative: body.text || "Analysis unavailable.",
+        loading: false,
+        provider: body.provider ?? null,
+      });
     } catch {
-      setState({ iso, narrative: "Failed to generate analysis. Please try again.", loading: false });
+      setState({ iso, narrative: "Failed to generate analysis. Please try again.", loading: false, provider: null });
     }
   }, [iso]);
 
-  return { narrative: current.narrative, loading: current.loading, generate };
+  return {
+    narrative: current.narrative,
+    loading: current.loading,
+    provider: current.provider,
+    generate,
+  };
 }

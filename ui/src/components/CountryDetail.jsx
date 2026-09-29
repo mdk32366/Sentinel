@@ -1,5 +1,6 @@
 import { SOVEREIGN_YIELD_CODES } from "../lib/constants";
 import { goldSeries, momChange, reservesSeries, ticSeries } from "../lib/countrySeries";
+import { useApiResource } from "../hooks/useApiResource";
 import { useCountryDetail } from "../hooks/useCountryDetail";
 import { useCountryNarrative } from "../hooks/useCountryNarrative";
 import { AnalystBrief } from "./country/AnalystBrief";
@@ -21,7 +22,10 @@ import { StressContribution } from "./country/StressContribution";
  */
 export function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   const { ticHistory, goldHistory, reservesHistory, cds, loading } = useCountryDetail(iso);
-  const { narrative, loading: narrativeLoading, generate } = useCountryNarrative(iso);
+  const { narrative, loading: narrativeLoading, provider, generate } = useCountryNarrative(iso);
+  // D-0071: which providers this deployment can authenticate. Fetched once
+  // rather than assumed, so the panel never offers a key that is not there.
+  const { data: providerInfo } = useApiResource(`/analyze/providers`);
 
   if (loading) {
     return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
@@ -121,7 +125,14 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
       )}
 
       {hasAnySeries && (
-        <AnalystBrief narrative={narrative} loading={narrativeLoading} onGenerate={generate} />
+        <AnalystBrief
+          narrative={narrative}
+          loading={narrativeLoading}
+          onGenerate={generate}
+          provider={provider}
+          providers={providerInfo?.providers ?? []}
+          defaultProvider={providerInfo?.default}
+        />
       )}
     </div>
   );
