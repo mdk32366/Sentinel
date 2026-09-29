@@ -11,7 +11,7 @@ import {
   seriesByCode, latestByCode, priorObservation,
   changeBetween, changeSuffix, changeWindowLabel,
 } from "./lib/series";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar, Cell } from "recharts";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine, BarChart, Bar } from "recharts";
 
 
 
@@ -37,7 +37,7 @@ const RANGES = [
   { label: "5Y",  days: 1825 },
 ];
 
-const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "CDS", "STRESS", "COUNTRY", "ADMIN", "ABOUT"];
+const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "CDS", "COUNTRY", "ADMIN", "ABOUT"];
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 
@@ -226,6 +226,10 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   const [cdsData, setCdsData] = useState({ cds5y: null, cds10y: null, termSpread: null });
 
   useEffect(() => {
+    // F-0056: reset-then-load on a changed `iso`. Costs one extra render;
+    // cannot loop, since neither setter feeds this effect's dependency.
+    // Restructuring it means reworking effects in a component with no coverage.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setNarrative(null);
     const end = new Date();
@@ -288,7 +292,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
     const data = await r.json();
     setNarrative(data.text || "Analysis unavailable.");
 
-  } catch (e) {
+  } catch {
     setNarrative("Failed to generate analysis. Please try again.");
   }
 
@@ -397,7 +401,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
             <ResponsiveContainer width="100%" height={160}>
               <LineChart data={ticChart} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
                 <CartesianGrid strokeDasharray="2 6" stroke="#0A1520" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} />
+                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} interval="preserveStartEnd" />
                 <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={48} tickFormatter={v => `$${v.toFixed(0)}B`} />
                 <Tooltip formatter={v => [`$${v.toFixed(1)}B`, "Holdings"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 11 }} labelFormatter={formatDate} labelStyle={{ color: "#5A6878" }} />
                 <Line type="monotone" dataKey="holdings" stroke="#C8A96E" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} connectNulls />
@@ -411,7 +415,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
             <ResponsiveContainer width="100%" height={160}>
               <LineChart data={goldChart} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
                 <CartesianGrid strokeDasharray="2 6" stroke="#0A1520" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} />
+                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} interval="preserveStartEnd" />
                 <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={48} tickFormatter={v => `${v.toFixed(0)}t`} />
                 <Tooltip formatter={v => [`${v.toFixed(1)}t`, "Gold"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 11 }} labelFormatter={formatDate} labelStyle={{ color: "#5A6878" }} />
                 <Line type="monotone" dataKey="tonnes" stroke="#E8C547" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} connectNulls />
@@ -427,7 +431,7 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
             <ResponsiveContainer width="100%" height={160}>
               <LineChart data={reservesChart} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
                 <CartesianGrid strokeDasharray="2 6" stroke="#0A1520" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} />
+                <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} minTickGap={60} interval="preserveStartEnd" />
                 <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 10 }} axisLine={false} tickLine={false} width={56} tickFormatter={v => `$${(v/1000).toFixed(0)}B`} />
                 <Tooltip formatter={v => [`$${(v/1000).toFixed(1)}B`, "Reserves ex-Gold"]} contentStyle={{ background: "#0A1520", border: "1px solid #1E2D3D", borderRadius: 2, fontFamily: "monospace", fontSize: 11 }} labelFormatter={formatDate} labelStyle={{ color: "#5A6878" }} />
                 <Line type="monotone" dataKey="value" stroke="#7EB8C9" strokeWidth={1.5} dot={false} activeDot={{ r: 3 }} connectNulls />
@@ -480,59 +484,6 @@ function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
   );
 }
 // ── Holdings Tab ──────────────────────────────────────────────────────────────
-
-function StressTable({ countries, onSelect, selected }) {
-  const [sort, setSort] = useState("stress_score");
-  const sorted = [...countries].sort((a, b) => {
-    if (sort === "stress_score") return b.stress_score - a.stress_score;
-    if (sort === "mom") return (a.mom_change_pct ?? 0) - (b.mom_change_pct ?? 0);
-    if (sort === "consecutive") return b.consecutive_declining_months - a.consecutive_declining_months;
-    if (sort === "holdings") return b.latest_holdings_bn - a.latest_holdings_bn;
-    return 0;
-  });
-  return (
-    <div style={{ overflowX: "auto" }}>
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            <ColHeader label="Country" tip="Foreign sovereign entity holding US Treasury securities, as reported in the TIC (Treasury International Capital) dataset." align="left" />
-            <ColHeader label="Region" tip="Geopolitical region grouping. Used to identify regional stress clusters — e.g. simultaneous selling across Asia or the Middle East." align="left" />
-            <ColHeader label="Holdings $B" tip="Current US Treasury holdings in billions of USD, from the most recent TIC monthly report. Includes notes, bonds, and T-bills." sortKey="holdings" activeSort={sort} onSort={setSort} />
-            <ColHeader label="MoM %" tip="Month-over-month percentage change in Treasury holdings. Negative values (red) indicate selling. Values below −1% over consecutive months are a primary stress signal." sortKey="mom" activeSort={sort} onSort={setSort} />
-            <ColHeader label="Consec ↓" tip="Number of consecutive months with declining Treasury holdings. Persistence matters: a country buying one month and selling the next is noise; 3+ consecutive months of decline is a structural signal." sortKey="consecutive" activeSort={sort} onSort={setSort} />
-            <ColHeader label="Stress Score" tip="Composite score combining MoM decline magnitude (0–30 pts) and consecutive declining months (0–20 pts, capped at 5 months × 4 pts). Higher = more stress. Score ≥25 with 3+ consecutive months triggers an alert." align="right" sortKey="stress_score" activeSort={sort} onSort={setSort} style={{ minWidth: 120 }} />
-          </tr>
-        </thead>
-        <tbody>
-          {sorted.map(c => {
-            const isSelected = selected?.country_iso === c.country_iso;
-            const alertColor = c.alert ? scoreColor(c.stress_score) : null;
-            return (
-              <tr key={c.country_iso} onClick={() => onSelect(isSelected ? null : c)}
-                style={{ cursor: "pointer", background: isSelected ? "#0F1923" : "transparent", borderBottom: "1px solid #0F1923" }}
-                onMouseEnter={e => e.currentTarget.style.background = "#0D1820"}
-                onMouseLeave={e => e.currentTarget.style.background = isSelected ? "#0F1923" : "transparent"}>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0" }}>
-                  {c.alert && <span style={{ color: alertColor, marginRight: 6 }}>●</span>}
-                  {c.country_name}<span style={{ marginLeft: 6, fontSize: 10, color: "#3A4D5C" }}>{c.country_iso}</span>
-                </td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 11, color: "#5A6878" }}>{c.region}</td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, color: "#8A9BAC", textAlign: "right" }}>{c.latest_holdings_bn != null ? `$${c.latest_holdings_bn.toFixed(1)}B` : "—"}</td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: c.mom_change_pct == null ? "#3A4D5C" : c.mom_change_pct < 0 ? "#E07B5A" : "#5DB87A" }}>
-                  {c.mom_change_pct != null ? `${c.mom_change_pct > 0 ? "+" : ""}${c.mom_change_pct.toFixed(2)}%` : "—"}
-                </td>
-                <td style={{ padding: "10px 12px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: c.consecutive_declining_months >= 3 ? "#E07B5A" : "#8A9BAC" }}>
-                  {c.consecutive_declining_months > 0 ? `${c.consecutive_declining_months}mo` : "—"}
-                </td>
-                <td style={{ padding: "10px 12px", minWidth: 140 }}><StressBar score={c.stress_score} /></td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
-  );
-}
 
 function HoldingsTab({ onCountrySelect, latestAll = {} }) {
   const [holdings, setHoldings] = useState(null);
@@ -688,7 +639,7 @@ function USADashboard() {
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - range);
-    const codes = "DGS30,DGS10,DGS2,DGS5,FEDFUNDS,DFII10,DTWEXBGS,CPIAUCSL,M2SL";
+    const codes = "DGS30,DGS10,DGS2,DGS5,FEDFUNDS,DFII10,DTWEXBGS,CPIAUCSL,M2SL,GOLD_SPOT_USD";
     apiFetch(`/timeseries?metric_codes=${codes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then(r => r.json())
       .then(raw => {
@@ -726,7 +677,6 @@ function USADashboard() {
 
   // ── Fiscal breaking point calculator ────────────────────────────────────────
   // Constants (FY2024 actuals / CBO estimates)
-  const TOTAL_DEBT_T = 36.2;          // $T
   const ANNUAL_REVENUE_T = 4.9;       // $T federal revenue
   const ANNUAL_ROLLOVER_T = 6.0;      // $T debt rolling over annually (~avg 6Y maturity)
   const LOCKED_IN_INTEREST_T = 0.55;  // $T already locked in at existing rates
@@ -734,7 +684,12 @@ function USADashboard() {
   const SPR_CAPACITY_MB = 714;        // Million barrels capacity
   const US_GOLD_TONNES = 8133;        // Tonnes (unchanged since 1971)
   const US_GOLD_TROY_OZ = 261.5e6;    // Troy ounces
-  const SPOT_GOLD = 4587;             // $/oz approximate
+  // F-0057: was a hardcoded 4587. GOLD_SPOT_USD is a live daily series
+  // (D-0041) and the page already queries this API, so a frozen constant
+  // here was stating US gold holdings against a months-old price. No
+  // fallback constant: if the series is missing the tile shows nothing
+  // rather than a plausible wrong number.
+  const spotGold = latest("GOLD_SPOT_USD");
 
   const calcInterestCost = (yieldRate) => {
     // New debt issued this year at new yield, rest at existing average rate
@@ -819,7 +774,7 @@ function USADashboard() {
           { label: "M2 Growth YoY", val: m2Yoy!=null?`${m2Yoy.toFixed(1)}%`:"—", color: m2Yoy!=null&&m2Yoy>10?"#E07B5A":m2Yoy!=null&&m2Yoy>5?"#E8C547":"#5DB87A", sub: m2Yoy!=null?`$${(m2Latest/1000).toFixed(1)}T total`:"" },
           { label: "CPI YoY", val: cpiYoy!=null?`${cpiYoy.toFixed(1)}%`:"—", color: cpiYoy!=null&&cpiYoy>4?"#E07B5A":cpiYoy!=null&&cpiYoy>2?"#E8C547":"#5DB87A", sub: cpiYoy!=null&&cpiYoy>2?"Above 2% target":"" },
           { label: "Dollar Index", val: dxyLatest!=null?dxyLatest.toFixed(1):"—", color: "#7EC4A0", sub: "" },
-          { label: "US Gold", val: `${US_GOLD_TONNES.toLocaleString()}t`, color: "#C8A96E", sub: `$${((US_GOLD_TROY_OZ * SPOT_GOLD)/1e12).toFixed(2)}T at spot` },
+          { label: "US Gold", val: `${US_GOLD_TONNES.toLocaleString()}t`, color: "#C8A96E", sub: spotGold != null ? `$${((US_GOLD_TROY_OZ * spotGold)/1e12).toFixed(2)}T at $${spotGold.toFixed(0)}/oz` : "spot price unavailable" },
           { label: "SPR Level", val: `${SPR_CURRENT_MB}M bbl`, color: SPR_CURRENT_MB < 400 ? "#E07B5A" : "#5DB87A", sub: `${((SPR_CURRENT_MB/SPR_CAPACITY_MB)*100).toFixed(0)}% of capacity (${SPR_CAPACITY_MB}M)` },
         ].map(s => (
           <div key={s.label} style={{ background:"#0F1923", border:"1px solid #1A2530", borderTop:`2px solid ${s.color}`, borderRadius:2, padding:"12px 16px", flex:"1 1 130px" }}>
@@ -909,7 +864,7 @@ function USADashboard() {
           <ResponsiveContainer width="100%" height={200}>
             <LineChart data={yieldData} margin={{ top:4, right:8, bottom:4, left:8 }}>
               <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} minTickGap={60} />
+              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} minTickGap={60} interval="preserveStartEnd" />
               <YAxis tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} width={40} tickFormatter={v=>`${v}%`} />
               <ReferenceLine y={BREAK} stroke="#E07B5A" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value:`${BREAK.toFixed(1)}% warning`, fill:"#E07B5A66", fontFamily:"monospace", fontSize:9, position:"right" }} />
               <ReferenceLine y={0} stroke="#2A3540" strokeDasharray="3 3" />
@@ -935,7 +890,7 @@ function USADashboard() {
           <ResponsiveContainer width="100%" height={160}>
             <LineChart data={m2YoyData} margin={{ top:4, right:8, bottom:4, left:8 }}>
               <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} minTickGap={60} />
+              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} minTickGap={60} interval="preserveStartEnd" />
               <YAxis tick={{ fill:"#3A4D5C", fontFamily:"monospace", fontSize:10 }} axisLine={false} tickLine={false} width={44} tickFormatter={v=>`${v.toFixed(0)}%`} />
               <ReferenceLine y={10} stroke="#E07B5A" strokeDasharray="4 4" strokeOpacity={0.5} label={{ value:"10%", fill:"#E07B5A66", fontFamily:"monospace", fontSize:9, position:"right" }} />
               <ReferenceLine y={0} stroke="#2A3540" strokeDasharray="3 3" />
@@ -1231,8 +1186,8 @@ function CrossAssetTab() {
                 <tbody>
                   {displayData.map(c => {
                     const tier = c.signal_tier || (c.divergence_signal ? "DIVERGENCE" : c.cross_asset_stress ? "CROSS_ASSET" : c.no_tic_holdings ? "EXITED" : c.selling_treasuries ? "TREASURY_ONLY" : "GOLD_ONLY");
-                    const tc = tier==="DIVERGENCE"?"#FF4444":tier==="CROSS_ASSET"?"#E07B5A":tier==="EXITED"||tier==="EXITED+GOLD_SELL"?"#FF8C00":tier==="TREASURY_ONLY"?"#E8C547":"#C8A96E";
-                    const tierLabel = tier==="DIVERGENCE"?"⚡ DIVERGENCE":tier==="CROSS_ASSET"?"⚠ CROSS-ASSET":tier==="EXITED"?"🚨 EXITED":tier==="EXITED+GOLD_SELL"?"🚨 EXITED+Au↓":tier==="TREASURY_ONLY"?"T-ONLY":"Au ONLY";
+                    const tc = tierColor(tier);
+                    const label = tierLabel(tier);
                     return (
                       <tr key={c.country_iso} style={{ borderBottom:"1px solid #0F1923" }}
                         onMouseEnter={e => e.currentTarget.style.background="#0D1820"}
@@ -1241,7 +1196,7 @@ function CrossAssetTab() {
                           {c.country_name}<span style={{ marginLeft:6, fontSize:10, color:"#3A4D5C" }}>{c.country_iso}</span>
                         </td>
                         <td style={{ padding:"10px 12px" }}>
-                          <span style={{ fontFamily:"monospace", fontSize:10, color:tc, background:`${tc}18`, border:`1px solid ${tc}44`, borderRadius:2, padding:"2px 6px", whiteSpace:"nowrap" }}>{tierLabel}</span>
+                          <span style={{ fontFamily:"monospace", fontSize:10, color:tc, background:`${tc}18`, border:`1px solid ${tc}44`, borderRadius:2, padding:"2px 6px", whiteSpace:"nowrap" }}>{label}</span>
                         </td>
                         <td style={{ padding:"10px 12px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>
                           {c.no_tic_holdings
@@ -1708,6 +1663,9 @@ setLatestAll({ latest, prior });
     finally { setLoading(false); }
   }, [activeMetrics, range, normalized]);
 
+  // F-0056: fetchChartData is a useCallback over [activeMetrics, range,
+  // normalized]; none of its setters touch those, so this cannot loop.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { fetchChartData(); }, [fetchChartData]);
   useEffect(() => {
     apiFetch(`/stats`).then(r => r.json()).then(setStats).catch(() => {});
@@ -1783,7 +1741,7 @@ setLatestAll({ latest, prior });
                 <ResponsiveContainer width="100%" height={380}>
                   <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
                     <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
-                    <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 11 }} axisLine={{ stroke: "#1A2530" }} tickLine={false} minTickGap={60} />
+                    <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 11 }} axisLine={{ stroke: "#1A2530" }} tickLine={false} minTickGap={60} interval="preserveStartEnd" />
                     <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => normalized ? `${v.toFixed(1)}%` : v.toFixed(2)} width={52} />
                     {normalized && <ReferenceLine y={0} stroke="#2A3540" strokeDasharray="4 4" />}
                     <Tooltip content={<CustomTooltip />} />
@@ -1826,7 +1784,6 @@ setLatestAll({ latest, prior });
         {tab === "GOLD" && <GoldReservesTab onCountrySelect={handleCountrySelect} />}
         {tab === "COMPOSITE" && <CompositeTab onCountrySelect={handleCountrySelect} />}
         {tab === "CDS" && <CDSTab onCountrySelect={handleCountrySelect} />}
-        {tab === "STRESS" && <StressScoreTab />}
         {tab === "COUNTRY" && (
           <CountryTab
             initialIso={countryIso}
@@ -1842,117 +1799,6 @@ setLatestAll({ latest, prior });
   );
 }
 
-function StressScoreTab() {
-  const [score, setScore] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    apiFetch(`/stress-score`)
-      .then(r => r.json())
-      .then(d => { setScore(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
-  if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>computing stress score...</div>;
-  if (!score) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>Failed to load stress score.</div>;
-
-  const overall = score.overall_score;
-  const scoreColor = overall >= 75 ? "#FF4444" : overall >= 50 ? "#E07B5A" : overall >= 25 ? "#E8C547" : "#5DB87A";
-  const comps = score.components || {};
-  const weights = score.weights || {};
-
-  const FACTORS = [
-    { key: "yield_curve", label: "Yield Curve", desc: "DGS10 - DGS2 spread", note: "Inverted curve = stress", color: "#7EB8C9", unit: "pp" },
-    { key: "concentration", label: "Holdings Concentration", desc: "Top country % of total", note: "High concentration = stress", color: "#C8A96E", unit: "%" },
-    { key: "commodity_volatility", label: "Commodity Volatility", desc: "30-day WTI std dev", note: "High volatility = stress", color: "#E07B5A", unit: "%" },
-    { key: "gold_accumulation", label: "Gold Accumulation", desc: "CB gold YoY change", note: "Rapid buying = de-dollarization signal", color: "#E8C547", unit: "% YoY" },
-  ];
-
-  return (
-    <div>
-      {/* Overall score */}
-      <div style={{ background: "#0A1520", border: `1px solid ${scoreColor}44`, borderLeft: `4px solid ${scoreColor}`, borderRadius: 2, padding: "28px 32px", marginBottom: 24 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 32, flexWrap: "wrap" }}>
-          <div>
-            <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", letterSpacing: "0.15em", marginBottom: 8 }}>MACRO STRESS INDEX</div>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span style={{ fontFamily: "monospace", fontSize: 56, fontWeight: 700, color: scoreColor, lineHeight: 1 }}>{overall.toFixed(1)}</span>
-              <span style={{ fontFamily: "monospace", fontSize: 16, color: "#3A4D5C" }}>/ 100</span>
-            </div>
-            <div style={{ fontFamily: "monospace", fontSize: 13, color: scoreColor, marginTop: 8 }}>{score.interpretation}</div>
-            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", marginTop: 4 }}>as of {new Date(score.timestamp).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</div>
-          </div>
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <div style={{ background: "#080E14", borderRadius: 4, height: 12, overflow: "hidden", marginBottom: 8 }}>
-              <div style={{ width: `${Math.min(100, overall)}%`, background: scoreColor, height: "100%", borderRadius: 4, transition: "width 0.5s" }} />
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>
-              <span>LOW</span><span>MODERATE</span><span>ELEVATED</span><span>SEVERE</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Component breakdown */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 16, marginBottom: 24 }}>
-        {FACTORS.map(f => {
-          const comp = comps[f.key] || {};
-          const w = weights[f.key] ?? 0;
-          const active = w > 0;
-          return (
-            <div key={f.key} style={{ background: "#0A1520", border: `1px solid ${active ? f.color + "33" : "#1A2530"}`, borderTop: `2px solid ${active ? f.color : "#1A2530"}`, borderRadius: 2, padding: "18px 20px", opacity: active ? 1 : 0.5 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
-                <div>
-                  <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8E0D0", fontWeight: 600 }}>{f.label}</div>
-                  <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", marginTop: 2 }}>{f.desc}</div>
-                </div>
-                <span style={{ fontFamily: "monospace", fontSize: 10, color: f.color, background: `${f.color}18`, border: `1px solid ${f.color}44`, borderRadius: 2, padding: "2px 7px", whiteSpace: "nowrap" }}>
-                  {Math.round(w * 100)}% weight
-                </span>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
-                <div style={{ fontFamily: "monospace", fontSize: 28, fontWeight: 700, color: f.color }}>{(comp.score ?? 0).toFixed(0)}</div>
-                <div>
-                  <div style={{ fontFamily: "monospace", fontSize: 18, color: "#E8E0D0" }}>
-                    {comp.value != null ? `${comp.value > 0 && f.unit !== "pp" ? "+" : ""}${comp.value.toFixed(2)}${f.unit}` : "—"}
-                  </div>
-                  <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>{f.note}</div>
-                </div>
-              </div>
-              <div style={{ background: "#080E14", borderRadius: 2, height: 5, overflow: "hidden" }}>
-                <div style={{ width: `${Math.min(100, comp.score ?? 0)}%`, background: f.color, height: "100%", borderRadius: 2 }} />
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Methodology */}
-      <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "20px 24px" }}>
-        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 8 }}>MODEL METHODOLOGY</div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          {[
-            { factor: "Yield Curve (35%)", detail: "DGS10 - DGS2 spread. Maps -1% (fully inverted = 100 stress) to +1% (normal = 0 stress). At 0% = 50 stress.", color: "#7EB8C9" },
-            { factor: "Concentration (30%)", detail: "Top country as % of total TIC holdings. Maps 30% = 100 stress to <10% = 0 stress. Tracks de-dollarization risk.", color: "#C8A96E" },
-            { factor: "Commodity Volatility (20%)", detail: "30-day WTI crude oil price std dev. Maps 5%+ = 100 stress to <1% = 0 stress. Proxy for macro shock.", color: "#E07B5A" },
-            { factor: "Gold Accumulation (15%)", detail: "YoY % change in total CB gold (common-country basis). Maps >3% = 100 stress to <0% = 0 stress. De-dollarization signal.", color: "#E8C547" },
-          ].map(m => (
-            <div key={m.factor} style={{ display: "flex", gap: 12, alignItems: "flex-start" }}>
-              <div style={{ width: 8, height: 8, borderRadius: "50%", background: m.color, flexShrink: 0, marginTop: 4 }} />
-              <div>
-                <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8E0D0", fontWeight: 600 }}>{m.factor}</div>
-                <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", lineHeight: 1.6, marginTop: 2 }}>{m.detail}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#1E2D3D", marginTop: 16, borderTop: "1px solid #1A2530", paddingTop: 10 }}>
-          Composite = weighted average of all active factors · Recalculated daily at 04:30 UTC · Data: FRED, US Treasury TIC, World Gold Council
-        </div>
-      </div>
-    </div>
-  );
-}
 function CDSCoverageBanner({ coverage, fetching, fetchResult, onFetch }) {
   const pipe = coverage?.last_pipeline;
   const started = pipe?.started_at ? new Date(pipe.started_at).toLocaleString("en-US", {
@@ -2434,6 +2280,24 @@ function AboutTab() {
         Project Sentinel monitors sovereign stress signals in global treasury markets. The core thesis: countries that are
         <span style={{ color: "#C8A96E" }}> forced sellers</span> of US Treasuries reveal themselves through the data before it becomes news.
         The highest-conviction signal is simultaneous selling of both treasuries and gold — especially into a rising gold price.
+      </div>
+
+      {/* Retired surfaces — D-0051 */}
+      <div style={{ marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>RETIRED</div>
+        <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderLeft: "3px solid #3A4D5C", borderRadius: 2, padding: "16px 20px", fontFamily: "monospace", fontSize: 11, color: "#5A6878", lineHeight: 1.8, maxWidth: 800 }}>
+          <div style={{ color: "#8A9BAC", marginBottom: 6 }}>STRESS tab — retired 2026-09-29</div>
+          A single US-level stress score built from the yield curve, holdings concentration
+          and commodity volatility. It answered a different question from
+          <span style={{ color: "#C8A96E" }}> COMPOSITE</span>, which scores sovereign stress
+          per country, and having both invited the two to be read as one number disagreeing
+          with itself.
+          <div style={{ marginTop: 10, color: "#3A4D5C" }}>
+            The scorer itself is not gone: <span style={{ color: "#5A6878" }}>stress_score_v2</span> still
+            runs nightly at 04:30 UTC and <span style={{ color: "#5A6878" }}>GET /api/stress-score</span> still
+            serves it. Only the tab was removed. See D-0051.
+          </div>
+        </div>
       </div>
 
       {/* Data Sources */}

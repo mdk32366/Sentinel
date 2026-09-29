@@ -56,6 +56,14 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
         working-directory: ui
+      # F-0056: lint reported eight errors for as long as the rule existed and
+      # no gate ran it - a check whose answer could not change anything. The
+      # six unused symbols are gone and the two set-state-in-effect sites carry
+      # an explicit disable with a reason, so this now starts clean and catches
+      # the NEXT stray import rather than accumulating.
+      - name: Lint the frontend
+        run: npm run lint
+        working-directory: ui
       - name: Run frontend tests
         run: npm test
         working-directory: ui

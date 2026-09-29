@@ -1351,4 +1351,76 @@ effects, which is `F-0053`-shaped work against code that still has almost no
 coverage. Turning it on is a decision about how much breakage to accept at
 once, and that is the owner's call rather than a Builder's.
 
-**Status.** Open.
+**Status.** **CLOSED 2026-09-29.** The six `no-unused-vars` are gone — three
+stray imports, an unused catch binding, a leftover constant, and two dead
+components (`StressTable`, plus `StressScoreTab` under `D-0051`). The two
+`set-state-in-effect` sites carry an explicit `eslint-disable-next-line` with
+the reasoning recorded above them rather than a silent suppression. `npm run
+lint` now runs in CI ahead of the tests and starts clean, so it catches the
+next stray symbol instead of accumulating.
+
+**Worth noting about the directives.** The first attempt put
+`eslint-disable-next-line` above a further comment line, so it applied to the
+comment and not the code. ESLint reported them as *unused directives* — a check
+on the check — and both real errors were still live. The comment order matters,
+and only lint itself said so.
+
+### F-0057 — The US gold tile priced 261.5 million ounces at a hardcoded, months-old spot
+
+**Claim.** `USADashboard` valued US gold holdings using
+`const SPOT_GOLD = 4587;` — a constant — while `GOLD_SPOT_USD` is a live daily
+series on the same API the component already queries.
+
+**Artifact.** `App.jsx` before this change: `SPOT_GOLD = 4587 // $/oz
+approximate`, used as
+``sub: `$${((US_GOLD_TROY_OZ * SPOT_GOLD)/1e12).toFixed(2)}T at spot` ``.
+Production `GOLD_SPOT_USD` on 2026-09-25 was **4261.05**. 4587 is the May 2026
+monthly average.
+
+**Sample size.** One constant, one tile.
+
+**Consequence.** 261.5 million troy ounces at 4587 is $1.199T; at the live
+4261 it is $1.114T. The tile overstated US gold holdings by roughly **$85
+billion**, presented as "at spot" — a phrase that asserts currency.
+
+**Why lint could not see it.** `SPOT_GOLD` was *used*, so `no-unused-vars` was
+silent. It was found by reading the code around an unrelated unused constant
+three lines above it.
+
+**The pattern, for the fourth time.** A frozen value standing in for live data
+that the system already has: `F-0004` (shadow CSV), `F-0050` (frozen calendar
+year), `F-0055` (previous row labelled as thirty days), this. Each one produced
+a plausible number with correct formatting and nothing red.
+
+**Fixed.** The tile reads `GOLD_SPOT_USD` and prints the price it used —
+"$1.11T at $4261/oz" rather than "at spot". **No fallback constant:** if the
+series is unavailable the tile says so. A default here would be the defect
+restored quietly.
+
+### F-0058 — The tested tier helpers were the dead copy
+
+**Claim.** `tierColor` and `tierLabel` were extracted from `App.jsx` into
+`lib/format.js` on 2026-09-29 and given tests. Nothing called them. The
+component that actually renders tiers carried its own inline ternary — and that
+one handled **six** tiers, including `EXITED` and `EXITED+GOLD_SELL`, which the
+extracted four-tier version did not.
+
+**Artifact.** `npm run lint` reporting `'tierColor' is defined but never used`
+and `'tierLabel' is defined but never used` at `App.jsx:7`, against
+`format.test.js` asserting behaviour for both. The live implementation was at
+`App.jsx:1235`.
+
+**Sample size.** Two functions, one component.
+
+**Why it matters more than an unused import.** The tests passed, so the
+register could have recorded tier rendering as covered. It was not: the six-tier
+path a user sees had no test, and the four-tier path that had tests was
+unreachable. A false sense of coverage is worse than none, because it stops
+anyone looking.
+
+**How it was caught.** By `no-unused-vars` — a rule nothing ran (`F-0056`) —
+while triaging whether those eight errors were worth fixing. The cheapest check
+in the project found the most misleading defect of the day.
+
+**Fixed.** The helpers handle all six tiers, the live component calls them, and
+the two previously-uncovered tiers have tests.

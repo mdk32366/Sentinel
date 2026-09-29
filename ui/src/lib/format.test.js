@@ -73,6 +73,28 @@ describe("tierColor / tierLabel", () => {
     expect(new Set(colors).size).toBe(tiers.length);
   });
 
+  it("handles the EXITED tiers the live table renders", () => {
+    // These two were the gap: the extracted helpers covered four tiers while
+    // the component that actually renders them had an inline six-tier ternary.
+    // The tested copy was the dead one.
+    expect(tierLabel("EXITED")).toBe("🚨 EXITED");
+    expect(tierLabel("EXITED+GOLD_SELL")).toBe("🚨 EXITED+Au↓");
+    expect(tierColor("EXITED")).toBe("#FF8C00");
+  });
+
+  it("gives both EXITED variants the same colour, deliberately", () => {
+    // They share a colour because they are the same alert at different
+    // severities; the LABEL is what distinguishes them.
+    expect(tierColor("EXITED")).toBe(tierColor("EXITED+GOLD_SELL"));
+    expect(tierLabel("EXITED")).not.toBe(tierLabel("EXITED+GOLD_SELL"));
+  });
+
+  it("keeps EXITED distinct from every other tier's colour", () => {
+    for (const tier of tiers) {
+      expect(tierColor("EXITED")).not.toBe(tierColor(tier));
+    }
+  });
+
   it("falls back rather than throwing on an unknown tier", () => {
     expect(tierColor("SOMETHING_NEW")).toBe("#5A6878");
     expect(tierLabel("SOMETHING_NEW")).toBe("SOMETHING_NEW");
