@@ -199,7 +199,7 @@ server-side API key is still a funded LLM endpoint for anyone past the shared
 password. The only durable fix is for the server to decide what it is paying
 for.
 
-### D-0032 — [OWNER TO RULE] Alembic: initialize or remove
+### D-0032 — Alembic is removed; DDL is manual and documented
 
 `alembic==1.12.1` is pinned and has never been initialized. Schema comes from
 `create_all()`, which ignores changed columns silently.
@@ -212,6 +212,36 @@ DDL is manual and names the procedure.
 Pinning an unused migration tool is worse than either, because it reads as
 having migrations. **Owner's ruling.**
 
+
+**RULED 2026-09-29: option (b), drop it.** Owner's decision, made against the
+evidence in `F-0051` rather than a preference: alembic appears exactly once in
+the project — the pin in `requirements.txt` — with no `alembic.ini`, no
+`versions/`, no import anywhere in code, CI or the Dockerfile, and nothing
+depending on it transitively. There were no migrations to abandon.
+
+**What the decision costs, and what was done about it.** Removing a migration
+tool removes *detection*, not migrations we were using. `create_all()` creates
+missing tables and silently ignores every other change, so `models.py` and the
+database can disagree indefinitely with nothing saying so.
+
+So `tools/check_schema_drift.py` was added in the same change. It compares
+`Base.metadata` against a live schema and exits non-zero on structural drift —
+a declared table or column the database lacks, or the reverse.
+
+**Type differences are advisory rather than fatal, deliberately.** Run against
+the local database it reports eight `DATETIME` versus `TIMESTAMP` rows, all of
+them correct: that is SQLAlchemy's `DateTime` rendering in Postgres. A check
+that failed on those would fail on a perfectly good schema and be ignored
+inside a week — `D-0024`'s argument, applied to schemas instead of freshness.
+
+**Still not proved where it matters.** The drift check has never run against
+production; that needs `fly ssh console`, which the Builder cannot reach.
+`A-0010` stays ASSUMED until it does, and running it belongs in the next
+session that has production access.
+
+The procedure — how DDL is applied, that `psql` is absent from the image, and
+where migration SQL lives — is in `docs/architecture.md` under *Schema changes
+are manual*.
 ### D-0033 — Freshness lives on `/api/freshness`, not `/api/health`
 
 **Choice.** The freshness report is served from an authenticated

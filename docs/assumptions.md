@@ -228,7 +228,15 @@ table level, or having been applied by hand.
 a write error far from the change that caused it —
 `StringDataRightTruncation` being the example already encountered.
 
-**Status:** ASSUMED, AND `error_message` IS ALREADY A KNOWN CASE. A one-query
+**Status:** ASSUMED, AND `error_message` IS ALREADY A KNOWN CASE.
+
+**Amendment 2026-09-29.** `D-0032` removed alembic, which makes this assumption
+more load-bearing rather than less — nothing now exists that would have caught
+a silent column change even in principle. `tools/check_schema_drift.py` was
+added to detect it, and reports **no structural drift** against the local
+database. It has **not** been run against production, which needs
+`fly ssh console`. Until it has, this stays assumed, and the check is the
+cheapest way to close it. A one-query
 audit comparing `information_schema.columns` against the models settles it for
 every column at once.
 
