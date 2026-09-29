@@ -104,22 +104,33 @@ export function CompositeTab({ onCountrySelect }) {
           : (
             <div style={{ overflowX:"auto" }}>
               <table style={{ width:"100%", borderCollapse:"collapse", tableLayout:"fixed" }}>
+                {/* F-0086: exactly one <col> per column.
+                    There were fifteen for fourteen columns after D-0062
+                    removed CDS Term. The browser maps the first fourteen and
+                    drops the last - so Activity inherited Score's 86px slot,
+                    the intended auto-width column was discarded, and because
+                    the specified widths summed to 828px against a full-width
+                    table the browser inflated every column proportionally to
+                    make up the difference. That inflation is the empty space.
+
+                    Sized to content now, with the prose column unsized so it
+                    takes the slack rather than every column taking a share of
+                    it. */}
                 <colgroup>
-                  <col style={{ width: 108 }} />
-                  <col style={{ width: 78 }} />
-                  <col style={{ width: 70 }} />
-                  <col style={{ width: 50 }} />
-                  <col style={{ width: 54 }} />
-                  <col style={{ width: 36 }} />
-                  <col style={{ width: 36 }} />
-                  <col style={{ width: 54 }} />
-                  <col style={{ width: 36 }} />
-                  <col style={{ width: 54 }} />
-                  <col style={{ width: 62 }} />
-                  <col style={{ width: 42 }} />
-                  <col style={{ width: 62 }} />
-                  <col style={{ width: 86 }} />
-                  <col />
+                  <col style={{ width: 132 }} />{/* Country + ISO; "United Arab Emirates" is the longest */}
+                  <col style={{ width: 84 }} />{/* Tier badge */}
+                  <col style={{ width: 76 }} />{/* T-Bill MoM, or "ZERO" */}
+                  <col style={{ width: 52 }} />{/* Consec */}
+                  <col style={{ width: 62 }} />{/* Gold t */}
+                  <col style={{ width: 40 }} />{/* T */}
+                  <col style={{ width: 40 }} />{/* G */}
+                  <col style={{ width: 58 }} />{/* Spread */}
+                  <col style={{ width: 40 }} />{/* P */}
+                  <col style={{ width: 58 }} />{/* CDS 5Y */}
+                  <col style={{ width: 46 }} />{/* Mult */}
+                  <col style={{ width: 78 }} />{/* Non-$ */}
+                  <col style={{ width: 96 }} />{/* Score: bar + number + marker */}
+                  <col />{/* Activity - takes the remainder */}
                 </colgroup>
                 <thead>
                   <tr>
@@ -203,7 +214,7 @@ export function CompositeTab({ onCountrySelect }) {
                             )}
                           </div>
                         </td>
-                        <td style={{ padding:"7px 10px", fontFamily:"monospace", fontSize:11, color:"#5A6878", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word", wordBreak:"break-word", lineHeight:1.45, minWidth:170, maxWidth:240, ...activitySticky }}
+                        <td style={{ padding:"7px 10px", fontFamily:"monospace", fontSize:11, color:"#5A6878", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word", wordBreak:"break-word", lineHeight:1.45, ...activitySticky }}
                           title={(c.active_signals||[]).join(" · ") || undefined}>
                           {(c.active_signals||[]).join(" · ") || "—"}
                         </td>

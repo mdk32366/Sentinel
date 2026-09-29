@@ -179,3 +179,54 @@ describe("the CDS tile explains an absence", () => {
     expect(screen.getByText(/5Y only — no paired 10Y/)).toBeTruthy();
   });
 });
+
+describe("D-0073: every country tile explains itself", () => {
+  const LABELS = ["T-Bill Holdings", "MoM Change", "Gold Reserves",
+                  "Sovereign Yield", "Spread vs US 10Y", "5Y CDS"];
+
+  function openTile(container, label) {
+    const cell = [...container.querySelectorAll("div")]
+      .find((d) => d.textContent.trim().startsWith(label));
+    fireEvent.mouseEnter(cell.closest("[tabindex]") ?? cell);
+    return screen.queryByRole("tooltip");
+  }
+
+  it("all six tiles are rendered", () => {
+    render(<CountryStatCards ticHistory={{ data_points: 3 }} cds={NO_CDS} />);
+    for (const label of LABELS) {
+      expect(screen.getByText(label), label).toBeTruthy();
+    }
+  });
+
+  it("each tile is focusable, so the explanation is not mouse-only", () => {
+    const { container } = render(<CountryStatCards ticHistory={{ data_points: 3 }} cds={NO_CDS} />);
+    const focusable = container.querySelectorAll('[tabindex="0"]');
+    expect(focusable.length).toBe(6);
+  });
+
+  it("the CDS tip quotes the live scoring ladder, not a copy of it", () => {
+    // F-0081's lesson: a threshold written into prose drifts the moment the
+    // constant moves. This tip is generated from CDS_BANDS.
+    const { container } = render(<CountryStatCards ticHistory={null} cds={NO_CDS} />);
+    const tip = openTile(container, "5Y CDS");
+    expect(tip.textContent).toMatch(/>200bps = 5 pts/);
+    expect(tip.textContent).toMatch(/>350bps = 10 pts/);
+    expect(tip.textContent).toMatch(/>600bps = 15 pts/);
+  });
+
+  it("the spread tip says it is measured and not scored", () => {
+    const { container } = render(<CountryStatCards ticHistory={null} cds={NO_CDS} countryYield={1.05} us10y={4.2} />);
+    const tip = openTile(container, "Spread vs US 10Y");
+    expect(tip.textContent).toMatch(/MEASURED ONLY/);
+    expect(tip.textContent).toMatch(/zero points to zero countries/);
+  });
+
+  it("the CDS colour follows the scoring ladder", () => {
+    // 248bps is above 200 and below 350 - the first rung. It read as the
+    // SECOND rung's colour while the tile used the retired 100/250 numbers.
+    const { container } = render(<CountryStatCards ticHistory={null}
+      cds={{ cds5y: 248, cds10y: null, termSpread: null, coverage: "quoted" }} />);
+    const value = [...container.querySelectorAll("div")].find((d) => d.textContent === "248bps");
+    expect(value.style.color).toBe("rgb(200, 169, 110)");
+  });
+});
