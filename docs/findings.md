@@ -2014,3 +2014,50 @@ This does not change the finding: the index has never constrained these rows
 and the 16 pre-existing duplicates arrived without any help from me. It does
 mean the loud version of this defect had an avoidable trigger, and that
 `D-0058` needs **no manual backfill at all** — deploying it is the backfill.
+
+**CLOSED 2026-09-29.** The owner authorised statement 2 and it ran, after the
+preconditions were checked in the same session: 0 pipeline runs in flight,
+0 duplicate groups. `DROP` and `CREATE` executed in one transaction, so there
+was no window in which the table had no unique index.
+
+```
+CREATE UNIQUE INDEX ix_metric_country_date ON public.timeseries
+  USING btree (metric_id, country_id, date) NULLS NOT DISTINCT
+```
+
+**Verified to bind, not assumed.** The entire finding was that a constraint
+can exist and reject nothing, so the index was made to reject something before
+it was believed — a duplicate of a country-less `DFF` row, attempted inside a
+transaction that was rolled back either way:
+
+```
+RESULT: rejected -> IntegrityError
+        duplicate key value violates unique constraint "ix_metric_country_date"
+COUNTRY-SCOPED: still rejected -> IntegrityError
+rows after rollbacks: 66400
+```
+
+The second line matters as much as the first: the rows the old index *did*
+protect are still protected. A fix that quietly traded one gap for another
+would have looked identical from the first assertion alone.
+
+**And a fresh database cannot drift back.** `database/models.py` now declares
+`postgresql_nulls_not_distinct=True`, so `create_all()` emits the same index
+on any new deployment, and `tests/test_timeseries_uniqueness.py` asserts the
+compiled Postgres DDL contains `NULLS NOT DISTINCT`.
+
+**Stated rather than left to be discovered:** SQLite shares Postgres' default
+NULL semantics and ignores the dialect kwarg, so the in-memory databases this
+suite runs against do **not** enforce this. A test that inserted a duplicate
+into SQLite and passed would prove the opposite of what it claimed, which is
+why the assertion is on the emitted DDL and the runtime behaviour was checked
+against production directly.
+
+**One consequence to watch.** `pipelines/fred_fetcher.py` still does
+check-then-insert with no `ON CONFLICT`. With the constraint binding, two
+overlapping FRED runs no longer duplicate silently — they raise
+`IntegrityError`, the per-metric handler catches it, that metric's batch rolls
+back and the run is logged `partial`. That is the correct direction (loud
+rather than silent, no data loss, since the other run wrote the rows) but it
+is a failure mode rather than a fix. Converting the insert to an upsert is the
+remaining work and is **not** done.
