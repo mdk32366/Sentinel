@@ -81,12 +81,23 @@ class T0016YieldCurveIgnoresDgs30(unittest.TestCase):
 class T0017AboutReadmeNameDgs30(unittest.TestCase):
     def test_t0017_about_and_readme_phase1_name_30y(self):
         root = Path(__file__).resolve().parents[1]
-        app = (root / "ui" / "src" / "App.jsx").read_text(encoding="utf-8")
         readme = (root / "README.md").read_text(encoding="utf-8")
 
-        # AboutTab FRED metrics: stale "10Y/5Y/2Y Treasury yields" without 30Y fails.
-        self.assertNotRegex(app, r"(?<!30Y/)10Y/5Y/2Y Treasury yields")
-        self.assertIn("30Y/10Y/5Y/2Y Treasury yields", app)
+        # The About tab moved from App.jsx to pages/AboutTab.jsx under
+        # ORDER-03 Part F. Search whichever files exist rather than naming one:
+        # this test is about D-0016's requirement that 30Y is NAMED, and it
+        # should not fail again the next time the component is moved.
+        candidates = [
+            root / "ui" / "src" / "pages" / "AboutTab.jsx",
+            root / "ui" / "src" / "App.jsx",
+        ]
+        present = [p for p in candidates if p.exists()]
+        self.assertTrue(present, "no About source found")
+        about = "\n".join(p.read_text(encoding="utf-8") for p in present)
+
+        # Stale "10Y/5Y/2Y Treasury yields" without 30Y fails.
+        self.assertNotRegex(about, r"(?<!30Y/)10Y/5Y/2Y Treasury yields")
+        self.assertIn("30Y/10Y/5Y/2Y Treasury yields", about)
 
         # README Phase 1 must list 30Y first (long-to-short).
         self.assertIn("Treasury yields (30Y, 10Y, 5Y, 2Y)", readme)

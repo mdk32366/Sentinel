@@ -167,6 +167,19 @@ credentials is the only remedy — a question that is now open rather than
 answered. `FRED_API_KEY`, `ANTHROPIC_API_KEY`, `AUTH_PASSWORD`, `AUTH_USERNAME`
 and `DATABASE_URL` are the secrets in scope.
 
+**RUN 2026-09-29 — forward half CONFIRMED.**
+`flyctl ssh console -a sentinel-holy-rain-4562 -C "ls -la /app/.env"` returned
+`ls: cannot access '/app/.env': No such file or directory`. The deployed image
+contains no `.env`. Under `D-0049` the image is now built from a context that
+excludes it twice over — `.dockerignore` lists `.env`, `.env.*` and `.envrc`.
+
+**The historical half stays unanswerable**, and is not being chased. Whether
+images deployed before 2026-09-26 carried a `.env` cannot be recovered from the
+current image, because the check ran after the fix instead of before it. If
+they did, those credentials sit in every registry layer pushed up to that date
+— which is part of why `D-0044` treats the whole set as due for rotation rather
+than only the two with confirmed exposure.
+
 **Still worth running, two ways.** `ls -la /app/.env` in a current container
 confirms the forward-looking half. A prior Fly release, if one is still
 retained, would answer the historical half — that is the only route left to it.
@@ -233,10 +246,21 @@ a write error far from the change that caused it —
 **Amendment 2026-09-29.** `D-0032` removed alembic, which makes this assumption
 more load-bearing rather than less — nothing now exists that would have caught
 a silent column change even in principle. `tools/check_schema_drift.py` was
-added to detect it, and reports **no structural drift** against the local
-database. It has **not** been run against production, which needs
-`fly ssh console`. Until it has, this stays assumed, and the check is the
-cheapest way to close it. A one-query
+added to detect it.
+
+**VERIFIED AGAINST PRODUCTION 2026-09-29.** `python3 /app/tools/check_schema_drift.py`
+over `fly ssh console`, against `fly-db`: **no structural drift.** Every
+declared table and column is present; nothing is present that is not declared.
+The only output is the same eight `DATETIME` versus `TIMESTAMP` advisories seen
+locally — SQLAlchemy's `DateTime` rendering in Postgres, not a difference.
+
+So `create_all()` has not silently skipped a needed column change — measured,
+not assumed. `composite_snapshots`, added under `D-0042`, is present in
+production, which also confirms the additive path works end to end.
+
+**Status: HOLDS, measured at one moment.** It describes today's schema, not the
+next column change, and the check is what turns it from an assumption into a
+question anyone can re-ask in one command. A one-query
 audit comparing `information_schema.columns` against the models settles it for
 every column at once.
 
