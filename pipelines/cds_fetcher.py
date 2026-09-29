@@ -100,9 +100,19 @@ def admit_cds_quote(value, as_of, now=None):
     Separated out so the two rules can be stated once and tested without a
     database. A rejected quote scores zero and says why, rather than scoring
     zero indistinguishably from a country nobody quotes.
+
+    `as_of` may be a `date` or a `datetime`, because the two callers get it
+    from different places: the scorer reads `TimeSeries.date` (a datetime) and
+    `/cds/all` reads `latest_cds_observation` (a date). Assuming one of them
+    raised `TypeError: unsupported operand type(s) for -: 'datetime.datetime'
+    and 'datetime.date'` on the endpoint, which is what a shared rule with two
+    callers costs when only one caller's input type is tested.
     """
     if value is None or as_of is None:
         return "no coverage"
+
+    if not isinstance(as_of, datetime) and isinstance(as_of, date):
+        as_of = datetime(as_of.year, as_of.month, as_of.day)
 
     now = now or datetime.utcnow()
     age_days = (now - as_of).days

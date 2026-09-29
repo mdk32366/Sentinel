@@ -20,7 +20,7 @@ The fetcher already refused to produce any of this. The reader did not refuse
 to consume it. Fixing the writer does not fix the reader.
 """
 import unittest
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 from pipelines.composite_stress import (
     MAX_CDS_AGE_DAYS,
@@ -109,6 +109,41 @@ class AbsenceIsReportedAsAbsence(unittest.TestCase):
         self.assertEqual(len(set(refusals)), 3, "refusal reasons must be distinguishable")
         for reason in refusals:
             self.assertTrue(reason and reason.strip())
+
+
+class BothCallersPassDifferentDateTypes(unittest.TestCase):
+    """The rule is shared by two callers that read `as_of` from different places.
+
+    The scorer reads `TimeSeries.date`, a **datetime**. `/cds/all` reads
+    `latest_cds_observation`, a **date**. The first version assumed datetime
+    and the endpoint raised in production:
+
+        TypeError: unsupported operand type(s) for -:
+        'datetime.datetime' and 'datetime.date'
+
+    Only one caller's input type had been tested. A shared rule needs a case
+    per caller, not per rule.
+    """
+
+    def test_a_plain_date_is_accepted(self):
+        self.assertIsNone(admit_cds_quote(100.0, date(2026, 9, 28), now=NOW))
+
+    def test_a_datetime_is_accepted(self):
+        self.assertIsNone(admit_cds_quote(100.0, datetime(2026, 9, 28), now=NOW))
+
+    def test_both_types_give_the_same_verdict(self):
+        for value, day in ((500.0, (2026, 7, 16)), (100.0, (2026, 9, 28)), (13775.2, (2026, 9, 29))):
+            with self.subTest(value=value, day=day):
+                self.assertEqual(
+                    admit_cds_quote(value, date(*day), now=NOW),
+                    admit_cds_quote(value, datetime(*day), now=NOW),
+                )
+
+    def test_a_stale_plain_date_is_still_refused(self):
+        reason = admit_cds_quote(500.0, date(2026, 7, 16), now=NOW)
+        self.assertIn("stale", reason)
+        self.assertIn("75d", reason)
+
 
 
 if __name__ == "__main__":
