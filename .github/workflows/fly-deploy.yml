@@ -59,9 +59,17 @@ jobs:
       - name: Run frontend tests
         run: npm test
         working-directory: ui
-      - name: Build the frontend
-        run: npm run build
-        working-directory: ui
+      # Mirror exactly what the Dockerfile's Node stage does: build, then put
+      # the output where the app mounts it. main.py mounts
+      # StaticFiles(directory="api/static") and RAISES if it is missing - which
+      # is the correct behaviour, since an app that cannot serve its UI should
+      # not start quietly. That means CI has to produce the directory the same
+      # way production does, rather than the app tolerating its absence.
+      - name: Build the frontend into api/static
+        run: |
+          npm run build --prefix ui
+          mkdir -p api/static
+          cp -r ui/dist/. api/static/
 
       - name: Run the test suite
         # -t . matters: without it discovery imports the test modules as
