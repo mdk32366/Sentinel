@@ -2654,3 +2654,42 @@ summarisation of figures `_gather_brief_context` had already gathered. The
 non-reasoning variant returns comparable output in a sixth of the time. The
 measurement is recorded beside the choice, because a model name with no note
 is a value someone will change without knowing what it cost to pick.
+
+### F-0086 — The composite colgroup had one more column than the table
+
+**Claim.** `CompositeTab` declared **15** `<col>` elements for **14** columns.
+`D-0062` removed the CDS Term column and left its `<col>` behind.
+
+**Artifact.**
+
+```
+header columns: 14   body cells: 14   <col> entries: 15
+fixed widths: 108 78 70 50 54 36 36 54 36 54 62 42 62 86  (sum 828) + 1 auto
+```
+
+**What it did.** A browser maps `<col>` elements to columns in order and
+discards the surplus. Every column from CDS 5Y rightwards inherited the width
+meant for its neighbour, **Activity took Score's 86px**, and the unsized
+column written to absorb the remainder was thrown away. With the specified
+widths summing to 828px against a full-width table, the browser then inflated
+every column proportionally to make up the difference.
+
+Reported as *"nearly the entire right half of the list is open real estate"* —
+which is what proportional inflation of thirteen numeric columns looks like.
+
+**Sample size.** One colgroup, one stale entry, every column after the tenth.
+
+**Why the earlier spacing work did not catch it.** `D-0068` narrowed
+Activity's `<td>` from `minWidth: 260` to `170/240`. Under
+`table-layout: fixed` the `<col>` governs and a cell's own width is ignored —
+so that change did nothing at all, and I reported the column as narrowed
+having adjusted a property the layout algorithm was not reading.
+
+Two lessons, and the second is the one that generalises: a removed column is
+not removed until its `<col>` goes with it, and **a styling change nothing
+verifies is a claim, not a fix**. There is no test here that could have
+caught either, because neither jsdom nor a build computes table layout.
+
+**Fixed.** Fourteen `<col>` elements — thirteen sized to their content, and
+the prose column unsized so it takes the slack rather than every column
+taking a share of it.
