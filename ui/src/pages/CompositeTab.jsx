@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
-import { MAX_RAW_SCORE, STRESS_DIMENSIONS, STRESS_MULTIPLIERS } from "../lib/dimensions";
+import { MAX_RAW_SCORE, STRESS_DIMENSIONS, STRESS_MULTIPLIERS, cdsBandText } from "../lib/dimensions";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
 import { LoadFailure } from "../components/LoadFailure";
@@ -22,7 +22,7 @@ export function CompositeTab({ onCountrySelect }) {
     : allResults;
 
   const TIER_COLORS = { CRISIS:"#FF4444", STRESSED:"#E07B5A", ELEVATED:"#E8C547", WATCH:"#5A6878" };
-  const compactHead = { padding: "8px 4px", whiteSpace: "normal", lineHeight: 1.25 };
+  const compactHead = { padding: "8px 7px", whiteSpace: "normal", lineHeight: 1.25 };
   const activitySticky = {
     position: "sticky",
     right: 0,
@@ -122,20 +122,19 @@ export function CompositeTab({ onCountrySelect }) {
                 </colgroup>
                 <thead>
                   <tr>
-                    <ColHeader label="Country" tip="Sovereign entity scored across all seven stress dimensions. A ◦ marker beside the score means CDS data was unavailable for that country, so the score reflects six dimensions. Click any row to open the full country detail view." align="left" style={compactHead} />
+                    <ColHeader label="Country" tip="Sovereign entity scored across five stress dimensions. A ◦ marker beside the score means no usable CDS quote for that country, so the score reflects four. Click any row to open the full country detail view." align="left" style={compactHead} />
                     <ColHeader label="Tier" tip="Risk classification based on composite score: WATCH (<25), ELEVATED (25–50), STRESSED (50–75), CRISIS (≥75). CRISIS requires all major signals firing plus a multiplier." align="left" style={compactHead} />
                     <ColHeader label="T-Bill MoM" tip="Month-over-month % change in US Treasury holdings. 'ZERO ⚠' means the country has fully exited — holds no US Treasuries. This is the primary Treasury stress input (Dimension 1)." align="right" style={compactHead} />
                     <ColHeader label="Consec" tip="Consecutive months of declining Treasury holdings. Each additional month adds 4 pts to the Treasury score, capped at 5 months (20 pts). Persistence distinguishes strategic selling from noise." align="right" style={compactHead} />
                     <ColHeader label="Gold t" tip="Central bank gold reserves in metric tonnes (latest quarterly report). Context for the gold score: large reserves + selling = higher stress than small reserves + selling." align="right" style={compactHead} />
                     <ColHeader label="T" tip="Treasury dimension score (0–50 pts). Calculated from: MoM decline magnitude (0–30 pts, scaled) + consecutive declining months (0–20 pts). This is the highest-weight stress dimension." align="right" style={compactHead} />
                     <ColHeader label="G" tip="Gold reserves dimension score (0–40 pts). Calculated from: QoQ decline magnitude (0–20 pts) + consecutive declining quarters (0–20 pts). Selling gold alongside Treasuries activates the cross-asset multiplier." align="right" style={compactHead} />
-                    <ColHeader label="Spread" tip="Sovereign bond yield spread vs US 10Y, in basis points. >50bps = 5 pts; >100bps = 10 pts; >200bps = 15 pts; +5 pts if widening >30bps in 3 months. High spreads signal elevated country risk premium." align="right" style={compactHead} />
+                    <ColHeader label="Spread" tip="Sovereign bond yield spread vs the US 10Y, in basis points. MEASURED ONLY \u2014 D-0066 retired this dimension from scoring: it awarded points for trading more than 50bps ABOVE the US 10Y, and held yields for only fourteen developed markets, every one of which trades BELOW it. It scored 0 points for 0 countries. The number is still worth seeing; it no longer earns any." align="right" style={compactHead} />
                     <ColHeader label="P" tip="Petrodollar dimension score (0–20 pts). Only fires for oil-dependent nations (Gulf, Russia/CIS, Nigeria, etc.). Brent down >10% over 3M = 5 pts; >20% = 10 pts; >30% = 20 pts. +5 pts if oil falling AND country is selling Treasuries simultaneously." align="right" style={compactHead} />
-                    <ColHeader label="CDS 5Y" tip="Latest 5-year sovereign CDS spread in basis points — the market price of default protection (Dimension 7). >100bps = 5 pts; >250bps = 10 pts; >500bps = 15 pts; +5 pts if widening >20% over 3M. A dash (—) means no CDS coverage for this country: the dimension contributes 0 and is NOT counted as calm." align="right" style={compactHead} />
-                    <ColHeader label="CDS Term" tip="10Y CDS minus 5Y CDS, in basis points. Positive = normal upward slope. Negative = inverted curve (near-term priced riskier than long-term), a sign of acute distress that adds +3 pts. Dash (—) means one or both tenors are unavailable." align="right" style={compactHead} />
+                    <ColHeader label="CDS 5Y" tip={`Latest 5-year sovereign CDS spread in basis points \u2014 the market price of default protection (dimension 7). ${cdsBandText()}; +5 pts if widening >20% over 3M. A dash means no usable quote: either the sovereign is not on the board, or the quote was refused as stale or as not a running spread. The dimension then contributes 0 and is NOT counted as calm.`} align="right" style={compactHead} />
                     <ColHeader label="Mult" tip="Score multiplier applied to the raw total. 1.5× activates when a country sells both Treasuries and gold (cross-asset stress). 2.0× activates when selling gold into a rising spot price (divergence = forced seller signal)." align="right" style={compactHead} />
                     <ColHeader label="Non-$" tip="Non-dollar reserve trend (TRESEG series). STA = stable; REB = rebuilding (>5% YoY growth, de-dollarization into alternative system); DEP = depleting (>5% YoY decline, possible distress). Only analytically significant for EXITED countries." align="right" style={compactHead} />
-                    <ColHeader label="Score" tip="Final composite score after multipliers. WATCH <25 · ELEVATED 25–50 · STRESSED 50–75 · CRISIS ≥75. Maximum possible score is ~150 (all dimensions firing + 2× divergence multiplier)." align="right" style={compactHead} />
+                    <ColHeader label="Score" tip="Final composite score after multipliers. WATCH <25 · ELEVATED 25–50 · STRESSED 50–75 · CRISIS ≥75. Raw maximum is 165 across five dimensions; multipliers can take the result to the 150 cap." align="right" style={compactHead} />
                     <ColHeader label="Activity" tip="Human-readable summary of the specific signals contributing to this country's score. Each dot-separated entry corresponds to a threshold being crossed in one of the seven scoring dimensions." align="left" style={{ ...compactHead, ...activitySticky, zIndex: 3 }} />
                   </tr>
                 </thead>
@@ -156,45 +155,42 @@ export function CompositeTab({ onCountrySelect }) {
                           const activityCell = e.currentTarget.lastElementChild;
                           if (activityCell) activityCell.style.background="#0A1520";
                         }}>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:12, color:"#E8E0D0", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:12, color:"#E8E0D0", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word" }}>
                           <div style={{ lineHeight:1.25 }}>{c.country_name}</div>
                           <div style={{ fontSize:10, color:"#3A4D5C", marginTop:1 }}>{c.country_iso}</div>
                         </td>
-                        <td style={{ padding:"7px 5px" }}>
+                        <td style={{ padding:"7px 8px" }}>
                           <span style={{ fontFamily:"monospace", fontSize:10, color:tc, background:`${tc}18`, border:`1px solid ${tc}44`, borderRadius:2, padding:"1px 5px" }}>{c.tier}</span>
                         </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>
                           {c.no_tic_holdings
                             ? <span style={{ color:"#FF4444", fontSize:10 }}>ZERO ⚠</span>
                             : c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(1)}%`:"—"}
                         </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.tic_consecutive_months??0)>=3?"#E07B5A":"#8A9BAC" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.tic_consecutive_months??0)>=3?"#E07B5A":"#8A9BAC" }}>
                           {(c.tic_consecutive_months??0)>0?`${c.tic_consecutive_months}mo`:"—"}
                         </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.selling_gold?"#E07B5A":"#5A6878" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.selling_gold?"#E07B5A":"#5A6878" }}>
                           {c.gold_tonnes!=null?`${c.gold_tonnes.toLocaleString()}`:"—"}
                         </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:"#C8A96E" }}>{c.tic_score?.toFixed(0)??0}</td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:"#E8C547" }}>{c.gold_score?.toFixed(0)??0}</td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.spread_bps??0)>50?"#7EB8C9":"#3A4D5C" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:"#C8A96E" }}>{c.tic_score?.toFixed(0)??0}</td>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:"#E8C547" }}>{c.gold_score?.toFixed(0)??0}</td>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.spread_bps??0)>50?"#7EB8C9":"#3A4D5C" }}>
                           {c.spread_bps!=null?`${c.spread_bps>0?"+":""}${c.spread_bps.toFixed(0)}`:"—"}
                         </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.petro_score??0)>0?"#E07B5A":"#3A4D5C" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.petro_score??0)>0?"#E07B5A":"#3A4D5C" }}>
                           {c.oil_dependent?(c.petro_score>0?c.petro_score:"🛢"):"—"}
                         </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.cds_5y!=null?(c.cds_5y>250?"#E07B5A":c.cds_5y>100?"#C8A96E":"#7EB8C9"):"#3A4D5C" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.cds_5y!=null?(c.cds_5y>250?"#E07B5A":c.cds_5y>100?"#C8A96E":"#7EB8C9"):"#3A4D5C" }}>
                           {c.cds_5y!=null?`${c.cds_5y.toFixed(0)}`:<span style={{ color:"#3A4D5C" }} title="No CDS coverage — dimension scores 0">—</span>}
                         </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:c.cds_term_spread!=null&&c.cds_term_spread<0?"#FF4444":c.cds_term_spread!=null?"#5A6878":"#3A4D5C" }}>
-                          {c.cds_term_spread!=null?`${c.cds_term_spread>0?"+":""}${c.cds_term_spread.toFixed(0)}`:"—"}
-                        </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.multiplier??1)>1?"#FF4444":"#3A4D5C" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.multiplier??1)>1?"#FF4444":"#3A4D5C" }}>
                           {(c.multiplier??1)>1?`${c.multiplier}×`:"—"}
                         </td>
-                        <td style={{ padding:"7px 5px", fontFamily:"monospace", fontSize:10, textAlign:"right", color:c.treseg_signal==="REBUILDING"?"#FF4444":c.treseg_signal==="DEPLETING"?"#E07B5A":"#3A4D5C", whiteSpace:"nowrap" }}>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:10, textAlign:"right", color:c.treseg_signal==="REBUILDING"?"#FF4444":c.treseg_signal==="DEPLETING"?"#E07B5A":"#3A4D5C", whiteSpace:"nowrap" }}>
                           {c.treseg_signal&&c.treseg_signal!=="NO_DATA" ? `${c.treseg_signal.slice(0,3)} ${c.treseg_trend_pct!=null?(c.treseg_trend_pct>0?"+":"")+c.treseg_trend_pct+"%":""}` : "—"}
                         </td>
-                        <td style={{ padding:"7px 5px" }}>
+                        <td style={{ padding:"7px 8px" }}>
                           <div style={{ display:"flex", alignItems:"center", gap:6 }}>
                             <div style={{ flex:1, minWidth:0, background:"#0F1923", borderRadius:2, height:5, overflow:"hidden" }}>
                               <div style={{ width:`${Math.min(100,c.composite_score)}%`, background:tc, height:"100%", borderRadius:2 }} />
@@ -206,7 +202,7 @@ export function CompositeTab({ onCountrySelect }) {
                             )}
                           </div>
                         </td>
-                        <td style={{ padding:"7px 10px", fontFamily:"monospace", fontSize:11, color:"#5A6878", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word", wordBreak:"break-word", lineHeight:1.45, minWidth:260, ...activitySticky }}
+                        <td style={{ padding:"7px 10px", fontFamily:"monospace", fontSize:11, color:"#5A6878", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word", wordBreak:"break-word", lineHeight:1.45, minWidth:170, maxWidth:240, ...activitySticky }}
                           title={(c.active_signals||[]).join(" · ") || undefined}>
                           {(c.active_signals||[]).join(" · ") || "—"}
                         </td>

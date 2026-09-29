@@ -1457,3 +1457,23 @@ and `CDS_DISTRESS_BPS`. The ladder is now stated once and the tests assert its
 shape — monotone, no rung compressed below 100bps, and no rung more than twice
 the width of the one beneath it — rather than asserting three numbers that
 would have to be edited in lockstep.
+
+### D-0068 — The COMPOSITE table gives its space to the columns that carry numbers
+
+**Choice.** The **Activity** column drops from `minWidth: 260` to
+`minWidth: 170, maxWidth: 240`; the **CDS Term** column is removed entirely
+(`D-0062`); cell padding goes from 5px to 8px and header padding from 4px to
+7px.
+
+**Why it looked the way it did.** Activity was the widest column on a
+thirteen-column table and was empty in every row — not because countries had
+no signals, but because `active_signals` was being stripped by the response
+model (`F-0082`). The layout was giving the most room to the one column that
+could never show anything.
+
+Fixing `F-0082` fills it; narrowing it stops it dominating a table whose other
+columns are numbers that were being squeezed to 5px of padding.
+
+**It stays sticky.** Pinning Activity to the right edge is what lets the
+numeric columns scroll under a persistent explanation, which is worth more
+than the width it costs — the complaint was the proportion, not the position.

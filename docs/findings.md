@@ -2395,3 +2395,103 @@ the same ratio at 0.01652–0.01717.
 **What it changes.** Nothing scores differently. It settles what PD is for, so
 the next person to see a probability column does not wire it into the model as
 a second opinion.
+
+### F-0082 — The composite response model silently dropped eleven fields, including the whole CDS dimension
+
+**Claim.** FastAPI's `response_model` is a **filter**, not a completeness
+check. Any key the model does not declare is removed from the response, with
+no error anywhere. `CompositeCountry` declared 33 fields;
+`compute_composite_stress` produced 44.
+
+**Artifact.**
+
+```
+scorer produces: 44 | model declares: 33
+
+STRIPPED BY THE RESPONSE MODEL:
+    active_signals = ['EXITED: Zero US Treasuries - 535t gold', ...]
+    as_of = '2025-12'
+    brent_3m_pct = 60.5
+    brent_price = 114.89
+    cds_10y = None
+    cds_5y = 248.1
+    cds_coverage = 'quoted'
+    cds_coverage_10y = 'no coverage'
+    cds_score = 5
+    cds_term_spread = None
+    cds_widening_pct = -50.4
+```
+
+**Sample size.** One model, eleven fields, three UI surfaces.
+
+**What it actually broke.** Reported by the owner as *"I'm not seeing any CDS
+data on the composite stress UI surface"* and *"Activity gets the lion's share
+of the real estate and there's not many comments there"*. Both are the same
+defect:
+
+* The COMPOSITE table's **CDS 5Y** column, the CDS tab's **CDS Share** column
+  and the country panel's **StressContribution** breakdown all read
+  `cds_5y` / `cds_score`. The API removed both on the way out. All three
+  rendered a dash for every country.
+* The **Activity** column renders `active_signals`. Also removed. It was the
+  widest column on the table and empty in every row.
+
+**So `D-0060` was never visible in production.** The tie-in work — CDS shown
+as a share of the score, on three surfaces — shipped, passed its tests, and
+displayed nothing.
+
+**Why the tests did not catch it, which is the part worth keeping.** Every
+frontend test stubs `fetch` and supplies the response shape itself. A stub
+written from the scorer's output proves the component renders *that* shape; it
+proves nothing about whether the server sends it. **The stub was defining the
+contract instead of the server.**
+
+That is a general hazard of component tests against a stubbed API, and it is
+invisible from inside the frontend: the tests are green, the component is
+correct, and the screen is empty.
+
+**Fixed.** The eleven fields are declared.
+`tests/test_composite_response_contract.py` parses the scorer's
+`results.append({...})` keys and compares them to the model's fields **in both
+directions** — a produced-but-undeclared field is silently dropped, and a
+declared-but-never-produced field renders as a default, which reads as a real
+value rather than an absent one.
+
+The check is static, so it needs no database and — the point — **cannot be
+satisfied by a stub**.
+
+### F-0081 — The COMPOSITE table described a model that had been retired underneath it
+
+**Claim.** Four decisions changed the scoring model in one session —
+`D-0062`, `D-0065`, `D-0066`, `D-0067` — and the COMPOSITE table's column
+tooltips went on describing the old one.
+
+**Artifact.** In `CompositeTab.jsx` after all four:
+
+* The **CDS 5Y** tip: *">100bps = 5 pts; >250bps = 10 pts; >500bps = 15 pts"*.
+  The ladder was 200/350/600.
+* The **Spread** tip: *">50bps = 5 pts; >100bps = 10 pts; >200bps = 15 pts"*
+  for a dimension `D-0066` had retired from scoring entirely.
+* The **Country** tip: *"scored across all seven stress dimensions"*. Five.
+* A **CDS Term** column, with a tooltip explaining the inverted-curve bonus,
+  for a tenor `D-0062` had established the source does not publish.
+
+**Sample size.** Four tooltips and one entire column, on the tab that explains
+the model.
+
+**Same shape as `F-0068` and `F-0076`, for the third time.** The code was
+right, the screen's numbers were right, and the prose beside them was wrong.
+Nothing tests prose — so the fix is not to correct the prose but to stop it
+being prose.
+
+**Fixed.** The CDS ladder is `CDS_BANDS` in `ui/src/lib/dimensions.js` and the
+tooltip is generated from it. `tests/test_composite_dimensions.py`
+cross-checks those bands against `CDS_ELEVATED_BPS`, `CDS_SIGNIFICANT_BPS` and
+`CDS_DISTRESS_BPS` in the scorer, and separately asserts that the specific
+stale strings are absent from the file. Verified to bite:
+
+```
+AssertionError: Lists differ: [200.0, 250.0, 600.0] != [200.0, 350.0, 600.0]
+```
+
+The Spread tip now says it is measured and not scored, and says why.

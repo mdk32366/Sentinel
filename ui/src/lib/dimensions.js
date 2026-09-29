@@ -60,6 +60,30 @@ export const STRESS_DIMENSIONS = [
   },
 ];
 
+/**
+ * The CDS level ladder, mirroring `CDS_ELEVATED_BPS` / `CDS_SIGNIFICANT_BPS`
+ * / `CDS_DISTRESS_BPS` in `pipelines/composite_stress.py`.
+ *
+ * `F-0081`: the COMPOSITE table's CDS tooltip said ">100bps = 5 pts; >250 =
+ * 10; >500 = 15" for as long as those numbers were right, and kept saying it
+ * after `D-0065` and `D-0067` changed them. Prose describing a constant drifts
+ * the moment the constant moves, and nothing tests prose.
+ *
+ * The tooltip is now built from this, and
+ * `tests/test_composite_dimensions.py` cross-checks it against the Python
+ * constants — so the text cannot describe a ladder the scorer does not use.
+ */
+export const CDS_BANDS = [
+  { bps: 200, pts: 5, label: "elevated" },
+  { bps: 350, pts: 10, label: "significant" },
+  { bps: 600, pts: 15, label: "distress" },
+];
+
+/** "…>200bps = 5 pts (elevated); >350bps = 10 pts (significant); …" */
+export function cdsBandText() {
+  return CDS_BANDS.map((b) => `>${b.bps}bps = ${b.pts} pts (${b.label})`).join("; ");
+}
+
 /** The highest raw score before multipliers. */
 export const MAX_RAW_SCORE = STRESS_DIMENSIONS.reduce((sum, d) => sum + d.max, 0);
 

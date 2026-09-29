@@ -114,6 +114,66 @@ class CdsIsPresentedAsScored(unittest.TestCase):
         self.assertIsNotNone(found, "the CDS dimension has no description")
         self.assertGreater(len(found.group(1)), 20)
 
+class TheCdsLadderMatchesTheScorer(unittest.TestCase):
+    """F-0081.
+
+    The COMPOSITE table's CDS tooltip read ">100bps = 5 pts; >250 = 10;
+    >500 = 15" for as long as those numbers were right, and went on reading it
+    after D-0065 raised the floor to 200 and D-0067 re-spaced the rungs to 350
+    and 600. Prose describing a constant drifts the moment the constant moves,
+    and nothing tests prose.
+
+    The tooltip is now built from CDS_BANDS in dimensions.js. This is what
+    stops CDS_BANDS itself drifting.
+    """
+
+    def declared_bands(self):
+        source = DIMENSIONS_JS.read_text(encoding="utf-8")
+        block = source[source.index("export const CDS_BANDS = ["):]
+        block = block[: block.index("\n];")]
+        return [
+            (int(m.group(1)), int(m.group(2)))
+            for m in re.finditer(r"bps:\s*(\d+),\s*pts:\s*(\d+)", block)
+        ]
+
+    def scorer_constants(self):
+        source = SCORER.read_text(encoding="utf-8")
+        out = {}
+        for name in ("CDS_ELEVATED_BPS", "CDS_SIGNIFICANT_BPS", "CDS_DISTRESS_BPS"):
+            found = re.search(r"^" + name + r" = ([0-9.]+)", source, re.M)
+            assert found, name + " not found in the scorer"
+            out[name] = float(found.group(1))
+        return out
+
+    def test_the_ui_ladder_is_the_scorer_ladder(self):
+        bands = self.declared_bands()
+        consts = self.scorer_constants()
+        self.assertEqual(
+            [float(b[0]) for b in bands],
+            [consts["CDS_ELEVATED_BPS"], consts["CDS_SIGNIFICANT_BPS"],
+             consts["CDS_DISTRESS_BPS"]],
+            "the UI describes a ladder the scorer does not use",
+        )
+
+    def test_the_points_are_the_ones_the_scorer_awards(self):
+        self.assertEqual([b[1] for b in self.declared_bands()], [5, 10, 15])
+
+    def test_the_ladder_is_monotone_in_both_files(self):
+        bands = self.declared_bands()
+        for lower, upper in zip(bands, bands[1:]):
+            self.assertLess(lower[0], upper[0])
+            self.assertLess(lower[1], upper[1])
+
+    def test_no_stale_threshold_survives_in_the_composite_tab(self):
+        # The exact strings that were wrong. Belt and braces on top of the
+        # generated tooltip: if someone hand-writes a ladder into a tip again,
+        # this is what says so.
+        tab = (ROOT / "ui" / "src" / "pages" / "CompositeTab.jsx").read_text(encoding="utf-8")
+        for stale in (">100bps = 5", ">250bps = 10", ">500bps = 15",
+                      "seven stress dimensions", "cds_term_spread"):
+            with self.subTest(stale=stale):
+                self.assertNotIn(stale, tab)
+
 
 if __name__ == "__main__":
     unittest.main()
