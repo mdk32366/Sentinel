@@ -1881,3 +1881,72 @@ whether the right series was being shown at all.
 
 **Fixed** by `D-0057`. Guarded by a test asserting every card's code is
 fetched by some pipeline.
+
+### F-0073 — The unique index on `timeseries` has never constrained a macro series
+
+**Claim.** `ix_metric_country_date` is a UNIQUE index on
+`(metric_id, country_id, date)`. Postgres treats NULLs as **distinct** in a
+unique index, and every macro series stores `country_id IS NULL`. So the index
+exists, reads as correct, and has never rejected a duplicate for any of them.
+
+**Artifact.**
+
+```
+ix_metric_country_date | CREATE UNIQUE INDEX ix_metric_country_date
+  ON public.timeseries USING btree (metric_id, country_id, date)
+```
+
+Against that index, in the same database:
+
+```
+DFF              groups=1174   excess=1174
+DTWEXBGS         groups=5      excess=5
+DGS10            groups=4      excess=4
+DGS2             groups=3      excess=3
+DGS5             groups=3      excess=3
+DFII10           groups=1      excess=1
+```
+
+67,332 rows, **1,190 exact duplicates**. Every DFF row has
+`country_id IS NULL` — 2,996 of 2,996.
+
+**Sample size.** Six metrics. Five of them — 16 rows — predate anything done
+today and accumulated through ordinary nightly pipeline runs.
+
+**How it was found, and the part I own.** Backfilling `DFF` for `D-0057` I ran
+a check-then-insert loop against production concurrently with the scheduled
+FRED run, and **created 1,174 of those duplicates myself**. The pre-existing
+16 are what the same race produces at nightly cadence; my bulk insert
+reproduced a year of it in one run. I would not have looked at this index
+today without that.
+
+**Why it is `P6`, not a schema nit.** *A guard that stands aside is not a
+guard.* This one is worse than absent: `pipelines/fred_fetcher.py` does
+check-then-insert with no `ON CONFLICT`, which is a race by construction, and
+the reason nobody has fixed that is presumably the unique index sitting there
+looking like it has the problem covered. An absent constraint invites the
+question. A present, non-binding one closes it.
+
+**Currently harmless to display, which is its own hazard.** `pivotByDate`
+keys by date, so the MARKETS ticker and chart collapse duplicates and show the
+right numbers. `byMetric` keeps both points, but the values are identical, so
+the USA charts draw the same line and `latestValue` is still correct. Nothing
+on screen is wrong today. The damage is that row counts are inflated, any
+future aggregate over `timeseries` is wrong, and the broken constraint stays
+invisible.
+
+**Not fixed.** `docs/ddl/2026-09-29-timeseries-unique-nulls-not-distinct.sql`
+holds the two statements — deduplicate, then recreate the index with
+`NULLS NOT DISTINCT` (production is Postgres 16.14, which supports it).
+Verified first that no duplicate group holds more than one distinct value, so
+the deletion discards nothing; and everything here is re-fetchable from FRED,
+so the worst case is a pipeline re-run.
+
+The `DELETE` was **refused by this session's safety classifier** as a bulk
+delete against production, and is left for the owner to run rather than
+worked around.
+
+**Remaining half.** Converting the fetcher to an upsert. With the index in
+place the race becomes a loud `IntegrityError` caught per-metric and reported
+as `partial`, instead of silent duplication — which is the right failure mode,
+but it is a failure mode, not a fix.
