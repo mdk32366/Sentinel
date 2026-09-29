@@ -182,5 +182,53 @@ class TheResponseSaysWhichProviderAnswered(unittest.TestCase):
         self.assertIn('"model": spec["model"]', source)
 
 
+class TheModelsAreOnesTheKeysCanReach(unittest.TestCase):
+    """D-0072.
+
+    `grok-2-latest` was configured and had been retired. The key
+    authenticated fine - it was a 404 on the MODEL, not a 401 - and the
+    handler converted that into a flat "analysis failed" with a log line
+    naming only the exception type. Correct for the client, useless for
+    diagnosis.
+    """
+
+    def models(self):
+        from api.routes import BRIEF_PROVIDERS
+        return {pid: spec["model"] for pid, spec in BRIEF_PROVIDERS.items()}
+
+    def test_the_retired_grok_model_is_gone(self):
+        # Checked as a VALUE, not as a substring of the file: the comment
+        # beside the replacement names the retired model on purpose, and an
+        # assertion that forbids explaining a fix is an assertion that makes
+        # the code worse.
+        self.assertNotIn("grok-2-latest", self.models().values())
+        self.assertNotIn('"model": "grok-2-latest"', routes_source())
+
+    def test_grok_uses_a_non_reasoning_model(self):
+        # Latency, measured against the real prompt: grok-4.7 took 36.3s,
+        # half the handler's 75s timeout, because it reasons. The brief
+        # summarises figures already gathered - there is nothing to reason
+        # about, and the non-reasoning variant returned comparable output in
+        # 6.0s.
+        self.assertIn("non-reasoning", self.models()["grok"])
+
+    def test_the_latency_reasoning_is_recorded_beside_the_choice(self):
+        # A model name with no note is a number someone will change without
+        # knowing what it cost to pick.
+        source = routes_source()
+        self.assertIn("36.3s", source)
+        self.assertIn("non-reasoning", source)
+
+    def test_the_error_log_carries_the_status_code(self):
+        # A 404 for a retired model and a 401 for a bad key are different
+        # problems and were logged identically.
+        source = routes_source()
+        self.assertIn('getattr(getattr(e, "response", None), "status_code", None)', source)
+
+    def test_the_client_still_learns_nothing(self):
+        # The status goes to the log, not the response.
+        self.assertIn('detail="analysis failed"', routes_source())
+
+
 if __name__ == "__main__":
     unittest.main()
