@@ -1418,3 +1418,42 @@ market yield data would make it fire, and would then measure roughly what CDS
 measures for roughly the same countries — `A-0014`'s third objection, which
 was hypothetical while the dimension was dead and would become real the moment
 it was revived. Retiring it is the choice that does not create that problem.
+
+### D-0067 — The CDS ladder is re-spaced to 200 / 350 / 600
+
+**Ruling.** The owner smoothed the ladder.
+
+`D-0065` raised the floor to 200 and left the upper rungs where they were, at
+250 and 500. That gave **5 points across a 50bps window** and the next 5
+across 250bps — steeply sensitive at the bottom and flat above it. `D-0065`
+recorded the compression rather than silently fixing it, because re-spacing
+was a separate judgement. This is that judgement.
+
+```
+        was              now
+  5 pts  >200     |   5 pts  >200
+ 10 pts  >250     |  10 pts  >350
+ 15 pts  >500     |  15 pts  >600
+
+ gaps:   50, 250  |  gaps:  150, 250
+```
+
+**The consequence is not cosmetic, and it is a real country.** Egypt prints
+307.3bps. Under the old rungs that was "significant" and worth 10; under the
+new ones it is "elevated" and worth 5. Egypt's composite sat at **exactly
+50.0** — the STRESSED floor — so it becomes **ELEVATED**.
+
+That is the ladder doing what it was re-spaced to do: 307bps is elevated
+rather than significant once "significant" means 350. But a five-point change
+tipping a country across a tier boundary is worth stating plainly rather than
+discovering later, and Egypt's position exactly on the threshold is the kind
+of coincidence that makes a threshold look arbitrary when it moves.
+
+Turkey at 248.1 is unaffected — it was in the first rung before and is in the
+first rung now.
+
+**Named constants, not literals.** `CDS_ELEVATED_BPS`, `CDS_SIGNIFICANT_BPS`
+and `CDS_DISTRESS_BPS`. The ladder is now stated once and the tests assert its
+shape — monotone, no rung compressed below 100bps, and no rung more than twice
+the width of the one beneath it — rather than asserting three numbers that
+would have to be edited in lockstep.

@@ -305,6 +305,21 @@ def get_sovereign_spread(db: Session, iso: str, us_10y: float | None) -> dict:
 # is a separate judgement nobody has made.
 CDS_ELEVATED_BPS = 200.0
 
+# D-0067: the upper rungs, re-spaced so the ladder is proportional.
+#
+# D-0065 raised the floor to 200 and left 200/250/500, which gave 5 points
+# across a 50bps window and the next 5 across 250bps - steeply sensitive at
+# the bottom and flat above it. 200/350/600 spaces them at 150 and 250.
+#
+# Consequence, stated because it is not cosmetic: Egypt prints 307.3 and
+# moves from the second rung to the first, 10 points to 5. Its composite sits
+# at exactly 50.0, the STRESSED floor, so it drops to ELEVATED. That is the
+# ladder doing what it was re-spaced to do - 307bps is elevated, not
+# significant, once "significant" means 350 - but it is a tier change on a
+# real country, not a rounding difference.
+CDS_SIGNIFICANT_BPS = 350.0
+CDS_DISTRESS_BPS = 600.0
+
 
 # ── DIMENSION 7: Sovereign CDS ────────────────────────────────────────────────
 # CDS metrics are stored with country_id=None; the country is encoded in the
@@ -382,10 +397,10 @@ def get_cds_score(db: Session, iso: str) -> dict:
     structure (10Y < 5Y) — the near term priced as riskier than the far term —
     is a recognized acute-distress signal and adds a small amount.
 
-        Absolute 5Y level:
-            >200 bps:   5 pts   (elevated - D-0065, was >100)
-            >250 bps:  10 pts   (significant)
-            >500 bps:  15 pts   (distress)
+        Absolute 5Y level (D-0065 raised the floor, D-0067 re-spaced):
+            >200 bps:   5 pts   (elevated)
+            >350 bps:  10 pts   (significant)
+            >600 bps:  15 pts   (distress)
         Widening (5Y up >20% over ~90d):      +5 pts
 
     D-0062: the term-structure component is GONE. It scored an inverted curve
@@ -430,9 +445,9 @@ def get_cds_score(db: Session, iso: str) -> dict:
 
     # Level band on 5Y
     score = 0
-    if cds_5y > 500:
+    if cds_5y > CDS_DISTRESS_BPS:
         score = 15
-    elif cds_5y > 250:
+    elif cds_5y > CDS_SIGNIFICANT_BPS:
         score = 10
     elif cds_5y > CDS_ELEVATED_BPS:
         score = 5
