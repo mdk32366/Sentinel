@@ -265,3 +265,53 @@ audit comparing `information_schema.columns` against the models settles it for
 every column at once.
 
 ---
+
+### A-0011 — The one-second wait before re-reading a pipeline log
+
+**Assumption.** After a pipeline returns, its log row is readable within a
+second.
+
+**Where it came from.** A bare `setTimeout(loadLogs, 1000)` in `AdminTab`,
+with no comment and no recorded reason.
+
+**Why it is kept rather than removed.** If the log row is written after the
+response — by a background task, or by a commit that lands later — then
+reloading immediately shows the PREVIOUS run's row under the new run's
+result, which reads as a pipeline that silently did nothing. Nothing in the
+code proves it is not. Removing the delay on that basis would be trading a
+known cost for an unknown one.
+
+**How to settle it.** Read the endpoint handlers for `/fetch/*` and check
+whether the log row is committed before the response is returned. If it is,
+the delay is superstition and `LOG_SETTLE_MS` can go to zero.
+
+**Cost if wrong.** An operator sees a stale log row and re-runs a pipeline
+that already succeeded.
+
+### A-0012 — The fiscal model's constants are hand-entered and will go stale silently
+
+**Assumption.** $4.9T federal revenue, $6.0T annual rollover, $0.55T locked-in
+interest, 370M barrels of SPR against 714M capacity, 8,133 tonnes of US gold.
+FY2024 actuals and CBO estimates, entered by hand.
+
+**Where they came from.** Inline constants in `USADashboard`, now
+`lib/fiscal.js`.
+
+**Why this is an assumption and not a defect.** The panel is explicitly a
+sensitivity, not a forecast, and its own footnote lists every figure. A reader
+can see what it is claiming. The risk is not that the model is crude — it
+says so — but that the figures age without anything saying so, which is
+`F-0057` in a different costume: a frozen number stated with the same
+confidence as a live one.
+
+The gold tile is the part already fixed: `US_GOLD_TONNES` is genuinely
+constant (unchanged since 1971), while the PRICE it is multiplied by is live,
+with no fallback.
+
+**Cost if wrong.** The breaking-point yield moves. At FY2024's figures it is
+11.25%; a revenue figure 10% higher moves it to about 13.3%. The shape of the
+argument survives, the specific threshold quoted on two panels does not.
+
+**How to settle it.** These are published figures. Either pull them from a
+source on a schedule like every other number here, or put a vintage on them
+in the footnote so the reader knows how old they are.

@@ -1517,3 +1517,253 @@ the next move does not break it either. The assertion is unchanged.
 
 **Worth noting it did its job anyway:** the Python suite caught a frontend
 reorganisation that lint, the build, and 74 frontend tests all passed.
+
+### F-0062 — A constant was extracted and the call sites were not switched to it
+
+**Claim.** `SOVEREIGN_YIELD_CODES` moved into `lib/constants.js` under
+`D-0054`, and `App.jsx` went on carrying its own inline copy of the same
+fourteen FRED codes — twice, in two different formattings. Separately, the
+`/timeseries` date-keyed join existed twice in `App.jsx`, character for
+character.
+
+**Artifact.** At `f225885`,
+`git show HEAD:ui/src/App.jsx | grep -c 'IRLTLT01[A-Z][A-Z]M156N'` → **5**.
+
+**Sample size.** Three copies of one list; two copies of one join.
+
+**Why it matters more than the duplication.** The three copies agreed. Nothing
+in the build, the lint or the tests would have said so if they stopped
+agreeing, and the failure mode of a drifted copy is a ticker that quietly
+stops carrying Korea.
+
+**Fixed.** `pivotByDate` is in `lib/series.js` with six tests, including the
+day-truncation case — a join that kept the time component produces two rows
+for one day, each holding one code and a hole where the other belongs, which
+is `F-0007`'s shape.
+
+The guard is a property of the codebase rather than of a named file
+(`F-0061`): `lib/constants.test.js` scans everything under `ui/src` and fails
+if any file but `constants.js` spells one of these codes. Moving a component
+does not break it; pasting the codes into a new file does.
+
+### F-0063 — Five tabs treated an HTTP error as the resource, and two rendered it as an empty table
+
+**Claim.** Every fetch-on-mount tab did `.then(r => r.json())` with no `r.ok`
+check. A 500 carrying a JSON error body parses cleanly, so the body was
+installed as the data and `loading` went false.
+
+What the tab then showed depended on whether it happened to look for an error
+key. COMPOSITE checked `data.error`. CROSS-ASSET checked `data.detail`.
+**HOLDINGS and GOLD checked neither**, so they fell through to
+`data.holdings || []` and rendered an empty table — reading as "no country
+holds US Treasuries" rather than as a server fault.
+
+**Artifact.** A throwaway hook replicating the inline shape verbatim, run
+against the new assertions:
+
+```
+AssertionError: expected { detail: 'relation does not exist' } to be null
+```
+
+**Sample size.** Five call sites; two with no error branch at all.
+
+**Why it is the worst shape of the three.** A spinner that never resolves is
+visibly broken. A blank page is visibly broken. A populated-looking page
+showing zero rows is a fault wearing the costume of a finding — and on this
+application, "no country holds US Treasuries" is not an absurd reading, it is
+the event the whole thing exists to detect.
+
+**Fixed.** `useApiResource` reports `loading`, `error` and `data` separately,
+checks `response.ok`, carries the status on the error, and cancels on unmount.
+`LoadFailure` renders a failure as a failure. A caller that ignores `error`
+now gets a blank page rather than a confident empty one.
+
+**And the other direction is tested too.** An empty-but-successful response
+still reads as empty. Zero rows is a fact about the world and must not be
+dressed up as a fault either.
+
+**One deliberate exception, recorded rather than hidden.** CDS still fails
+soft into its empty state. It is the only source with no automatic pipeline,
+so "nothing here yet" is its ordinary condition and the banner already says
+how to fix it.
+
+### F-0064 — The same panel showed a different spread depending on which tab opened it
+
+**Claim.** `CountryDetail` reads `latestAll[SOVEREIGN_YIELD_CODES[iso]]` and
+`latestAll["DGS10"]`. Three call sites passed three different things: COUNTRY
+the flat `{code: value}` map, HOLDINGS the `{latest, prior}` wrapper which it
+unwrapped itself, and **GOLD a hardcoded `{}`**.
+
+**Artifact.** `ui/src/pages/GoldReservesTab.jsx:58` at `f225885`:
+
+```jsx
+<CountryDetail iso={selected.country_code} onClose={...} latestAll={{}} />
+```
+
+Opening Japan from GOLD showed `Spread vs US 10Y —`. The same country from
+COUNTRY showed `-315bps`. The regression test goes red on that line:
+
+```
+Unable to find an element with the text: -315bps
+```
+
+**Sample size.** One prop, three call sites, three shapes.
+
+**Why the dash is the problem.** A country FRED genuinely has no yield series
+for — China, for instance — correctly shows a dash. So did every country
+opened from GOLD. The two cases were indistinguishable on screen, and the
+wrong one was silent.
+
+**Fixed.** The prop has one shape at every call site: the flat map. A test
+pins each of the three cases — a real spread, a genuinely-uncovered country,
+and the wrapper shape, which still yields a blank tile and is therefore worth
+a test of its own.
+
+### F-0065 — A hook whose correctness rested on its caller's memoisation
+
+**Claim.** `useChartSeries` first listed `[activeMetrics, range, normalized]`
+as its dependencies. A new array is never `===` the previous one, so a caller
+passing a literal re-armed the effect on every render, which set state, which
+rendered.
+
+**Artifact.** The first run of the hook's own tests:
+
+```
+Worker exited unexpectedly with exit code 134
+```
+
+**Sample size.** One hook, one dependency list.
+
+**Why it never showed in production.** `App.jsx` holds both values in
+`useState`, so their identities are stable and the loop never fired. The hook
+was correct for exactly one caller, and nothing said so.
+
+**Fixed.** The dependency is the joined code string and the day count — two
+primitives and a boolean. A test renders it with fresh literals every render
+and asserts exactly one request.
+
+### F-0066 — A country re-entering a Treasury position rendered as "+Infinity%"
+
+**Claim.** The MoM change on the country panel divided by the earlier
+observation with no zero guard, and the tile prints `${v.toFixed(2)}%`.
+
+**Artifact.**
+
+```
+inline version yields: Infinity -> rendered as: +Infinity%
+```
+
+**Sample size.** One call site. Reachable whenever a country holding zero
+Treasuries buys any.
+
+**Why it is worth more than its size.** The panel already has a
+COMPLETED TREASURY LIQUIDATION banner for the way *into* zero. The way out —
+a country resuming purchases — is the same event in reverse, and it rendered
+as a glitch.
+
+**Fixed.** `momChange` returns null on a zero base, and the tile shows a dash.
+
+### F-0067 — The M2 chart and the M2 tile beside it used different methods for the same number
+
+**Claim.** The M2 stat card found its year-ago observation **by date**, within
+a 340–400 day window. The M2 growth chart directly beneath it indexed back
+twelve rows — `m2Data[i - 12]` — which is right only while the series is
+exactly monthly with no gaps.
+
+**Sample size.** One quantity, two methods, one screen.
+
+**Why it is the third instance.** `F-0007` was an index zip on the yield
+table. `F-0055` was `points.at(-2)` labelled "vs 30d". This is the same
+mistake in a third place: a date-keyed question answered by position.
+
+**Fixed.** Both come from `usaSeries.yoySeries` / `yoyPercent`, which share
+one date window. A test drops a month out of the middle of the series and
+asserts the last growth figure is unchanged — the index version shifted to a
+thirteen-month comparison from that point on and said nothing.
+
+### F-0068 — The fiscal thresholds were annotated with numbers twice their actual value
+
+**Claim.** `USADashboard` computed its warning and crisis yields correctly and
+annotated them wrongly:
+
+```js
+const BREAK = breakingPointRate(); // ~5.5%
+const CRISIS = crisisRate();       // ~8.5%
+```
+
+The actual values are **11.25%** and **19.42%**.
+
+**Artifact.** `(0.25 × 4.9 − 0.55) / 6.0 × 100 = 11.25`;
+`(0.35 × 4.9 − 0.55) / 6.0 × 100 = 19.42`. Verified as assertions in
+`lib/fiscal.test.js`.
+
+**Sample size.** Two comments.
+
+**What was and was not wrong.** The code was right and the screen was right —
+the page has always printed 11.3% and 19.4%. Only the comments were wrong, by
+roughly a factor of two, on the panel that states the application's central
+thesis. A reader checking the reasonableness of the model against its own
+annotation would have concluded the code was broken.
+
+**Fixed.** The constants and the arithmetic are in `lib/fiscal.js`, and the
+test asserts the rough figures rather than a comment claiming them. If a
+constant changes, the assertion moves with it.
+
+### F-0069 — A default parameter evaluated before the guard meant to prevent it
+
+**Claim.** `yearAgo(series, index = series.length - 1)` throws on an absent
+series, because a default parameter is evaluated before the function body and
+therefore before `if (!series?.length) return null`.
+
+**Artifact.**
+
+```
+TypeError: Cannot read properties of undefined (reading 'length')
+ ❯ yearAgo src/lib/usaSeries.js:47:48
+ ❯ USADashboard src/pages/USADashboard.jsx:63:17
+```
+
+**Sample size.** One signature. Reachable whenever the CPI pipeline has not
+run, since the dashboard calls it for `CPIAUCSL` unconditionally.
+
+**Caught by the net, not by review.** The tab render tests from `D-0054` are
+the reason this is a note rather than a white screen on the COUNTRY tab. They
+prove only that each tab mounts — which is exactly what this broke.
+
+**Fixed.** The guard comes first and the default is computed inside the body.
+
+### F-0070 — A second Vite config inside src/, never loaded, describing a build that does not happen
+
+**Claim.** `ui/src/vite.config.js` sat beside `App.jsx` and was never read.
+Vite resolves its config from the project root — `ui/` — so
+`ui/vite.config.js` is the live one and this was inert.
+
+**Artifact.** It declares `outDir: '../api/static'`, which from `ui/src/`
+resolves to `ui/api/static`. That directory does not exist. The real build
+writes `ui/dist/`:
+
+```
+ui/dist/assets/index-BD1XHaL1.js
+ui/api does not exist
+```
+
+It also declares a dev proxy forwarding `/api` to `http://localhost:8000`.
+The live config has no `proxy` key at all — `grep -c proxy ui/vite.config.js`
+→ **0**.
+
+**Sample size.** One file, present since `8a0a163`.
+
+**Why an unused file is worth a finding.** Both of its claims are things a
+developer would rely on without checking. Its comment says the output path
+"avoids CORS issues" and means `fly deploy` needs "no manual copy step" —
+while the Dockerfile and CI both perform exactly that manual copy, and the
+app resolves its base URL through `lib/api.js` rather than through a proxy.
+It is a confident description of an architecture the project does not have,
+sitting in the directory where someone would look for one.
+
+This is `F-0037` in miniature: work proceeding from a document that was true
+once and is not checked against the tree.
+
+**Fixed.** Deleted. `ui/src/architecture.test.js` now fails if any file
+outside `lib/api.js` spells an absolute API host, which is what surfaced it —
+the guard was written for `F-0052` and caught this instead.
