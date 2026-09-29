@@ -27,7 +27,14 @@ const METRICS = [
   { code: "DTWEXBGS",   label: "Dollar Index",  color: "#7EC4A0", unit: "" },
   { code: "CPIAUCSL",   label: "CPI",           color: "#C47EB8", unit: "" },
   { code: "M2SL",       label: "M2 Money",      color: "#6A8FC4", unit: "B$" },
-
+  // D-0053. Twelfth ticker, filling the slot D-0037 left on the second row.
+  // GOLD_SPOT_USD has been a live daily series since D-0041; before that it
+  // was a manual monthly CSV and had no business on a markets ticker.
+  //
+  // On the chart it is opt-in and roughly 800x the scale of a yield, so
+  // plotting both at once flattens the yields - that is what the % CHANGE
+  // toggle is for.
+  { code: "GOLD_SPOT_USD", label: "Gold Spot",  color: "#DAA520", unit: "$/oz" },
 ];
 
 const RANGES = [
