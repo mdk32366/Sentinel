@@ -2228,3 +2228,49 @@ Verified to bite by deleting the CDS entry:
 ```
 AssertionError: 'cds_score' not found in {'tic_score': 50, ...}
 ```
+
+### F-0077 — A shared rule was tested once and called twice
+
+**Claim.** `admit_cds_quote` is deliberately shared by the composite scorer
+and by `GET /api/cds/all`, so the two cannot judge the same rows differently
+(`F-0074`). They read `as_of` from different places, and only one of the two
+types was ever tested.
+
+**Artifact.** Live, immediately after deploying `D-0060`:
+
+```
+TypeError: unsupported operand type(s) for -:
+'datetime.datetime' and 'datetime.date'
+  File "/app/api/routes.py", line 790, in get_all_cds
+  File "/app/pipelines/cds_fetcher.py", line 108, in admit_cds_quote
+```
+
+The scorer reads `TimeSeries.date` — a `datetime`. `/cds/all` reads
+`latest_cds_observation` — a `date`. Eleven tests covered the rule and every
+one of them passed a `datetime`.
+
+**Sample size.** One function, two callers, one input type tested.
+
+**The lesson, stated so it generalises.** Sharing a rule between two callers
+is what makes `F-0074`'s guarantee real — one rule, one verdict. But the
+sharing is exactly what makes per-rule testing insufficient: a rule with two
+callers needs a case **per caller**, not per rule. The tests were thorough
+about the rule's logic (staleness boundary, plausibility ceiling, distinct
+refusal reasons) and silent about its interface.
+
+**Fixed.** `as_of` accepts a `date` or a `datetime`, normalising a bare date
+to midnight. That is correct rather than a workaround: these are calendar
+dates — the day a quote is attributed to — and the comparison is in whole
+days. The same reasoning as `F-0071`.
+
+Four new tests push both types through every verdict and assert the two agree.
+
+**What went right, and it is worth recording.** The CDS tab rendered
+**"Could not load CDS data — 500 Internal Server Error"**, not an empty
+table, because `F-0063` had made an HTTP error stop being a resource earlier
+the same day. Before that change this defect would have rendered as a blank
+CDS table, which reads as *no country has a CDS spread* — on a tab whose
+entire subject is sovereign default risk.
+
+The guard was built for a defect that already existed and caught a different
+one that did not exist yet.
