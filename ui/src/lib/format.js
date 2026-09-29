@@ -33,9 +33,19 @@ export function scoreColor(score) {
   return "#5A6878";
 }
 
+/**
+ * Tier presentation.
+ *
+ * These cover SIX tiers, not four. An earlier extraction lifted a four-tier
+ * copy out of App.jsx and tested it, while the component that actually renders
+ * tiers kept its own inline ternary handling EXITED and EXITED+GOLD_SELL as
+ * well. Two divergent implementations, and the tested one was the dead one.
+ * The live component now calls these.
+ */
 export function tierColor(tier) {
   if (tier === "DIVERGENCE") return "#FF4444";
   if (tier === "CROSS_ASSET") return "#E07B5A";
+  if (tier === "EXITED" || tier === "EXITED+GOLD_SELL") return "#FF8C00";
   if (tier === "TREASURY_ONLY") return "#E8C547";
   if (tier === "GOLD_ONLY") return "#C8A96E";
   return "#5A6878";
@@ -44,6 +54,8 @@ export function tierColor(tier) {
 export function tierLabel(tier) {
   if (tier === "DIVERGENCE") return "⚡ DIVERGENCE";
   if (tier === "CROSS_ASSET") return "⚠ CROSS-ASSET";
+  if (tier === "EXITED") return "🚨 EXITED";
+  if (tier === "EXITED+GOLD_SELL") return "🚨 EXITED+Au↓";
   if (tier === "TREASURY_ONLY") return "T-ONLY";
   if (tier === "GOLD_ONLY") return "Au ONLY";
   return tier;

@@ -757,3 +757,50 @@ now measure a different and longer period. That is the fix, not a regression.
 **Tested.** `ui/src/lib/series.test.js` covers the date lookup, the too-short
 case, the exact-boundary case, the percentage-point versus percent branch, and
 that the label never claims thirty days for a three-day gap.
+
+### D-0051 — The STRESS tab is retired; the scorer behind it is not
+
+**Choice.** `STRESS` is removed from `TABS` and `StressScoreTab` is deleted.
+The ABOUT tab carries a RETIRED section recording what it was, why it went, and
+what still runs.
+
+**Rejected.** Deleting `stress_score_v2.py` and `GET /api/stress-score` as
+well. The scheduled job at 04:30 UTC still writes `Stress_Score` rows, and
+`get_latest_metric_value` is imported from that module by `api/routes.py` and
+by `composite_stress.py`. Removing it is a much larger change than retiring a
+tab, and nothing asked for it.
+
+**What forced the call.** Owner's ruling, 2026-09-29. The tab showed a single
+US-level score built from the yield curve, holdings concentration and commodity
+volatility. `COMPOSITE` scores sovereign stress per country. They answer
+different questions, and presenting both as top-level tabs invited them to be
+read as one number disagreeing with itself — which ORDER-03 already flagged as
+*"a recurring source of confusion"*.
+
+**Why the ABOUT note matters more than the deletion.** A surface that simply
+vanishes gets rebuilt by whoever misses it. The note says what it measured and
+that the endpoint still serves it, so the next person can decide rather than
+rediscover.
+
+**Reversal condition.** If the US-level score is wanted again, it is an ABOUT
+entry away from being a tab, and the endpoint never stopped working.
+
+### D-0052 — The last tick on every chart axis is always rendered
+
+**Choice.** All six `XAxis` components carry `interval="preserveStartEnd"`
+alongside `minTickGap={60}`.
+
+**Rejected.** Reducing `minTickGap`, which would crowd the axis on a five-year
+daily series to fix the one label that matters.
+
+**What forced the call.** The owner reported the latest treasury tick reading
+2026-09-23. The data was not stale — production held 2026-09-28 across all five
+`DGS` series, `/api/stats` reported `data_latest` of 2026-09-29, and the
+`no-store` headers from `D-0038` were in place. With `minTickGap` alone, the
+rightmost *label* falls wherever the spacing puts it, which on a daily series
+is several days short of the last *point*. The line was right and the axis
+under it was not.
+
+**Why it is worth a decision.** A chart whose last label predates its last
+point invites exactly the question it was asked twice this week. Freshness that
+the data has but the display does not show is still a freshness problem.
