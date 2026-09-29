@@ -2,7 +2,9 @@ import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
 import { ColHeader } from "../components/ColHeader";
 import { CountryDetail } from "../components/CountryDetail";
+import { DataAsOf } from "../components/DataAsOf";
 import { LoadFailure } from "../components/LoadFailure";
+import { freshness } from "../lib/freshness";
 
 export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
   const { data: holdings, error, loading } = useApiResource(`/holdings`);
@@ -24,6 +26,7 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
 
   const total = holdings.total_billions_usd;
   const asOf = holdings.date ? new Date(holdings.date).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—";
+  const ticAge = freshness(holdings.date);
   const top3pct = rows.slice(0, 3).reduce((s, r) => s + r.percent_of_total, 0);
 
   const col = (label, key, tip) => (
@@ -39,11 +42,21 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
           { label: "Countries Reporting", val: rows.length },
           { label: "Top Holder", val: rows[0]?.country_code ?? "—" },
           { label: "Top 3 Concentration", val: `${top3pct.toFixed(1)}%`, alert: top3pct > 40 },
-          { label: "Data As Of", val: asOf },
+          {
+            label: "Data As Of",
+            val: asOf,
+            // F-0083: the tile said "Dec 2025" and nothing else while the
+            // source had been frozen for 302 days.
+            sub: ticAge.age != null ? ticAge.text : null,
+            subColor: ticAge.color,
+          },
         ].map(s => (
           <div key={s.label} style={{ background: "#0F1923", border: `1px solid ${s.alert ? "#E07B5A33" : "#1A2530"}`, borderTop: `2px solid ${s.alert ? "#E07B5A" : "#1A2530"}`, borderRadius: 2, padding: "14px 20px", flex: "1 1 140px" }}>
             <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{s.label}</div>
             <div style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: s.alert ? "#E07B5A" : "#E8E0D0" }}>{s.val}</div>
+            {s.sub && (
+              <div style={{ fontFamily: "monospace", fontSize: 10, color: s.subColor ?? "#5A6878", marginTop: 3 }}>{s.sub}</div>
+            )}
           </div>
         ))}
       </div>
@@ -136,7 +149,11 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
           </table>
         </div>
       </div>
-      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Source: US Treasury TIC · Data as of {asOf}</div>
+      <DataAsOf
+        asOf={holdings.date}
+        source="US Treasury TIC"
+        note="the TIC source has not published since then; every holding below is that old"
+      />
     </div>
   );
 }

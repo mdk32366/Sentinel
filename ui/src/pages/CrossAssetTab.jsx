@@ -3,6 +3,7 @@ import { useApiResource } from "../hooks/useApiResource";
 import { tierColor, tierLabel } from "../lib/format";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
+import { DataAsOf } from "../components/DataAsOf";
 import { describeCrossAsset } from "../lib/crossAssetNarrative";
 import { LoadFailure } from "../components/LoadFailure";
 
@@ -153,7 +154,11 @@ export function CrossAssetTab() {
           )
         }
       </div>
-      <div style={{ marginTop:12, fontFamily:"monospace", fontSize:11, color:"#1E2D3D" }}>Sources: US Treasury TIC · World Gold Council · Data as of {data.as_of ?? "—"}</div>
+      <DataAsOf
+        asOf={data.as_of}
+        source="US Treasury TIC · World Gold Council"
+        note="the TIC source has not published since then; the Treasury side of every signal here is that old"
+      />
     </div>
   );
 }
