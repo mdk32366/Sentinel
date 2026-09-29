@@ -2070,3 +2070,112 @@ failure mode described above no longer applies.
 `F-0073` is fully closed: the duplicates are gone, the constraint binds, the
 model declares it so a fresh database inherits it, and the writer no longer
 depends on a check that was true a moment ago.
+
+### F-0074 — The CDS dimension scored months-old placeholders, and one number that is not a spread
+
+**Claim.** `get_cds_score` read the latest stored CDS value with no regard for
+its age or its plausibility. Three consequences, all live in production on
+2026-09-29:
+
+**1. Every 10Y series was the ISDA running coupon.**
+
+```
+distinct 10Y values ever recorded:
+  value=     500.0  rows=111
+  value=      77.2  rows=7
+```
+
+Germany, Japan, Switzerland and the United States all at 500bps. Germany's
+real 10Y CDS is around 10bps. Frozen since 2026-07-16.
+
+**2. Saudi Arabia's composite score was entirely a placeholder.**
+`SAUDI_ARABIA_CDS_5Y` held seven rows of `500.0`, also frozen at 2026-07-16.
+It scored 10 points — **100% of Saudi Arabia's composite score of 10.0**. The
+country appeared on the COMPOSITE tab solely because a missing-data sentinel
+was read as a spread.
+
+**3. Russia's 13,775bps is not a running spread.**
+
+```
+RUSSIA_CDS_5Y: every distinct value ever recorded
+     156.9  n=7   2026-07-10 .. 2026-07-16
+   13775.2  n=23  2026-09-01 .. 2026-09-29
+```
+
+Two values in thirty observations, then frozen to one decimal for 23
+consecutive days *including weekends*. 13,775bps is 137.75%, which a running
+spread cannot be — past 100% of notional a credit is quoted points-upfront.
+Russia's CDS triggered and settled at auction after the 2022 default, so
+there is no live 5Y running spread to quote. It earned the **maximum 20
+points**, inside a CRISIS score of 179.7, and its pairing with the frozen
+July 10Y produced a term-structure inversion of −13,698bps that fed both the
+score and the CDS tab's *Inverted Curves* tile.
+
+**Sample size.** 21 5Y series, 17 10Y series. The rest of the 5Y board is
+entirely sound — Switzerland 7.5, Germany 9.6, Japan 25.3, US 33.8, Brazil
+129.6, Turkey 248.1, Egypt 307.3 — which is what makes the two outliers
+diagnostic rather than ambiguous.
+
+**The part worth keeping.** `pipelines/cds_fetcher.py` already refuses to
+produce any of this. Its docstring says so: the ISDA running coupon
+(25/100/500/1000) is not to be mistaken for the spread, and WGB's 5Y board
+has no paired 10Y so term structure stays blank. The writer was fixed. The
+rows the old writer had left behind were never removed, and **the reader had
+no staleness bound**, so a corrected pipeline kept producing wrong scores out
+of its own history for two and a half months.
+
+*Fixing the writer does not fix the reader.* That is the generalisable part:
+a pipeline fix is only half a data fix, and nothing in this codebase was
+checking the other half.
+
+**Fixed.** `admit_cds_quote()` rules on each tenor independently — a quote is
+admitted only if it is newer than `MAX_CDS_AGE_DAYS` (10, wide enough to
+absorb a long weekend plus an outage) and below `MAX_PLAUSIBLE_CDS_BPS`
+(10,000 — 100% of notional). Per-tenor is load-bearing: the 10Y board stopped
+in July and the 5Y did not, and judging the pair together would either keep
+the dead 10Y or discard the live 5Y.
+
+A refusal returns **why**, not a boolean, and the reason reaches the UI as
+`cds_coverage`. A country nobody quotes and a country whose quote was thrown
+away both score zero, and the reader has to be able to tell which happened.
+
+**Not done here.** The stale rows are still in the database. They no longer
+score and no longer display, which is the urgent half; deleting them is a
+separate authorised action.
+
+### F-0075 — A pipeline that reported `partial` on every run, for a permanent reason
+
+**Claim.** Every `CDS_MultiTenor` run logged `partial`, always for the same
+cause: `SAUDI_ARABIA_CDS_5Y: not on World Government Bonds 5Y board`. Saudi
+Arabia is configured in `CDS_INSTRUMENTS` and has never been on that board, so
+`attempted` counted it and `ok` never could.
+
+**Artifact.**
+
+```
+CDS_MultiTenor   partial  ins=0     2026-09-29 19:03:10
+CDS_MultiTenor   partial  ins=0     2026-09-29 18:10:11
+CDS_MultiTenor   partial  ins=1     2026-09-29 17:57:21
+CDS_MultiTenor   partial  ins=0     2026-09-29 17:41:24
+CDS_MultiTenor   partial  ins=0     2026-09-29 17:27:10
+```
+
+**Sample size.** Every run in the log.
+
+**Why it matters.** A status that never changes carries no information. A run
+that genuinely lost half the board would report `partial` too, and would be
+indistinguishable from this. The pipeline had a health signal and it had been
+pinned to "unwell" for so long that it could not report illness.
+
+This is `F-0006`'s shape again — a check whose answer cannot change — arriving
+from the opposite direction. There, tests outside the gate read as coverage.
+Here, a permanent fault reads as a status.
+
+**Fixed.** `KNOWN_ABSENT_FROM_5Y_BOARD` makes it a recorded exclusion: kept
+out of `attempted`, logged once per run at info, and surfaced as `skipped` in
+the result so the exclusion is visible rather than merely silent.
+
+**And the exclusion re-checks itself.** If a known-absent name *does* appear
+on the board, the run logs a warning saying the exclusion is out of date. An
+exclusion nobody re-validates becomes the next stale artefact, which is the
+whole subject of `F-0074` sitting directly above this.

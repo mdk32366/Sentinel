@@ -12,6 +12,7 @@ from database.models import Base, Metric, TimeSeries
 from pipelines.cds_fetcher import (
     CDS_SOURCE,
     CdsQuote,
+    KNOWN_ABSENT_FROM_5Y_BOARD,
     board_looks_like_coupon_collapse,
     cds_instrument_codes,
     get_cds_coverage,
@@ -155,8 +156,14 @@ class TestRunCdsFetchFromFixtureBoard(unittest.TestCase):
             self.assertEqual(result["source"], CDS_SOURCE)
             self.assertEqual(result["as_of"], "2026-09-01")
             self.assertGreater(result["ok"], 0)
-            self.assertEqual(result["status"], "partial")  # Saudi Arabia etc. not on fixture
-            self.assertIn("SAUDI_ARABIA_CDS_5Y", ";".join(result["errors"]))
+            # Still partial: several names genuinely are not on this fixture
+            # board. But Saudi Arabia is no longer among the reasons - F-0075
+            # made a permanent known absence an exclusion rather than a
+            # recurring error, because a run that was `partial` every single
+            # time carried no information about whether anything was wrong.
+            self.assertEqual(result["status"], "partial")
+            self.assertNotIn("SAUDI_ARABIA_CDS_5Y", ";".join(result["errors"]))
+            self.assertEqual(result["skipped"], len(KNOWN_ABSENT_FROM_5Y_BOARD))
 
             de = latest_cds_observation(db, "GERMANY_CDS_5Y")
             ch = latest_cds_observation(db, "SWITZERLAND_CDS_5Y")
@@ -190,7 +197,13 @@ class TestRunCdsFetchFromFixtureBoard(unittest.TestCase):
                 result = run_cds_fetch(db)
             self.assertEqual(result["ok"], 0)
             self.assertEqual(result["status"], "failed")
-            self.assertEqual(len(cds_instrument_codes()), result["attempted"])
+            # Every configured instrument is attempted EXCEPT the ones this
+            # source has never carried, which are skipped and counted apart.
+            self.assertEqual(
+                len(cds_instrument_codes()) - len(KNOWN_ABSENT_FROM_5Y_BOARD),
+                result["attempted"],
+            )
+            self.assertEqual(result["skipped"], len(KNOWN_ABSENT_FROM_5Y_BOARD))
         finally:
             db.close()
 

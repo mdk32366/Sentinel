@@ -65,6 +65,19 @@ CDS_MAX_BPS = Decimal("50000")
 # but a whole board collapsing to one of them is a parse failure, not a market.
 ISDA_RUNNING_COUPONS = frozenset({Decimal("25"), Decimal("100"), Decimal("500"), Decimal("1000")})
 
+# F-0075: configured, but not carried by this source.
+#
+# Saudi Arabia is in CDS_INSTRUMENTS and has never appeared on the WGB 5Y
+# board, so every run counted it as attempted, never as ok, and reported
+# `partial` — on every run, for months. A status that never changes carries no
+# information, and a real partial failure was indistinguishable from it.
+#
+# A permanent known absence is a recorded exclusion. It is logged once per run
+# at info, kept out of `attempted`, and — importantly — if the name ever DOES
+# appear on the board, that is logged as a warning, because an exclusion
+# nobody re-checks becomes its own stale artefact.
+KNOWN_ABSENT_FROM_5Y_BOARD = frozenset({"Saudi Arabia"})
+
 _HEADER_COUNTRY = re.compile(r"country", re.I)
 _HEADER_5Y = re.compile(r"5\s*y(?:ear)?s?\s*cds|5\s*years?\s*credit\s*default", re.I)
 _HEADER_DATE = re.compile(r"^date$", re.I)
@@ -408,6 +421,7 @@ def run_cds_fetch(db: Session) -> dict:
     total_inserted = 0
     total_updated = 0
     attempted = 0
+    skipped = 0
     ok = 0
     errors = []
     as_of_seen: Optional[date] = None
@@ -441,10 +455,25 @@ def run_cds_fetch(db: Session) -> dict:
 
     for country, tenors in CDS_INSTRUMENTS.items():
         info = tenors["5Y"]
-        attempted += 1
         metric_name = info["code"]
+        quote = by_country.get(country.casefold())
+
+        if country in KNOWN_ABSENT_FROM_5Y_BOARD:
+            if quote is None:
+                skipped += 1
+                logger.info("CDS %s: known absent from the %s 5Y board, skipped",
+                            metric_name, CDS_SOURCE)
+                continue
+            # The exclusion is out of date - say so rather than quietly
+            # benefiting from it.
+            logger.warning(
+                "CDS %s is listed in KNOWN_ABSENT_FROM_5Y_BOARD but IS on the "
+                "%s board now; remove it from the exclusion set",
+                metric_name, CDS_SOURCE,
+            )
+
+        attempted += 1
         try:
-            quote = by_country.get(country.casefold())
             if quote is None:
                 errors.append(f"{metric_name}: not on {CDS_SOURCE} 5Y board")
                 continue
@@ -493,6 +522,12 @@ def run_cds_fetch(db: Session) -> dict:
             errors.append(f"{country} 5Y: {str(e)}")
 
     status = cds_fetch_status(attempted, ok)
+    if skipped:
+        # Reported in the log line, not in `errors`: the operator should be
+        # able to see that names were excluded without the run claiming a
+        # failure it did not have (F-0075).
+        logger.info("CDS run: %d attempted, %d ok, %d known-absent skipped",
+                    attempted, ok, skipped)
 
     db.add(UpdateLog(
         pipeline_name=CDS_PIPELINE_NAME,
@@ -511,6 +546,9 @@ def run_cds_fetch(db: Session) -> dict:
         "updated": total_updated,
         "attempted": attempted,
         "ok": ok,
+        # F-0075: names excluded because this source has never carried them.
+        # Reported so the exclusion is visible rather than merely silent.
+        "skipped": skipped,
         "errors": errors,
         "source": CDS_SOURCE,
         "as_of": as_of_seen.isoformat() if as_of_seen else None,

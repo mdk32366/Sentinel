@@ -288,16 +288,39 @@ CDS_NAME_BY_ISO = {
 }
 
 
+# ── CDS quote admissibility (F-0074) ──────────────────────────────────────────
+# The WGB board publishes every trading day. A quote older than this is a
+# series that stopped, not a market that went quiet, and scoring it presents
+# a months-old number as today's price.
+#
+# Ten days spans a long weekend plus a week of outage without tripping.
+MAX_CDS_AGE_DAYS = 10
+
+# A running spread cannot meaningfully exceed 100% of notional. Past that a
+# credit is quoted points-upfront and a figure read as a running spread is a
+# category error rather than a large number. Russia printed 13,775bps —
+# 137.75% — frozen to one decimal for 23 consecutive days including weekends,
+# after its CDS triggered and settled at auction in 2022.
+MAX_PLAUSIBLE_CDS_BPS = 10000.0
+
+
 def _latest_and_prior(db: Session, code: str, days_back: int = 90):
-    """Return (latest_value, prior_value_or_None) for a global metric code.
+    """Return (latest_value, prior_value_or_None, as_of_date_or_None).
 
     'prior' is the earliest observation within the lookback window, used to
-    measure recent widening. Returns (None, None) if the metric or data is
-    absent, so a missing country simply scores zero on this dimension.
+    measure recent widening. Returns (None, None, None) if the metric or data
+    is absent, so a missing country simply scores zero on this dimension.
+
+    F-0074: the as-of date is returned because the caller cannot otherwise
+    tell a current quote from a stale one. `get_cds_score` read only the
+    value, so legacy rows written by a previous scraper - every 10Y series and
+    Saudi Arabia's 5Y, all frozen at 2026-07-16 - kept scoring months after
+    the fetcher had been fixed to stop producing them. Fixing the writer does
+    not fix the reader.
     """
     metric = _metrics_by_code(db).get(code)
     if not metric:
-        return None, None
+        return None, None, None
 
     cutoff = datetime.utcnow() - timedelta(days=days_back)
     history = db.query(TimeSeries).filter(
@@ -312,11 +335,37 @@ def _latest_and_prior(db: Session, code: str, days_back: int = 90):
             TimeSeries.metric_id == metric.id,
             TimeSeries.country_id == None,
         ).order_by(TimeSeries.date.desc()).first()
-        return (float(latest_row.value) if latest_row else None), None
+        if not latest_row:
+            return None, None, None
+        return float(latest_row.value), None, latest_row.date
 
     latest = float(history[-1].value)
     prior = float(history[0].value) if len(history) >= 2 else None
-    return latest, prior
+    return latest, prior, history[-1].date
+
+
+def admit_cds_quote(value, as_of, now=None):
+    """Is this quote usable as today's running spread? Returns a reason or None.
+
+    Separated out so the two rules can be stated once and tested without a
+    database. A rejected quote scores zero and says why, rather than scoring
+    zero indistinguishably from a country nobody quotes.
+    """
+    if value is None or as_of is None:
+        return "no coverage"
+
+    now = now or datetime.utcnow()
+    age_days = (now - as_of).days
+    if age_days > MAX_CDS_AGE_DAYS:
+        return f"stale ({age_days}d old)"
+
+    if value >= MAX_PLAUSIBLE_CDS_BPS:
+        return "not quoted as a running spread"
+
+    if value <= 0:
+        return "non-positive quote"
+
+    return None
 
 
 def get_cds_score(db: Session, iso: str) -> dict:
@@ -343,14 +392,28 @@ def get_cds_score(db: Session, iso: str) -> dict:
     name = CDS_NAME_BY_ISO.get(iso)
     if not name:
         return {"cds_5y": None, "cds_10y": None, "term_spread": None,
-                "widening_pct": None, "score": 0, "signal": None}
+                "widening_pct": None, "score": 0, "signal": None,
+                "coverage": "not on the board"}
 
-    cds_5y, prior_5y = _latest_and_prior(db, f"{name}_CDS_5Y", days_back=90)
-    cds_10y, _ = _latest_and_prior(db, f"{name}_CDS_10Y", days_back=90)
+    cds_5y, prior_5y, as_of_5y = _latest_and_prior(db, f"{name}_CDS_5Y", days_back=90)
+    cds_10y, _, as_of_10y = _latest_and_prior(db, f"{name}_CDS_10Y", days_back=90)
+
+    # F-0074. A quote is admitted only if it is current AND expressible as a
+    # running spread. Each tenor is judged on its own: the 10Y board stopped
+    # publishing in July 2026 while the 5Y board did not, and pairing a July
+    # 10Y against a September 5Y produced "term structure inversions" that
+    # were an artefact of the gap.
+    rejected_5y = admit_cds_quote(cds_5y, as_of_5y)
+    rejected_10y = admit_cds_quote(cds_10y, as_of_10y)
+    if rejected_5y:
+        cds_5y, prior_5y = None, None
+    if rejected_10y:
+        cds_10y = None
 
     if cds_5y is None:
         return {"cds_5y": None, "cds_10y": cds_10y, "term_spread": None,
-                "widening_pct": None, "score": 0, "signal": None}
+                "widening_pct": None, "score": 0, "signal": None,
+                "coverage": rejected_5y or "no coverage"}
 
     # Level band on 5Y
     score = 0
@@ -394,6 +457,10 @@ def get_cds_score(db: Session, iso: str) -> dict:
         "widening_pct": round(widening_pct, 1) if widening_pct is not None else None,
         "score": min(score, 20),
         "signal": signal,
+        # Why the 10Y is absent when it is, so the UI can distinguish "no
+        # paired 10Y on this board" from "we dropped it as unusable".
+        "coverage": "quoted",
+        "coverage_10y": rejected_10y,
     }
 
 
@@ -676,6 +743,11 @@ def compute_composite_stress(db: Session) -> dict:
             "cds_term_spread": cds_data["term_spread"],
             "cds_widening_pct": cds_data["widening_pct"],
             "cds_score": round(cds_score, 1),
+            # F-0074: why there is no number, when there is no number. The UI
+            # otherwise cannot tell "nobody quotes this country" from "the
+            # quote we had was months old and we refused it".
+            "cds_coverage": cds_data.get("coverage"),
+            "cds_coverage_10y": cds_data.get("coverage_10y"),
             # Non-dollar reserves (TRESEG)
             "treseg_signal": treseg["signal"],
             "treseg_trend_pct": treseg["trend_pct"],
