@@ -2495,3 +2495,64 @@ AssertionError: Lists differ: [200.0, 250.0, 600.0] != [200.0, 350.0, 600.0]
 ```
 
 The Spread tip now says it is measured and not scored, and says why.
+
+### F-0083 — "Data as of 2025-12" was true, and told the reader nothing
+
+**Claim.** The COMPOSITE tab's footer read `Data as of 2025-12`. That data was
+**302 days old**, and the sentence gave no way to know it. TIC is normally one
+to two months behind, so a December date on a monthly series reads as ordinary.
+
+**Artifact.** The pipeline had been saying so, loudly, in a place the reader
+never looks:
+
+```
+TIC source at https://ticdata.treasury.gov/Publish/mfhhis01.txt is stale:
+newest row 2025-12-01 is 302 days old, limit is 100. The fetch and parse
+both succeeded - the upstream file is frozen, or the URL now points at a
+historical year rather than the current release. See F-0050.
+```
+
+Every TIC run since has reported `failed`. The guard works. The screen did not
+carry what the guard knew.
+
+**Why it matters more than a footer usually would.** Treasury contributes
+**1,015.9 of roughly 1,182 composite points — 86%** (`F-0079`). The dominant
+dimension of this application is computed from ten-month-old holdings, and the
+only surface that mentioned it printed a date a reader would find unremarkable.
+
+**The source, confirmed.** `mfhhis01.txt` fetches cleanly — 200, 99KB — and
+its header rows are:
+
+```
+        Dec    Nov    Oct    Sep    Aug    Jul    Jun    May    Apr    Mar    Feb    Jan
+Country 2025   2025   2025   2025   2025   2025   2025   2025   2025   2025   2025   2025
+```
+
+It is the **complete calendar-year 2025 file**, exactly as `F-0050`'s error
+message hypothesised. `mfhhis02.txt` through `mfhhis12.txt` are all 404.
+`mfh.txt` exists and is older still, covering Jan 2022 to Jan 2023. No
+`_2026` variant responds.
+
+**I could not locate the current release.** That is stated as a limit rather
+than a conclusion: the URL patterns derivable from the configured one all
+either 404 or return historical files, and Treasury's TIC landing page is not
+something this session could enumerate. Whether a 2026 file exists elsewhere
+is open.
+
+**Fixed, partially.** `lib/freshness.js` computes an age and the footer
+carries it: *"Data as of 2025-12 (302 days old — the TIC source has not
+published since then; Treasury scores are computed from it)"*, in
+failure-red. `TIC_TOLERANCE_DAYS` is 100, deliberately the same number as
+`MAX_SOURCE_AGE_DAYS` in the pipeline, so the screen and the log cannot
+disagree about what "too old" means. An ordinary two-month lag stays grey —
+colouring a normal cadence red trains the reader to ignore the colour.
+
+**A DST bug, caught by its own test.** The first `ageInDays` subtracted two
+local `Date`s and floored. December to September crosses a clock change, so
+the difference is 302 days *minus an hour* and the floor returned **301**. Both
+endpoints are now `Date.UTC` midnights differenced in whole days. Calendar
+arithmetic on local `Date`s is off by one whenever the span crosses a
+transition — the same hazard as `F-0071`, one layer up.
+
+**Not fixed.** The data. A footer that admits the problem is not a fix for the
+problem, and the Treasury dimension is still running on December 2025.
