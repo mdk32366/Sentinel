@@ -20,7 +20,7 @@
  * assertion is identical, which is what makes them a net for the move
  * rather than a description of wherever the code ended up.
  */
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AboutTab } from "./pages/AboutTab";
@@ -74,6 +74,7 @@ beforeEach(() => {
     Promise.resolve({
       ok: true,
       status: 200,
+      statusText: "OK",
       json: () => Promise.resolve(stubResponse(String(url))),
       text: () => Promise.resolve(""),
     }),
@@ -89,9 +90,9 @@ const TABS = [
   // USADashboard is the USA country view rendered inside COUNTRY, not the
   // MARKETS tab - MARKETS is composed inline in App.jsx from METRICS.
   ["USADashboard (inside COUNTRY)", USADashboard, {}],
-  ["HOLDINGS", HoldingsTab, { onCountrySelect: () => {}, latestAll: { latest: {}, prior: {} } }],
+  ["HOLDINGS", HoldingsTab, { onCountrySelect: () => {}, latestAll: {} }],
   ["CROSS-ASSET", CrossAssetTab, {}],
-  ["GOLD", GoldReservesTab, { onCountrySelect: () => {} }],
+  ["GOLD", GoldReservesTab, { onCountrySelect: () => {}, latestAll: {} }],
   ["COMPOSITE", CompositeTab, { onCountrySelect: () => {} }],
   ["CDS", CDSTab, { onCountrySelect: () => {} }],
   ["COUNTRY", CountryTab, { onCountrySelect: () => {}, latestAll: {} }],
@@ -127,10 +128,59 @@ describe("the stub is doing its job", () => {
   it("no tab reached a real network", () => {
     // Clause (c): if fetch were not stubbed these tests would pass anyway by
     // failing silently into catch blocks, and would prove nothing.
-    render(<HoldingsTab onCountrySelect={() => {}} latestAll={{ latest: {} }} />);
+    render(<HoldingsTab onCountrySelect={() => {}} latestAll={{}} />);
     expect(fetch).toHaveBeenCalled();
     for (const call of fetch.mock.calls) {
       expect(String(call[0])).not.toMatch(/^https?:\/\/(?!localhost)/);
     }
+  });
+});
+
+describe("F-0063: a failed load renders as a failure, not as an empty table", () => {
+  /**
+   * The five tabs used to do `.then(r => r.json())` with no `r.ok` check, so a
+   * 500 carrying `{"detail": ...}` was installed as the resource. HOLDINGS and
+   * GOLD then read `data.holdings || []` and rendered an empty table — a
+   * server fault that looked like "no country holds US Treasuries".
+   *
+   * These assert the tab says it could not load. They go red against the
+   * inline shape they replaced.
+   */
+  const FAILING = [
+    ["HOLDINGS", HoldingsTab, { onCountrySelect: () => {}, latestAll: {} }, /TIC holdings/i],
+    ["GOLD", GoldReservesTab, { onCountrySelect: () => {}, latestAll: {} }, /gold reserves/i],
+    ["CROSS-ASSET", CrossAssetTab, {}, /cross-asset/i],
+    ["COMPOSITE", CompositeTab, { onCountrySelect: () => {} }, /composite stress/i],
+  ];
+
+  for (const [label, Component, props, what] of FAILING) {
+    it(`${label} says it could not load on a 500`, async () => {
+      vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
+        ok: false,
+        status: 500,
+        statusText: "Internal Server Error",
+        json: () => Promise.resolve({ detail: "relation does not exist" }),
+      })));
+
+      render(<Component {...props} />);
+      await waitFor(() => expect(screen.getByText(/Could not load/i)).toBeTruthy());
+      expect(screen.getByText(what)).toBeTruthy();
+      expect(screen.getByText(/500/)).toBeTruthy();
+    });
+  }
+
+  it("and an empty-but-successful response still reads as empty, not as a failure", async () => {
+    // The distinction this whole finding is about: zero rows is a fact about
+    // the world, and it must not be dressed up as a fault either.
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      json: () => Promise.resolve({ date: "2025-12-01", total_billions_usd: 0, holdings: [] }),
+    })));
+
+    render(<HoldingsTab onCountrySelect={() => {}} latestAll={{}} />);
+    await waitFor(() => expect(screen.queryByText(/loading/i)).toBeNull());
+    expect(screen.queryByText(/Could not load/i)).toBeNull();
   });
 });

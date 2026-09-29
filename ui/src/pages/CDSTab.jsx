@@ -1,43 +1,31 @@
-import { useState, useEffect, useCallback } from "react";
-import { apiFetch } from "../lib/api";
+import { useState } from "react";
+import { useApiResource } from "../hooks/useApiResource";
+import { useAsyncAction } from "../hooks/useAsyncAction";
 import { CDSCoverageBanner } from "../components/CDSCoverageBanner";
 import { ColHeader } from "../components/ColHeader";
 
+const FETCH_KEY = "cds";
+
 export function CDSTab({ onCountrySelect }) {
-  const [data, setData] = useState(null);
-  const [coverage, setCoverage] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const rows = useApiResource(`/cds/all`);
+  const coverageResource = useApiResource(`/cds/coverage`);
+  const { running, results, run } = useAsyncAction();
   const [sort, setSort] = useState("cds5y");
-  const [fetching, setFetching] = useState(false);
-  const [fetchResult, setFetchResult] = useState(null);
 
-  const load = useCallback(() => {
-    return Promise.all([
-      apiFetch(`/cds/all`).then(r => r.ok ? r.json() : []).catch(() => []),
-      apiFetch(`/cds/coverage`).then(r => r.ok ? r.json() : null).catch(() => null),
-    ]).then(([rows, cov]) => {
-      setData(Array.isArray(rows) ? rows : []);
-      setCoverage(cov);
-    });
-  }, []);
-
-  useEffect(() => {
-    load().finally(() => setLoading(false));
-  }, [load]);
+  // Both reads fail soft into the empty state, which is what this tab showed
+  // before: CDS is the one source with no automatic pipeline, so "nothing
+  // here yet" is the ordinary condition and the banner already says how to
+  // fix it. That is a deliberate exception to F-0063, not an oversight.
+  const data = Array.isArray(rows.data) ? rows.data : [];
+  const coverage = coverageResource.data;
+  const loading = rows.loading || coverageResource.loading;
+  const fetching = Boolean(running[FETCH_KEY]);
+  const fetchResult = results[FETCH_KEY];
 
   const runFetch = async () => {
-    setFetching(true);
-    setFetchResult(null);
-    try {
-      const r = await apiFetch(`/cds/fetch`, { method: "POST" });
-      const result = await r.json();
-      setFetchResult({ ok: r.ok, data: result });
-      await load();
-    } catch (e) {
-      setFetchResult({ ok: false, data: { error: e.message } });
-    } finally {
-      setFetching(false);
-    }
+    await run(FETCH_KEY, `/cds/fetch`);
+    rows.reload();
+    coverageResource.reload();
   };
 
   if (loading) {
@@ -45,7 +33,7 @@ export function CDSTab({ onCountrySelect }) {
   }
 
   const emptyCoverage = !coverage || coverage.with_data === 0;
-  const emptyTable = !data || data.length === 0;
+  const emptyTable = data.length === 0;
 
   if (emptyCoverage && emptyTable) {
     return (

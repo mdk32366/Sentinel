@@ -1,23 +1,19 @@
-import { useState, useEffect } from "react";
-import { apiFetch } from "../lib/api";
+import { useState } from "react";
+import { useApiResource } from "../hooks/useApiResource";
 import { ColHeader } from "../components/ColHeader";
 import { CountryDetail } from "../components/CountryDetail";
+import { LoadFailure } from "../components/LoadFailure";
 
 export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
-  const [holdings, setHoldings] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const { data: holdings, error, loading } = useApiResource(`/holdings`);
   const [selected, setSelected] = useState(null);
   const [sort, setSort] = useState("holdings");
 
-  useEffect(() => {
-    apiFetch(`/holdings`)
-      .then(r => r.json())
-      .then(d => { setHoldings(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, []);
-
   if (loading) return <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading...</div>;
-  if (!holdings) return <div style={{ fontFamily: "monospace", color: "#E07B5A", padding: 24 }}>No TIC data. Run POST /api/fetch/treasury-holdings</div>;
+  if (error || !holdings) {
+    return <LoadFailure what="TIC holdings" error={error}
+      detail="If the table is genuinely empty, run POST /api/fetch/treasury-holdings." />;
+  }
 
   const rows = [...(holdings.holdings || [])].sort((a, b) => {
     if (sort === "holdings") return b.holdings_billions_usd - a.holdings_billions_usd;
@@ -67,7 +63,7 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
 
       {/* Inline country detail */}
       {selected && (
-        <CountryDetail iso={selected.country_code} onClose={() => setSelected(null)} latestAll={latestAll.latest ?? {}} />
+        <CountryDetail iso={selected.country_code} onClose={() => setSelected(null)} latestAll={latestAll} />
       )}
 
       {/* Exited countries note */}

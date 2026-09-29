@@ -1,7 +1,14 @@
-import { useState, useEffect, useCallback } from "react";
-// ORDER-03 Part F step 1: one module owns the base URL (F-0052).
-import { apiFetch } from "./lib/api";
+import { useState } from "react";
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
+
 import { METRICS, RANGES, TABS } from "./lib/constants";
+import { formatDate } from "./lib/format";
+import { changeBetween, changeSuffix, changeWindowLabel } from "./lib/series";
+// ORDER-03 Part F step 4: App owns which tab is open and what is selected.
+// Everything that talks to the API lives in a hook (F-0063).
+import { useApiResource } from "./hooks/useApiResource";
+import { useChartSeries } from "./hooks/useChartSeries";
+import { useMarketSeries } from "./hooks/useMarketSeries";
 import { CustomTooltip } from "./components/CustomTooltip";
 import { StatCard } from "./components/StatCard";
 import { Ticker } from "./components/Ticker";
@@ -13,9 +20,6 @@ import { CountryTab } from "./pages/CountryTab";
 import { CrossAssetTab } from "./pages/CrossAssetTab";
 import { GoldReservesTab } from "./pages/GoldReservesTab";
 import { HoldingsTab } from "./pages/HoldingsTab";
-import { formatDate } from "./lib/format";
-import { seriesByCode, latestByCode, priorObservation, changeBetween, changeSuffix, changeWindowLabel } from "./lib/series";
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 
 
 
@@ -24,12 +28,12 @@ export default function App() {
   const [countryIso, setCountryIso] = useState(null); // for cross-tab navigation
   const [activeMetrics, setActiveMetrics] = useState(["DGS10", "DGS2", "FEDFUNDS", "DCOILWTICO"]);
   const [range, setRange] = useState(RANGES[1]);
-  const [chartData, setChartData] = useState([]);
-  const [latestAll, setLatestAll] = useState({});
-  const [stats, setStats] = useState(null);
-  const [health, setHealth] = useState(null);
-  const [loading, setLoading] = useState(false);
   const [normalized, setNormalized] = useState(false);
+
+  const { latest, prior } = useMarketSeries();
+  const { rows: chartData, loading } = useChartSeries({ activeMetrics, range, normalized });
+  const { data: stats } = useApiResource(`/stats`);
+  const { data: health } = useApiResource(`/health`);
 
   // Navigate to country tab with a specific country
   const handleCountrySelect = (iso) => {
@@ -37,81 +41,6 @@ export default function App() {
     setTab("COUNTRY");
   };
 
-  useEffect(() => {
-    const allCodes = [...METRICS.map(m => m.code),"IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N","IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N","IRLTLT01NLM156N","IRLTLT01NOM156N","IRLTLT01SEM156N","IRLTLT01CHM156N","IRLTLT01BEM156N","IRLTLT01KRM156N"].join(",");
-    const end = new Date();
-    const start = new Date();
-    start.setDate(start.getDate() - 120);
-    apiFetch(`/timeseries?metric_codes=${allCodes}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
-      .then(r => r.json())
-      .then(raw => {
-        const byDate = {};
-        raw.forEach(({ date, value, metric_code }) => {
-          const d = date.split("T")[0];
-          if (!byDate[d]) byDate[d] = { date: d };
-          byDate[d][metric_code] = value;
-        });
-const rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-const allTrackedCodes = [...METRICS.map(m => m.code),
-  "IRLTLT01JPM156N","IRLTLT01DEM156N","IRLTLT01ITM156N","IRLTLT01FRM156N",
-  "IRLTLT01ESM156N","IRLTLT01GBM156N","IRLTLT01AUM156N","IRLTLT01CAM156N",
-  "IRLTLT01NLM156N","IRLTLT01NOM156N","IRLTLT01SEM156N","IRLTLT01CHM156N",
-  "IRLTLT01BEM156N","IRLTLT01KRM156N"
-];
-// F-0055: `prior` is the observation ~30 days back BY DATE, and it carries the
-// gap it actually found. This used to be points.at(-2) - the previous row -
-// which on a daily series is yesterday, while the card said "vs 30d".
-const series = seriesByCode(rows, allTrackedCodes);
-const latest = latestByCode(series);
-const prior = {};
-allTrackedCodes.forEach((code) => {
-  const found = priorObservation(series[code], 30);
-  if (found) prior[code] = found;
-});
-setLatestAll({ latest, prior });
-      }).catch(() => {});
-  }, []);
-
-  const fetchChartData = useCallback(async () => {
-    if (!activeMetrics.length) return;
-    setLoading(true);
-    try {
-      const end = new Date();
-      const start = new Date();
-      start.setDate(start.getDate() - range.days);
-      const res = await apiFetch(`/timeseries?metric_codes=${activeMetrics.join(",")}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`);
-      const raw = await res.json();
-      const byDate = {};
-      raw.forEach(({ date, value, metric_code }) => {
-        const d = date.split("T")[0];
-        if (!byDate[d]) byDate[d] = { date: d };
-        byDate[d][metric_code] = value;
-      });
-      let rows = Object.values(byDate).sort((a, b) => a.date.localeCompare(b.date));
-      if (normalized && rows.length > 0) {
-        const base = {};
-        activeMetrics.forEach(m => { base[m] = rows.find(r => r[m] != null)?.[m]; });
-        rows = rows.map(r => {
-          const nr = { date: r.date };
-          activeMetrics.forEach(m => { if (r[m] != null && base[m]) nr[m] = ((r[m] - base[m]) / base[m]) * 100; });
-          return nr;
-        });
-      }
-      setChartData(rows);
-    } catch (e) { console.error(e); }
-    finally { setLoading(false); }
-  }, [activeMetrics, range, normalized]);
-
-  // F-0056: fetchChartData is a useCallback over [activeMetrics, range,
-  // normalized]; none of its setters touch those, so this cannot loop.
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { fetchChartData(); }, [fetchChartData]);
-  useEffect(() => {
-    apiFetch(`/stats`).then(r => r.json()).then(setStats).catch(() => {});
-    apiFetch(`/health`).then(r => r.json()).then(setHealth).catch(() => {});
-  }, []);
-
-  const { latest = {}, prior = {} } = latestAll;
   const getChange = (code, unit) => {
     const previous = prior[code];
     if (!previous || latest[code] == null) return null;
@@ -119,6 +48,7 @@ setLatestAll({ latest, prior });
     if (value == null) return null;
     return { value, suffix: changeSuffix(unit), window: changeWindowLabel(previous.actualDays) };
   };
+
   const tickerData = METRICS.map(m => ({ ...m, latest: latest[m.code] })).filter(m => m.latest != null);
 
   return (
@@ -218,17 +148,13 @@ setLatestAll({ latest, prior });
           </>
         )}
 
-        {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} latestAll={latestAll} />}
+        {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} latestAll={latest} />}
         {tab === "CROSS-ASSET" && <CrossAssetTab />}
-        {tab === "GOLD" && <GoldReservesTab onCountrySelect={handleCountrySelect} />}
+        {tab === "GOLD" && <GoldReservesTab onCountrySelect={handleCountrySelect} latestAll={latest} />}
         {tab === "COMPOSITE" && <CompositeTab onCountrySelect={handleCountrySelect} />}
         {tab === "CDS" && <CDSTab onCountrySelect={handleCountrySelect} />}
         {tab === "COUNTRY" && (
-          <CountryTab
-            initialIso={countryIso}
-            onIsoChange={setCountryIso}
-            latestAll={latest}
-          />
+          <CountryTab initialIso={countryIso} onIsoChange={setCountryIso} latestAll={latest} />
         )}
         {tab === "ADMIN" && <AdminTab />}
         {tab === "ABOUT" && <AboutTab />}

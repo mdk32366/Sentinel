@@ -903,3 +903,58 @@ carrying eight unused symbols, which is `F-0056` restarted.
 page. `CountryDetail` is 269 lines and `USADashboard` 346; both are now
 separately addressable, which is the point of the step. Coverage is still
 render-level: these tests prove each tab mounts, not that any of them is right.
+
+### D-0055 — The frontend's data layer is hooks, and the two large pages are decomposed
+
+**Choice.** ORDER-03 Part F step 4, plus the components inside each page that
+`D-0054` left as separately addressable and unaddressed.
+
+Four hooks now own everything that talks to the API:
+
+| hook | what it owns |
+|---|---|
+| `useApiResource` | fetch one JSON resource on mount, with `reload()` |
+| `useMarketSeries` | the ticker's latest and ~30-day-prior values |
+| `useChartSeries` | the MARKETS chart's rows for the current selection |
+| `useAsyncAction` | a keyed write, with per-key progress and outcome |
+| `useCountryDetail` | the four requests behind the country panel |
+| `useCountryNarrative` | the analyst brief for one country |
+| `useUSASeries` | every USA series for the selected window |
+
+**No component calls `apiFetch` any more.** `App.jsx`, all nine pages and both
+large components import a hook instead. That is the property worth stating,
+because it is checkable and it is what makes `F-0063` fixable in one place
+rather than five.
+
+**Sizes.** `App.jsx` 240 → **166**. `USADashboard` 351 → **83**.
+`CountryDetail` 274 → **111**. The arithmetic came out as four testable pure
+modules — `lib/fiscal.js`, `lib/usaSeries.js`, `lib/countrySeries.js`,
+`lib/rateScenarios.js` — and the JSX as ten components under
+`components/country/` and `components/usa/`.
+
+**Rejected.** Doing the decomposition without touching the fetch shape. The
+five copies of the fetch block were not merely repetitive, they were
+repetitively wrong (`F-0063`), and moving five copies of a defect into one
+place without fixing it would have made the register say the work was done.
+
+**Rejected.** Keeping the extraction purely mechanical. Four defects surfaced
+only because the arithmetic was pulled into modules that could be tested at
+all — `F-0064` through `F-0068`. A move that refuses to look at what it is
+moving is a cheaper change and a worse one.
+
+**Not a mechanical refactor, and recorded as such.** Six behaviour changes
+land here: an HTTP error stops being a resource (`F-0063`), the GOLD tab's
+country panel gets its yields (`F-0064`), a re-entering country stops
+rendering "+Infinity%" (`F-0066`), the M2 chart looks back by date like the
+tile beside it (`F-0067`), a missing CPI series stops throwing (`F-0069`), and
+two stale comments are corrected (`F-0068`). Each has a test that goes red
+against the code it replaced.
+
+**Coverage.** 159 Python + **207** frontend, from 74 at the start of Part F.
+`lib/` and `hooks/` are unit-tested; the components are render-tested against
+the claims they make about their own numbers rather than their layout.
+
+**What is still not done.** The tab render tests prove a tab mounts; they do
+not prove the HOLDINGS table sorts correctly or that the COMPOSITE tiers are
+right. The scorers behind those numbers are Python and are covered there; the
+join between them is not.
