@@ -958,3 +958,60 @@ the claims they make about their own numbers rather than their layout.
 not prove the HOLDINGS table sorts correctly or that the COMPOSITE tiers are
 right. The scorers behind those numbers are Python and are covered there; the
 join between them is not.
+
+### D-0056 — The twelve MARKETS cards say what they are, and whether they are scored
+
+**Choice.** Each card on MARKETS carries a hover and keyboard-focus tooltip:
+what the series is, why it belongs on a sovereign-stress board, and — on a
+separate line — what it actually does in the model.
+
+**The part that matters is the second line.** Twelve series sit under a
+heading about sovereign stress, and **three** of them are read by a scorer:
+
+| code | role |
+|---|---|
+| `DGS10` | long leg of the yield-curve factor (35–40% of v2), and the benchmark every sovereign spread is measured against |
+| `DGS2` | short leg of `DGS10 − DGS2`; pins at maximum stress at −1.00pp |
+| `DCOILWTICO` | 30-day volatility drives the commodity factor (20–25% of v2); petrodollar fallback when Brent is missing |
+
+The other nine are context. Their tooltips say so in those words.
+
+**Why this is a decision and not a copy change.** Presence on that board
+implies a connection. `D-0016` exists because the 30Y looked like a factor and
+had to be ruled explicitly as ingest-and-display. Every card had the same
+ambiguity and no card resolved it. A dashboard that lets a reader infer a
+causal claim it does not make is misinforming them politely.
+
+**Rejected.** Writing the role in prose alone. Prose goes stale silently, and
+this prose describes Python that lives in another language's test suite.
+
+**So the claim is structured.** Each metric carries `scored: true|false`
+beside its text, and `tests/test_markets_tooltips.py` reads `constants.js` and
+cross-checks it against the scorers — a card marked unscored that appears in
+`stress_score_v2.py` fails the build. Demonstrated rather than asserted, by
+flipping `DGS10`:
+
+```
+AssertionError: True is not false : DGS10's tooltip says it is not
+scored, but stress_score_v2.py reads it
+```
+
+The same test pins the two thresholds the tooltips quote — the −1.0 inversion
+floor and the 1%/5% volatility bounds — against the scorer that implements
+them, so a tuned constant cannot leave the explanation behind.
+
+**`InfoTip`.** The bubble logic came out of `ColHeader`, which already had it.
+A portal to `document.body` is load-bearing: both tables here scroll
+horizontally and the card grid clips, so an in-place bubble is cut off on
+exactly the columns and cards furthest from the middle. Copying it would have
+been `F-0062` a third time.
+
+**Keyboard too.** The cards are where this application explains what it
+measures, and an explanation available only to a mouse is not an explanation.
+`focus` and `blur` open and close the bubble, and the card is focusable only
+when it has one.
+
+**Not verified.** The rendering is covered by tests, not by eye — production
+is behind basic auth and no screenshot was taken. Placement is "below" for
+these cards because they sit at the top of the viewport, and the bubble is
+clamped 8px inside the window on both edges, but neither has been seen.
