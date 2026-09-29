@@ -1288,3 +1288,67 @@ CI checks out, and it now matches the manifest exactly.
 directory in another, and the only thing that reports it is a tool asked
 directly. `git status` is silent about ignored files, which is what makes this
 class of loss invisible rather than merely easy.
+
+### F-0055 — Eight of eleven stat cards labelled a one-to-three-day move as "vs 30d"
+
+**Claim.** The change shown under every ticker was computed against the
+**previous observation**, not the observation thirty days earlier, while the
+card read `vs 30d`.
+
+**Artifact.** `App.jsx`, before this change:
+
+```js
+month30[code] = withVal[Math.max(0, withVal.length - 2)][code];
+```
+
+and `StatCard` rendering `{Math.abs(change).toFixed(2)}{...} vs 30d`.
+
+Measured against production on 2026-09-29, comparing each series' last two
+observations:
+
+| Series | latest | "month30" | actual gap |
+|---|---|---|---|
+| DGS30 / DGS10 / DGS7 / DGS5 / DGS2 | 2026-09-28 | 2026-09-25 | **3 days** |
+| DFII10 / DCOILWTICO / DTWEXBGS | 2026-09-25 | 2026-09-24 | **1 day** |
+| FEDFUNDS / CPIAUCSL / M2SL | 2026-08-01 | 2026-07-01 | 31 days |
+
+**Sample size.** All eleven tickers, one production fetch.
+
+**Why it survived.** For the three monthly series the previous observation *is*
+roughly thirty days back, so the label was right where anyone would have
+checked it first. On the eight daily series the number was correctly computed,
+correctly formatted, correctly signed — and described a different period than
+it claimed. Nothing could go red, because nothing was wrong except the word.
+Principle 11 in a label.
+
+**Direction.** It understates. A 3-day move looks like a month of movement, so
+a genuinely fast-moving series reads as calm over the month, and a month of
+drift is invisible entirely.
+
+**Fixed by `D-0050`:** the lookup is by date, and the card reports the gap it
+actually found rather than asserting thirty.
+
+### F-0056 — `npm run lint` reports eight errors and nothing runs it
+
+**Claim.** The frontend has an ESLint configuration and a `lint` script. It
+reports **8 errors**, and no gate invokes it.
+
+**Artifact.** `npm run lint` on `master` at 2026-09-29: `8 problems (8 errors,
+0 warnings)`, all `react-hooks/set-state-in-effect` in `App.jsx`. The CI
+workflow runs `npm test` and `unittest discover`; `lint` appears nowhere.
+
+**Sample size.** One run, before and after this change — the count is identical,
+so none of the eight is newly introduced.
+
+**Consequence.** Principle 9's second form again: a check that exists, has an
+answer, and cannot change what anyone does. It has presumably been failing for
+as long as the rule has been enabled.
+
+**Why it is not simply added to CI here.** Adding it would block every deploy
+on eight pre-existing errors in a 2,500-line file, and `set-state-in-effect`
+violations are not cosmetic — fixing them properly means restructuring the
+effects, which is `F-0053`-shaped work against code that still has almost no
+coverage. Turning it on is a decision about how much breakage to accept at
+once, and that is the owner's call rather than a Builder's.
+
+**Status.** Open.

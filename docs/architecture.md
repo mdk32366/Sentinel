@@ -72,6 +72,24 @@ Files read at runtime, and therefore required in the image:
 `.dockerignore` deliberately does **not** exclude `data/incoming/` for this
 reason.
 
+## Running the Python suite locally
+
+`api/static/` is **generated**, not committed (`D-0049`). `main.py` mounts it
+with `StaticFiles` and raises if it is missing, which is correct — an app that
+cannot serve its interface should not start quietly — but it means a fresh
+clone must build the UI once before the Python tests will import:
+
+```
+npm ci --prefix ui
+npm run build --prefix ui
+mkdir -p api/static && cp -r ui/dist/. api/static/
+```
+
+CI does exactly this before running `unittest`, and the Dockerfile's Node stage
+does the equivalent inside the image. If `tests.test_lifespan_cold_start` and
+`tests.test_frontend_auth` fail to import with
+`RuntimeError: Directory 'api/static' does not exist`, this is why.
+
 ## Auth boundary
 
 `BasicAuthMiddleware` in `main.py` protects everything except the paths in
