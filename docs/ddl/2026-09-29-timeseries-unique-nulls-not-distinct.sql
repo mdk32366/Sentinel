@@ -14,6 +14,23 @@
 --
 -- RUN THE TWO STATEMENTS IN ORDER. The index cannot be created while
 -- duplicates remain, which is the point.
+--
+-- ════════════════════════════════════════════════════════════════════════════
+-- STATUS
+--   Statement 1 (DELETE) — APPLIED to production 2026-09-29, owner authorised.
+--       groups with more than one distinct value: 0
+--       before=67332 deleted=1190 after=66142
+--       duplicate groups remaining: 0
+--
+--   Statement 2 (the index) — NOT APPLIED. Not authorised, deliberately
+--       separate. Until it runs the constraint still does not bind, and
+--       fred_fetcher.py's check-then-insert can reintroduce duplicates at its
+--       ordinary rate — roughly the 16 rows that had accumulated across five
+--       metrics before this. The cleanup is not permanent without it.
+--
+--   Re-running statement 1 is safe and idempotent: with no duplicates present
+--   its subquery returns no rows and it deletes nothing.
+-- ════════════════════════════════════════════════════════════════════════════
 
 -- ── 1. Remove the duplicates ────────────────────────────────────────────────
 -- Every duplicate group was verified to hold a SINGLE distinct value before

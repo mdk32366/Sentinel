@@ -1950,3 +1950,39 @@ worked around.
 place the race becomes a loud `IntegrityError` caught per-metric and reported
 as `partial`, instead of silent duplication — which is the right failure mode,
 but it is a failure mode, not a fix.
+
+**Half closed 2026-09-29.** The owner authorised the deletion only, and it
+ran:
+
+```
+groups with more than one distinct value: 0
+before=67332 deleted=1190 after=66142
+duplicate groups remaining: 0
+```
+
+Every affected metric now has one row per date:
+
+```
+DFF        rows=1822   distinct_dates=1822   latest=2026-09-25
+DFII10     rows=1314   distinct_dates=1314   latest=2026-09-25
+DGS10      rows=1315   distinct_dates=1315   latest=2026-09-28
+DGS2       rows=1315   distinct_dates=1315   latest=2026-09-28
+DGS5       rows=1315   distinct_dates=1315   latest=2026-09-28
+DTWEXBGS   rows=1315   distinct_dates=1315   latest=2026-09-25
+```
+
+**The finding stays open, and this is the important part.** The data is clean;
+the *constraint* is not fixed. `ix_metric_country_date` still treats two NULL
+`country_id`s as different countries, and `fred_fetcher.py` still does
+check-then-insert with no `ON CONFLICT`. Nothing prevents the duplicates
+returning at the rate that produced the original 16 — a handful per month,
+quietly, exactly as before.
+
+A cleanup without the constraint is a reset, not a repair. Recording it as
+closed on the strength of `deleted=1190` would be the shape `F-0006` warned
+about: a number that looks like a result standing in for a guarantee nobody
+has.
+
+Statement 2 of the DDL file — recreating the index with `NULLS NOT DISTINCT`
+— remains unapplied and unauthorised, and the file's STATUS block says so at
+the top so the next reader does not assume the whole file ran.
