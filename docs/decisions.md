@@ -1071,3 +1071,53 @@ sixty monthly points against ~1,250 daily ones — the sparse case that produced
 redundant as a result: `DFF` skips weekends and holidays and publishes behind
 the Treasury yields, so an index zip would still pair the wrong dates, just
 less visibly.
+
+### D-0058 — The M2 card reads the weekly series, not the monthly level
+
+**Choice.** Ingest `WM2NS` — FRED's **weekly** M2, not seasonally adjusted —
+and point the MARKETS card and the USA dashboard's M2 growth chart at it.
+`M2SL` stays in the pipeline.
+
+**What this does and does not buy.** Unlike `D-0057`, nothing here was wrong.
+Production held `M2SL = 23342.8` for 2026-08-01, matching FRED exactly. And
+unlike `D-0057`, **there is no fresher release to move to**:
+
+```
+WM2NS  last updated 2026-09-22 12:01  | Not Seasonally Adjusted
+M2SL   last updated 2026-09-22 12:01  | Seasonally Adjusted
+```
+
+Identical timestamps, because both come from the same monthly H.6
+publication. The Fed publishes M2 once a month and no series anywhere is more
+current than that.
+
+What it buys is a newer *observation* and more of them:
+
+| | newest observation |
+|---|---|
+| `M2SL` | 2026-08-01 |
+| `WM2NS` | **2026-08-31** |
+
+Thirty days forward, and four to five chart points a month instead of one.
+
+**The cost, and why it is acceptable.** `WM2NS` is not seasonally adjusted.
+At the card's display precision the swap is invisible — 23342.8 and 23305.5
+both render as **$23.3T** — which is precisely why the tooltip has to say so.
+For the year-on-year line, seasonals largely cancel over twelve months, and
+`yoySeries` compares by date against a 340–400 day window rather than by
+position, so a weekly series is if anything better behaved there than a
+monthly one.
+
+**Rejected.** Leaving it. The owner reported the card as stale twice. It was
+not *wrong*, but "correct and a month behind the best available reading" is
+not a good answer when a thirty-day improvement costs one pipeline entry.
+
+**Rejected.** Showing both. A second M2 tile would take the grid to thirteen
+cards and break the 6×2 layout for a distinction most readers do not need.
+
+**Guarded.** `tests/test_markets_tooltips.py` asserts the card reads `WM2NS`,
+that `M2SL` is still collected, that the tip discloses "not seasonally
+adjusted", and — the one that matters — that it does **not** promise weekly
+*releases*. "Weekly" invites exactly the reading that produced `A-0013`, so
+the tip says "the Fed publishes M2 once a month" and a test keeps it saying
+that.

@@ -26,7 +26,7 @@ export function USADashboard() {
 
   const data = useUSASeries(range);
 
-  const m2 = data["M2SL"] || [];
+  const m2 = data["WM2NS"] || [];
 
   return (
     <div>

@@ -107,12 +107,12 @@ export const METRICS = [
     stressRole: "Not scored. This is the debasement half of the thesis, not a stress factor.",
   },
   {
-    code: "M2SL",
+    code: "WM2NS",
     label: "M2 Money",
     color: "#6A8FC4",
     unit: "B$",
     scored: false,
-    tip: "US broad money supply, monthly, in billions. The 2020-22 surge peaked near +27% year-on-year and CPI followed it to 9.1%. It is the supply side of dollar debasement, and the reason reserve managers ask whether dollar reserves are worth holding at all.",
+    tip: "US broad money supply, weekly and not seasonally adjusted. The 2020-22 surge peaked near +27% year-on-year and CPI followed it to 9.1% — this is the supply side of dollar debasement, and the reason reserve managers ask whether dollar reserves are worth holding at all. The Fed publishes M2 once a month in the H.6 release, so the newest reading is always a few weeks back however it is sliced; the weekly series just puts that reading four weeks further forward than the monthly one. D-0058.",
     stressRole: "Not scored. Context for why a country might diversify, not evidence that it is.",
   },
   {

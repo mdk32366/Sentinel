@@ -24,6 +24,12 @@ stress. A React single-page UI is served from the same origin.
   never runs, and the Step 12 database guard is never armed.
 - CI also runs the frontend gate before the Python one: `npm run lint`,
   `npm test` (211 tests), then a build into `api/static/`.
+- **Every application startup runs the FRED pipeline.** `main.py`'s lifespan
+  calls `start_scheduler()`, which queues a one-shot FRED job (`D-0019`), so a
+  deploy re-fetches five years of thirty-nine series — about two minutes and
+  ~14,700 row updates. A newly added metric therefore backfills itself on
+  deploy and needs no manual step; running one anyway is what produced the
+  1,174 duplicates in `F-0073`.
 - `fly.toml` declares **no `[mounts]`**. `data/` lives inside the container
   image, so anything written there at runtime does not survive a deploy, and
   anything not committed to git is absent from the image entirely.

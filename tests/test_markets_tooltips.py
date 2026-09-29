@@ -170,7 +170,8 @@ class MonthlyCardsSayTheyAreMonthly(unittest.TestCase):
     which is the only place a reader can find out.
     """
 
-    MONTHLY = {"CPIAUCSL", "M2SL"}
+    # D-0058 moved M2 to the weekly series. CPI is the last monthly card.
+    MONTHLY = {"CPIAUCSL"}
 
     def test_the_monthly_series_disclose_their_cadence(self):
         metrics = parse_metrics()
@@ -247,3 +248,44 @@ class FedFundsIsTheDailySeries(unittest.TestCase):
                     f'"{code}"' in fetcher or f'"{code}"' in gold,
                     f"the {code} card has no pipeline fetching it",
                 )
+
+
+class M2IsTheWeeklySeries(unittest.TestCase):
+    """D-0058.
+
+    The M2 card read M2SL — the monthly level, dated to the first of the
+    month. Nothing was wrong with the number: production held 23342.8 for
+    2026-08-01, matching FRED exactly. But the newest observation available
+    anywhere was 2026-08-31, thirty days further forward, in WM2NS.
+
+    Unlike D-0057 this buys no freshness of RELEASE. FRED stamps both series
+    with the same last_updated because both come from the same monthly H.6
+    publication. It buys a newer data POINT and four to five chart points a
+    month instead of one.
+    """
+
+    def test_the_card_reads_the_weekly_series(self):
+        metrics = parse_metrics()
+        self.assertIn("WM2NS", metrics)
+        self.assertNotIn("M2SL", metrics)
+
+    def test_the_seasonally_adjusted_series_is_still_collected(self):
+        # M2SL is what published analysis quotes. Dropping it to change a
+        # display would discard five years of the conventional series.
+        fetcher = (ROOT / "pipelines" / "fred_fetcher.py").read_text(encoding="utf-8")
+        self.assertTrue('"M2SL"' in fetcher, "M2SL stopped being ingested")
+
+    def test_the_card_discloses_that_it_is_not_seasonally_adjusted(self):
+        # The one thing a reader could be misled by: M2SL is seasonally
+        # adjusted and WM2NS is not. At display precision both read $23.3T,
+        # so nothing on screen reveals the swap.
+        tip = parse_metrics()["WM2NS"]["tip"].lower()
+        self.assertIn("not seasonally adjusted", tip)
+
+    def test_the_card_does_not_promise_weekly_RELEASES(self):
+        # The trap this whole exchange was about. "Weekly" invites the reading
+        # that the number arrives weekly. It does not - the Fed publishes M2
+        # monthly, and the tip has to say so or it recreates A-0013 in a new
+        # place.
+        tip = parse_metrics()["WM2NS"]["tip"].lower()
+        self.assertIn("once a month", tip)
