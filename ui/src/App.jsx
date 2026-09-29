@@ -87,7 +87,19 @@ export default function App() {
         {tab === "MARKETS" && (
           <>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 28 }}>
-              {METRICS.map(m => <StatCard key={m.code} label={m.label} value={latest[m.code]} unit={m.unit} change={getChange(m.code, m.unit)} color={m.color} />)}
+              {METRICS.map(m => (
+                <StatCard
+                  key={m.code}
+                  label={m.label}
+                  value={latest[m.code]}
+                  unit={m.unit}
+                  change={getChange(m.code, m.unit)}
+                  color={m.color}
+                  tip={m.tip}
+                  stressRole={m.stressRole}
+                  scored={m.scored}
+                />
+              ))}
             </div>
             <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "24px 28px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
