@@ -2608,3 +2608,49 @@ colouring a normal cadence red trains the reader to ignore the colour.
 The component knows the age; the tab supplies what being stale *means there* —
 "every holding below is that old" on HOLDINGS, "the Treasury side of every
 signal here is that old" on CROSS-ASSET.
+
+### F-0085 — The Grok model had been retired, and the error path could not say so
+
+**Claim.** `BRIEF_PROVIDERS["grok"]` named `grok-2-latest`. xAI has retired
+it. The key the owner had just deployed authenticated correctly - the failure
+was a **404 on the model**, not a 401 on the key.
+
+**Artifact.**
+
+```
+status: 404
+{"code":"not-found","error":"The model grok-2-latest does not exist or your
+team ... does not have access to it."}
+```
+
+What the key can actually reach:
+
+```
+grok-4.3  grok-4.5  grok-4.6  grok-4.7
+grok-4.20-0309-non-reasoning  grok-4.20-0309-reasoning  grok-4.20-multi-agent-0309
+```
+
+**Sample size.** One model name, retired between when it was written and now.
+
+**The diagnosis gap, which is the part worth keeping.** `D-0069` deliberately
+stopped returning provider detail to the client (`F-0010`) and logged only the
+exception *type*. That is right for the client and insufficient for the
+operator: a 404 for a retired model and a 401 for a revoked key produced the
+same log line and the same "analysis failed". Hiding detail from the caller
+does not require hiding it from the log, and conflating the two turned a
+one-line fix into an investigation.
+
+**Fixed.** The status code is logged - never the body. And the replacement was
+chosen on measurement rather than on version number:
+
+```
+grok-4.7                       36.3s  3163 chars
+grok-4.20-0309-non-reasoning    6.0s  2508 chars
+grok-4.3                        7.0s  1730 chars
+```
+
+36 seconds is half the handler's 75-second timeout, spent reasoning about a
+summarisation of figures `_gather_brief_context` had already gathered. The
+non-reasoning variant returns comparable output in a sixth of the time. The
+measurement is recorded beside the choice, because a model name with no note
+is a value someone will change without knowing what it cost to pick.

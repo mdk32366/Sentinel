@@ -743,7 +743,17 @@ def _openai_style_text(data: dict) -> str:
 BRIEF_PROVIDERS = {
     "grok": {
         "label": "Grok",
-        "model": "grok-2-latest",
+        # D-0072: grok-2-latest was retired and returned 404 "does not exist".
+        # Chosen from what the key can actually reach, on latency: the brief
+        # is a summarisation of figures already gathered, and a reasoning
+        # model spends the budget thinking. Measured against the real prompt:
+        #
+        #     grok-4.7                       36.3s  3163 chars
+        #     grok-4.20-0309-non-reasoning    6.0s  2508 chars
+        #     grok-4.3                        7.0s  1730 chars
+        #
+        # 36s is half the handler's 75s timeout for no benefit on this task.
+        "model": "grok-4.20-0309-non-reasoning",
         "setting": "grok_api_key",
         "env": "GROK_API_KEY",
         "build": _openai_style_request,
@@ -858,7 +868,13 @@ async def analyze_country(payload: dict, request: Request):
     except Exception as e:
         # F-0010: an exception can carry request detail, and the key travels
         # in a header on one of these providers. Type only, never the message.
-        logger.error("brief failed for %s via %s: %s", iso, provider_id, type(e).__name__)
+        # D-0072: the status code too. A 404 for a retired model and a 401
+        # for a bad key both surfaced as "analysis failed" with a log line
+        # naming only the exception type, which is not enough to tell them
+        # apart. The body is still withheld - only the code is added.
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        logger.error("brief failed for %s via %s: %s%s", iso, provider_id,
+                     type(e).__name__, f" (HTTP {status})" if status else "")
         raise HTTPException(status_code=502, detail="analysis failed")
 
 
