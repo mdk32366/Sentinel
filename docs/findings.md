@@ -1986,3 +1986,31 @@ has.
 Statement 2 of the DDL file — recreating the index with `NULLS NOT DISTINCT`
 — remains unapplied and unauthorised, and the file's STATUS block says so at
 the top so the next reader does not assume the whole file ran.
+
+**Proximate cause identified 2026-09-29, and it was mine.** `update_logs`
+shows the FRED pipeline running on **every application startup** — six runs
+matching six deploys within one hour:
+
+```
+success  ins=0      upd=14768  17:41:24
+success  ins=0      upd=14768  17:27:10
+success  ins=1822   upd=12946  17:18:58   <- DFF, backfilled by the deploy itself
+success  ins=0      upd=12946  17:07:12
+success  ins=0      upd=12946  16:57:58
+success  ins=0      upd=12946  16:45:56
+```
+
+`main.py`'s lifespan calls `start_scheduler()`, which queues a one-shot FRED
+job (`D-0019`). So the deploy of `D-0057` fetched `DFF` by itself at 17:18:58,
+inserting all 1,822 rows. The manual backfill I ran landed inside that
+two-minute window, checked for rows the pipeline had not yet committed, and
+inserted 1,174 duplicates.
+
+**The backfill was not merely racy — it was unnecessary.** The deploy already
+does it. A step taken because it seemed obviously required, without checking
+whether the system already performed it, and the check was one query away.
+
+This does not change the finding: the index has never constrained these rows
+and the 16 pre-existing duplicates arrived without any help from me. It does
+mean the loud version of this defect had an avoidable trigger, and that
+`D-0058` needs **no manual backfill at all** — deploying it is the backfill.

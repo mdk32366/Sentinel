@@ -36,7 +36,13 @@ FRED_METRICS = [
     {"code": "DCOILWTICO",        "name": "WTI Crude Oil Price",            "category": "commodity",  "unit": "$/bbl", "source": "FRED",      "description": "Crude oil prices: West Texas Intermediate (WTI)"},
     {"code": "DTWEXBGS",          "name": "US Dollar Index",                "category": "fx",         "unit": "index", "source": "FRED",      "description": "Nominal broad US dollar index"},
     {"code": "CPIAUCSL",          "name": "Consumer Price Index (CPI)",     "category": "inflation",  "unit": "index", "source": "FRED",      "description": "Consumer price index for all urban consumers: all items"},
-    {"code": "M2SL",              "name": "M2 Money Supply",                "category": "monetary",   "unit": "billions", "source": "FRED",   "description": "M2 money stock"},
+    # D-0058: WM2NS is the WEEKLY M2 series and is what the UI shows. Both
+    # come from the same H.6 release and FRED stamps them with the same
+    # last_updated, so this buys granularity and a newer data point - not a
+    # newer release. M2SL is kept: it is seasonally adjusted and it is the
+    # series published analysis quotes.
+    {"code": "WM2NS",             "name": "M2 Money Supply (Weekly)",       "category": "monetary",   "unit": "billions", "source": "FRED",   "description": "M2 money stock, weekly, not seasonally adjusted"},
+    {"code": "M2SL",              "name": "M2 Money Supply (Monthly, SA)",  "category": "monetary",   "unit": "billions", "source": "FRED",   "description": "M2 money stock, monthly, seasonally adjusted"},
     {"code": "IRLTLT01JPM156N", "name": "Japan 10Y Gov Bond Yield",    "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Japan 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01DEM156N", "name": "Germany 10Y Gov Bond Yield",  "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Germany 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01ITM156N", "name": "Italy 10Y Gov Bond Yield",    "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Italy 10-year government bond yield, monthly (OECD)"},
