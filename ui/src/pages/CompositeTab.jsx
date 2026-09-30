@@ -139,6 +139,7 @@ export function CompositeTab({ onCountrySelect }) {
                   <col style={{ width: 132 }} />{/* Country + ISO; "United Arab Emirates" is the longest */}
                   <col style={{ width: 84 }} />{/* Tier badge */}
                   <col style={{ width: 76 }} />{/* T-Bill MoM, or "ZERO" */}
+                  <col style={{ width: 74 }} />{/* Tx 3mo - net transactions */}
                   <col style={{ width: 52 }} />{/* Consec */}
                   <col style={{ width: 62 }} />{/* Gold t */}
                   <col style={{ width: 40 }} />{/* T */}
@@ -155,7 +156,8 @@ export function CompositeTab({ onCountrySelect }) {
                   <tr>
                     <ColHeader label="Country" tip="Sovereign entity scored across five stress dimensions. A ◦ marker beside the score means no usable CDS quote for that country, so the score reflects four. Click any row to open the full country detail view." align="left" style={compactHead} />
                     <ColHeader label="Tier" tip="Risk classification based on composite score: WATCH (<25), ELEVATED (25–50), STRESSED (50–75), CRISIS (≥75). CRISIS requires all major signals firing plus a multiplier." align="left" style={compactHead} />
-                    <ColHeader label="T-Bill MoM" tip="Month-over-month % change in US Treasury holdings. 'ZERO ⚠' means the country has fully exited — holds no US Treasuries. This is the primary Treasury stress input (Dimension 1)." align="right" style={compactHead} />
+                    <ColHeader label="T-Bill MoM" tip="Month-over-month % change in US Treasury HOLDINGS. Holdings move with price as well as transactions, so this column alone cannot tell selling from repricing — the next column can. 'ZERO ⚠' means a reported position of zero; 'n/r' means not in the current release (F-0097)." align="right" style={compactHead} />
+                    <ColHeader label="Tx 3mo" tip="Net transactions over three months, in billions — what the country actually bought or sold, with price stripped out. Japan's holdings moved -1.15% last month while it sold $88.6bn over the quarter, almost all of it Treasury bills; the percentage column cannot show that (F-0099, D-0084). A figure pointing the opposite way from T-Bill MoM means that month's holdings move was price, not posture." align="right" style={compactHead} />
                     <ColHeader label="Consec" tip="Consecutive months of declining Treasury holdings. Each additional month adds 4 pts to the Treasury score, capped at 5 months (20 pts). Persistence distinguishes strategic selling from noise." align="right" style={compactHead} />
                     <ColHeader label="Gold t" tip="Central bank gold reserves in metric tonnes, from the IMF's monthly IRFCL return (D-0076). Context for the gold score: large reserves + selling = higher stress than small reserves + selling." align="right" style={compactHead} />
                     <ColHeader label="T" tip="Treasury dimension score (0–50 pts). Calculated from: MoM decline magnitude (0–30 pts, scaled) + consecutive declining months (0–20 pts). This is the highest-weight stress dimension." align="right" style={compactHead} />
@@ -204,6 +206,26 @@ export function CompositeTab({ onCountrySelect }) {
                               : c.tic_state==="no_data"
                                 ? <span style={{ color:"#3A4D5C", fontSize:10 }} title="Never among the reported holders">—</span>
                                 : c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(1)}%`:"—"}
+                        </td>
+                        <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right" }}>
+                          {/* D-0084. The dollars actually transacted, beside the
+                              percentage the score reads. Coloured by direction,
+                              and gold when it contradicts the holdings move. */}
+                          {c.tic_net_3m_bn == null
+                            ? <span style={{ color:"#3A4D5C" }}>—</span>
+                            : (() => {
+                                const v = c.tic_net_3m_bn;
+                                const contra = c.tic_price_driven && (c.tic_3m_pct ?? 0) < 0;
+                                return (
+                                  <span
+                                    title={contra
+                                      ? `Holdings fell but transactions were ${v >= 0 ? "positive" : "small relative to valuation"} — the Treasury magnitude is not scored for this country (A-0021).`
+                                      : `Net transactions over three months.`}
+                                    style={{ color: contra ? "#C8A96E" : v < 0 ? "#E07B5A" : "#5DB87A", cursor: "help" }}>
+                                    {`${v > 0 ? "+" : v < 0 ? "−" : ""}$${Math.abs(v).toFixed(1)}`}
+                                  </span>
+                                );
+                              })()}
                         </td>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right", color:(c.tic_consecutive_months??0)>=3?"#E07B5A":"#8A9BAC" }}>
                           {(c.tic_consecutive_months??0)>0?`${c.tic_consecutive_months}mo`:"—"}

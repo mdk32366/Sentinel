@@ -58,6 +58,7 @@ COL_COUNTRY, COL_DATE = 0, 2
 COL_HOLDINGS, COL_NET = 3, 4
 COL_LT_HOLDINGS = 5
 COL_LT_VALCHG = 7
+COL_ST_HOLDINGS = 8
 
 # Rows whose "country" is a region, a memo line or a total. `F-0088` is the
 # standing example: "Of Which: Foreign Official" at 3,773.1 outranked Japan.
@@ -118,6 +119,16 @@ METRICS = {
             "Hungary, Romania, Serbia, Ukraine and Lebanon among them - so it "
             "is the only figure available for them. A DIFFERENT measure from "
             "total holdings, stored separately rather than substituted (D-0081)."
+        ),
+    },
+    "TIC_UST_ST_HOLDINGS": {
+        "name": "TIC Short-Term Treasury Holdings by Country",
+        "description": (
+            "Treasury bills held per country. The book a sovereign liquidates "
+            "first when it needs dollars, because bills are liquid and barely "
+            "move on price - so a drawdown here is almost purely transactional. "
+            "Japan's fell 54% in two months to July 2026 while its total "
+            "position moved 8% (D-0084)."
         ),
     },
     "TIC_UST_LT_VALUATION": {
@@ -200,6 +211,7 @@ def parse_table3(text: str) -> tuple[list[dict], list[str]]:
         # fabrication. Both are stored; the scorer decides.
         holdings = num(COL_HOLDINGS)
         lt_holdings = num(COL_LT_HOLDINGS)
+        st_holdings = num(COL_ST_HOLDINGS)
         if holdings is None and lt_holdings is None:
             continue
 
@@ -223,6 +235,7 @@ def parse_table3(text: str) -> tuple[list[dict], list[str]]:
             "date": date,
             "holdings_bn": round(holdings, 3) if holdings is not None else None,
             "lt_holdings_bn": round(lt_holdings, 3) if lt_holdings is not None else None,
+            "st_holdings_bn": round(st_holdings, 3) if st_holdings is not None else None,
             "net_sales_bn": num(COL_NET),
             "lt_valuation_bn": num(COL_LT_VALCHG),
         })
@@ -303,6 +316,7 @@ def run_tic_table3_fetch(db: Session, validate: bool = True) -> dict:
 
         holdings_metric = _ensure_metric(db, "TIC_UST_HOLDINGS")
         lt_metric = _ensure_metric(db, "TIC_UST_LT_HOLDINGS")
+        st_metric = _ensure_metric(db, "TIC_UST_ST_HOLDINGS")
         net_metric = _ensure_metric(db, "TIC_UST_NET_SALES")
         val_metric = _ensure_metric(db, "TIC_UST_LT_VALUATION")
 
@@ -354,6 +368,7 @@ def run_tic_table3_fetch(db: Session, validate: bool = True) -> dict:
             for metric, value in (
                 (holdings_metric, obs["holdings_bn"]),
                 (lt_metric, obs["lt_holdings_bn"]),
+                (st_metric, obs["st_holdings_bn"]),
                 (net_metric, obs["net_sales_bn"]),
                 (val_metric, obs["lt_valuation_bn"]),
             ):

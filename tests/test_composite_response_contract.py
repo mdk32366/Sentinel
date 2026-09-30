@@ -50,12 +50,22 @@ def scorer_payload_keys():
 
     keys = {m.group(1) for m in re.finditer(r'^\s*"([a-z0-9_]+)":', block, re.M)}
 
+    # `**helper(...)` — follow into the helper's return dict.
     for helper in re.findall(r"\*\*([a-z_][a-z0-9_]*)\(", block):
         hstart = source.index(f"def {helper}(")
         # Bounded by the next top-level def.
         hend = source.find("\ndef ", hstart + 1)
         body = source[hstart: hend if hend != -1 else len(source)]
         keys |= {m.group(1) for m in re.finditer(r'^\s*"([a-z0-9_]+)":', body, re.M)}
+
+    # `**name,` — a local dict built earlier in the scorer. `D-0084` spreads
+    # `mag_detail` that way. Read from its assignment rather than exempted, for
+    # the same reason as the call form: an exemption list lets the next spread
+    # hide a field silently, which is the failure F-0082 exists to catch.
+    for var in re.findall(r"\*\*([a-z_][a-z0-9_]*),", block):
+        m = re.search(rf"^\s*{var} = \{{(.*?)\}}", source, re.M | re.S)
+        if m:
+            keys |= {k.group(1) for k in re.finditer(r'"([a-z0-9_]+)":', m.group(1))}
 
     return keys
 

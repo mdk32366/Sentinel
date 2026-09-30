@@ -2160,3 +2160,94 @@ reported them as declared-but-never-produced - the `F-0082` guard being right
 about what it could see and wrong about the payload. It now follows a spread
 into the helper's return dict. An exemption list would have let the next spread
 hide a field silently, which is the failure that guard exists to prevent.
+
+### D-0084 - Dimension 1's magnitude, rebuilt on three findings
+
+`min(30, abs(month_on_month_pct) * 3)` is replaced. It had three defects, each
+measured rather than argued:
+
+| | |
+|---|---|
+| `F-0099` | scaled by proportion of a country's **own** position, so $1bn of selling was worth **0.27 points to Japan and 90.91 to Uruguay** |
+| `A-0021` | read **holdings**, which move with price. Of 31 countries whose position fell over three months, 19 fell for other reasons and five were net **buyers** |
+| new | read a **single month** and the **total** position. Japan sold **54% of its bill book** across May-June while its total moved 8%, then bought bills back in July |
+
+**The new term.** The worse of two three-month lenses, weighted by size:
+
+```
+magnitude = min(30, max(total_3m_severity, bill_book_drawdown) x size_weight)
+```
+
+- **Total position**, 1.5 points per percent: a 20% three-month fall earns the
+  full 30. The worst observed is South Africa at -19.7%.
+- **Bill book**, 0.6 points per percent of drawdown from its three-month peak:
+  **50% - "the majority" - earns the full 30**. Japan -48%, Norway -49%,
+  Thailand -39%.
+- **Size weight**, 1.0x rising to 1.5x at a 10% share of all foreign holdings.
+  Japan holds 11.9% and so is capped at 1.5x.
+
+**Why the bill book.** It is where a sovereign raises dollars first, because
+bills are liquid and barely move on price. That last property is what makes the
+signal clean: a drawdown there is a quantity change, so unlike the total
+position it needs **no** price suppression.
+
+**Why measured from the peak, not the previous month.** Japan's bills fell to
+$70.5bn and recovered to $80.2bn. Against July it reads **+13.8%** and the
+liquidation disappears; against the April peak it reads **-47.7%**.
+
+**Three gates, each earning its place against a real country.**
+
+- The total magnitude is suppressed where the fall was not selling - a net
+  buyer, or valuation larger than transactions. `A-0021` option 2, accepted on
+  the condition it improves reliability. It does: 19 of 31 falling countries
+  are suppressed, five of them net buyers (Sweden, Hong Kong, Italy, Brazil,
+  Australia), while Japan, China, Germany and France are all kept at 84-93%
+  transactions.
+- The bill signal requires the **total** not to be rising. Finland's bills fell
+  30.8% while its total rose 19.5% - a rotation into duration, not a
+  liquidation.
+- The bill signal requires the country to be a **net seller**. Brazil (+$1.3bn)
+  and Hong Kong (+$5.2bn) both shrank their bill books while buying overall.
+
+**Size weight deliberately gentle, and capped.** The judgement it implements is
+that the percentage move matters more than the dollar size; a weight large
+enough to let Japan outrank a small country on dollars alone would invert that.
+It modifies, it does not drive.
+
+**The before and after, across 60 countries.**
+
+```
+country            now   new       basis
+Japan             15.4  42.0   short-term liquidation   (-48% bills, -$88.6bn)
+South Africa      38.0  37.7   total position           (-19.7%)
+France            42.0  32.4   total position
+Norway             0.0  30.0   short-term liquidation   (-49% bills)
+Thailand          34.0  28.5   short-term liquidation   (-39% bills)
+Germany           30.9  26.9   short-term liquidation   (-36% bills)
+China, Mainland   15.3  25.5   short-term liquidation   (-22% bills)
+Argentina         38.0   8.0   none - it was a net buyer
+Sweden            31.8   8.0   none - net buyer
+Canada            25.7   4.0   none - position rose
+```
+
+Distribution across all 60: mean 8.0, median 4.0, max 42.0, **none at the 50
+cap**. Under the old formula Uruguay reached it on a $3bn position.
+
+**Every constant was fitted to the real thirteen-month Table 3 history**, and
+`tests/test_treasury_magnitude.py` asserts against the observed figures rather
+than against the constants - so changing a constant cannot also change its own
+justification. Two earlier drafts are recorded in the finding: the first let
+Uruguay hit the cap and scored Finland's rotation as distress; the second
+scored Brazil and Hong Kong while they were buying.
+
+**A guard extended twice rather than exempted.** The new fields reach the
+payload through `**mag_detail`, a spread of a local dict, and
+`test_composite_response_contract.py` reported them as never-produced. It now
+follows both the call form and the variable form of a spread. An exemption list
+would let the next one hide a field silently, which is the failure `F-0082`
+exists to catch.
+
+**On the COMPOSITE table**, a `Tx 3mo` column now sits beside `T-Bill MoM`: the
+dollars actually transacted beside the percentage the score reads. It is gold
+when the two contradict each other, which is the case a reader most needs to
+see and the one the ranking cannot show on its own.
