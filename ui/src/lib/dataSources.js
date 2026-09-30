@@ -40,9 +40,9 @@ export const SOURCES = [
     url: "https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table5.html",
     update: "Monthly (auto)",
     lag: "77–106 days — rows are dated to the first of the data month and published ~2.5 months later",
-    coverage: "20 reporting countries",
-    metrics: ["Foreign holdings of US Treasury securities by country, in $B"],
-    notes: "SLT Table 5, 'Major Foreign Holders of Treasury Securities'. NOT mfhhis01.txt: Treasury retired the standalone MFH release in March 2023 and folded the table into SLT, and mfhhis01.txt is the history file — still served, still rewritten by every release, and frozen at December 2025. This pipeline read it for nine months (F-0088). Runs on the 15th at 03:00 UTC.",
+    coverage: "76 reporting countries (60 with a total position, 16 long-term only)",
+    metrics: ["Foreign holdings of US Treasury securities by country, in $B", "Net U.S. sales by country — transactions with price stripped out", "Long-term valuation change by country", "Short-term (bill) holdings by country", "All Other and Grand Total aggregates", "Foreign Official holdings, and its bill/bond split"],
+    notes: "TWO tables from the same monthly release. SLT Table 5 names the twenty largest holders and publishes the All Other, Grand Total and Foreign Official aggregates (D-0079, D-0080). SLT Table 3 carries all 76 reporters in long format, with net sales and valuation change separated so selling can be told from repricing (D-0081) — it reproduces Table 5 to the decimal for the named twenty, and the import refuses to write if it ever stops. NOT mfhhis01.txt: Treasury retired the standalone MFH release in March 2023 and folded the table into SLT, and mfhhis01.txt is the history file — still served, still rewritten by every release, and frozen at December 2025. This pipeline read it for nine months (F-0088). Runs on the 15th at 03:00 UTC.",
     manual: false,
   },
   {

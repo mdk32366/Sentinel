@@ -3500,3 +3500,39 @@ that will be broken again by the next person who adds a field to two producers.
 quarter (`2026-Q3`), a habit from the World Gold Council series. `D-0076` made
 it monthly, so Germany's **August** figure was displayed as three months of
 data.
+
+### F-0102 - The explanations went stale again, four hours after being fixed
+
+Asked whether the country, ABOUT and ADMIN surfaces were up to date. They were
+not, and the gap had opened **since** `F-0100` swept them the same afternoon.
+
+| Surface | Said | Since |
+|---|---|---|
+| Country panel, MoM tile | "The Treasury dimension scores the magnitude at up to 30 points" from the month-on-month change | `D-0084` - the magnitude has not come from MoM for hours |
+| ABOUT, TIC entry | "20 reporting countries", SLT Table 5 only | `D-0081` - Table 3 carries **76**, with net sales and valuation |
+
+ADMIN was clean: its guard reads `api/routes.py` and `scheduler.py` directly, so
+`TIC_Table3` appeared in it the moment the job was registered. **The surfaces
+with a guard stayed correct and the surfaces with prose did not**, which is the
+whole argument for the guards.
+
+**Why it happened twice in a day.** `F-0096` and `F-0098` fixed ABOUT and ADMIN
+and added tests. `F-0100` fixed the scoring text. Then `D-0081` and `D-0084`
+changed the underlying facts again, and nothing connected the change to the
+sentence describing it. Every one of these was true when written; the register
+is full of that sentence now.
+
+**Fixed, and guarded by name.** Two assertions that cannot be satisfied by
+rewording: no surface may describe dimension 1's magnitude as month-on-month,
+and ABOUT may not claim 20 TIC reporting countries. Both scoped to code with
+comments stripped, because several files legitimately *explain* the old rule to
+say why it was replaced - and a "must not say X" test over a file that documents
+X fails on its own documentation. That mistake was made five times today before
+`strip_js_comments` existed.
+
+**The limit worth stating.** These guards pin *specific* falsehoods, which is
+the only thing a static check can do to prose. They will not catch the next
+sentence that goes stale for a reason nobody has thought of yet. The structural
+guards - ADMIN's route and job coverage, the response-model contract tests -
+are the ones that generalise, and the difference showed today: ADMIN was right
+without anyone touching it.

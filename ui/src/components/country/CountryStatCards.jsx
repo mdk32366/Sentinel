@@ -44,7 +44,7 @@ export function CountryStatCards({ latestTic, ticMom, latestGold, ticHistory, co
       label: "MoM Change",
       val: ticMom != null ? `${signed(ticMom, 2)}%` : exited ? "N/A" : "—",
       color: ticMom == null ? "#3A4D5C" : ticMom < 0 ? "#E07B5A" : "#5DB87A",
-      tip: "Month-on-month change in those holdings; negative is selling. The Treasury dimension scores the magnitude at up to 30 points and each consecutive declining month at a further 4, capped at 20 — persistence is what separates strategic reduction from ordinary rebalancing. A dash means fewer than two observations to compare, and a re-entry from zero shows a dash rather than an infinite percentage (F-0066).",
+      tip: "Month-on-month change in those holdings; negative is a falling position, which is not the same as selling — holdings move with bond prices too, and the TREASURY FLOWS panel below separates the two. This figure is no longer what the Treasury dimension scores: D-0084 replaced a month-on-month percentage with the worse of a three-month fall in the total position or a drawdown in the country's Treasury bill book, weighted by the country's share of all foreign holdings. The old rule could not see Japan liquidate 54% of its bills while its total moved 8%, and paid 0.27 points per $bn to Japan against 90.91 to Uruguay (F-0099). Consecutive declining months still add 4 points each, capped at 20. A dash means fewer than two observations, and a re-entry from zero shows a dash rather than an infinite percentage (F-0066).",
     },
     {
       label: "Gold Reserves",
