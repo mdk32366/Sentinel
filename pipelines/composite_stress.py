@@ -546,6 +546,20 @@ def compute_composite_stress(db: Session) -> dict:
     # Fetch Brent trend once — applies to all oil-dependent countries
     brent = get_brent_trend(db, months=3)
 
+    # D-0084. The bill book, and the denominator for the size weight. Both are
+    # read once rather than per country.
+    st_metric = db.query(Metric).filter_by(code="TIC_UST_ST_HOLDINGS").first()
+    net_metric_d1 = db.query(Metric).filter_by(code="TIC_UST_NET_SALES").first()
+    val_metric_d1 = db.query(Metric).filter_by(code="TIC_UST_LT_VALUATION").first()
+    global_total = None
+    gt_metric = db.query(Metric).filter_by(code="TIC_GRAND_TOTAL").first()
+    if gt_metric is not None:
+        gt_row = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == gt_metric.id,
+            TimeSeries.country_id.is_(None),
+        ).order_by(TimeSeries.date.desc()).first()
+        global_total = float(gt_row.value) if gt_row else None
+
     results = []
     # NOTE: Exclude USA from scoring — it's the issuer of Treasuries, not a holder.
     # TIC (Treasury International Capital) data tracks *foreign* holdings only.
@@ -554,16 +568,26 @@ def compute_composite_stress(db: Session) -> dict:
         iso = country.iso_code
 
         # ── DIMENSION 1: Treasury ──────────────────────────────────────────
+        # D-0084 widened this from 185 days. The magnitude term is now a
+        # three-month change, which needs four monthly observations, and the
+        # persistence term counts up to five consecutive declines.
         tic_hist = db.query(TimeSeries).filter(
             TimeSeries.metric_id == tic_metric.id,
             TimeSeries.country_id == country.id,
-            TimeSeries.date >= tic_latest - timedelta(days=185),
+            TimeSeries.date >= tic_latest - timedelta(days=200),
         ).order_by(TimeSeries.date.asc()).all()
 
         tic_mom = 0
         tic_consec = 0
         tic_score = 0
         selling_tic = False
+        # D-0084. Set here so a country that never reaches the scoring branch
+        # still carries the fields; an absent key would be filtered to a default
+        # by response_model and read as a real value (F-0079).
+        mag_detail = {
+            "tic_3m_pct": None, "tic_st_drawdown_pct": None,
+            "tic_magnitude_basis": "none", "tic_price_driven": False,
+        }
 
         # F-0097. `tic_hist` above is windowed and answers "is there current
         # data". This answers "what did they last actually report", at any age.
@@ -583,10 +607,32 @@ def compute_composite_stress(db: Session) -> dict:
                         tic_consec += 1
                     else:
                         break
-                if tic_mom < 0:
-                    tic_score += min(30, abs(tic_mom) * 3)
+                # D-0084. The magnitude term, replacing
+                # `min(30, abs(tic_mom) * 3)`. A three-month lens over the
+                # total position OR the bill book, whichever is worse, with the
+                # total suppressed where the fall was price rather than selling
+                # and the result weighted by the country's share of all foreign
+                # holdings. F-0099 and A-0021 are why; the function carries the
+                # derivation of every constant.
+                st_series = _series_values(
+                    db, st_metric, country.id, tic_latest, days=200
+                )
+                net_3m = _sum_recent(
+                    db, net_metric_d1, country.id, tic_latest, months=3
+                )
+                val_3m = _sum_recent(
+                    db, val_metric_d1, country.id, tic_latest, months=3
+                )
+                tot_series = [float(r.value) for r in tic_hist]
+
+                magnitude, mag_detail = treasury_magnitude(
+                    tot_series, st_series, net_3m, val_3m, global_total
+                )
+                tic_score += magnitude
                 tic_score += min(20, tic_consec * 4)
-                selling_tic = tic_mom < -0.5 or tic_consec >= 2
+                selling_tic = (
+                    magnitude > 0 or tic_mom < -0.5 or tic_consec >= 2
+                )
         elif no_tic_holdings:
             # Completed Treasury liquidation — most severe de-dollarization signal.
             # Assign a strong tic_score based on gold holdings as confirmation.
@@ -824,6 +870,7 @@ def compute_composite_stress(db: Session) -> dict:
             "m2_year": m2_year,
             "m2_stale": m2_stale,
             **treasury_flows(db, country.id, tic_latest),
+            **mag_detail,
             "tic_state": tic_state,
             "tic_last_reported_bn": round(tic_last_bn, 1) if tic_last_bn is not None else None,
             "tic_last_reported_date": tic_last_date.date().isoformat() if tic_last_date else None,
@@ -927,6 +974,133 @@ TRESEG_MAP = {
     "USA": "TRESEGUSM052N",
     "IDN": "TRESEGIDM052N",
 }
+
+
+# ── DIMENSION 1 MAGNITUDE (D-0084) ──────────────────────────────────────────
+#
+# Replaces `min(30, abs(month-on-month %) * 3)`, which had three defects
+# measured in F-0099 and A-0021:
+#
+#   1. It read a single month, and a liquidation spread over a quarter is
+#      invisible in any one of them. Japan's bill sales were May and June; by
+#      July it was buying back.
+#   2. It read the TOTAL position, so a move confined to the bill book - where
+#      a sovereign raises dollars first - was diluted to nothing. Japan sold
+#      **54% of its short-term book** in two months while its total moved 8%.
+#   3. It scaled by the proportion of a country's own position, so $1bn of
+#      selling was worth 0.27 points to Japan and 90.91 to Uruguay.
+#
+# Every constant below was fitted against the real 13-month Table 3 history
+# rather than chosen, and the before/after across all 60 countries is in
+# `docs/decisions.md` under D-0084.
+
+# A 20% fall in the total position over three months earns the full magnitude.
+# Observed range across 60 countries: South Africa -19.7% is the worst.
+TOT_PCT_PER_POINT = 1.5
+
+# A 50% drawdown in the bill book - "the majority", the user's threshold - earns
+# the full magnitude. Japan -48%, Norway -49%, Thailand -39%.
+ST_PCT_PER_POINT = 0.6
+
+# Below this a bill book is rolling, not being liquidated.
+ST_MIN_DRAWDOWN_PCT = 15.0
+
+# A $0.2bn book halving is noise, not a liquidation.
+ST_MIN_BOOK_BN = 1.0
+
+# The size weight. 1.0x for a country holding nothing, rising to 1.5x at a 10%
+# share of all foreign holdings - Japan is 11.9% and so is capped at 1.5x.
+#
+# Deliberately gentle and deliberately capped. Proportion still leads: the user's
+# judgement is that the percentage move matters more than the dollar size, and a
+# weight large enough to let Japan outrank a small country on dollars alone would
+# invert that. This modifies; it does not drive.
+SIZE_WEIGHT_MAX = 1.5
+SIZE_WEIGHT_FULL_SHARE_PCT = 10.0
+
+MAGNITUDE_CAP = 30.0
+
+
+def _pct_change(new, old):
+    return None if not old else (new - old) / old * 100
+
+
+def treasury_magnitude(tot_series, st_series, net_3m, val_3m, global_total):
+    """Dimension 1's magnitude term, and why it landed where it did.
+
+    Returns `(points, detail)`. `detail` names the basis so the surface can say
+    what the score was built from rather than presenting a bare number.
+    """
+    detail = {
+        "tic_3m_pct": None, "tic_st_drawdown_pct": None,
+        "tic_magnitude_basis": "none", "tic_price_driven": False,
+    }
+    if len(tot_series) < 4:
+        return 0.0, detail
+
+    tot_3m = _pct_change(tot_series[-1], tot_series[-4])
+    detail["tic_3m_pct"] = round(tot_3m, 2) if tot_3m is not None else None
+
+    # A-0021 option 2, accepted on the condition that it makes the picture more
+    # reliable. Measured: of 31 countries whose position fell over three months,
+    # 19 fell for reasons other than selling, and five of those were net BUYERS
+    # - Sweden, Hong Kong, Italy, Brazil, Australia. Japan, China, Germany and
+    # France are all kept, their declines being 84-93% transactions.
+    #
+    # Two ways a fall is not selling: the country bought on net anyway, or the
+    # valuation swing was larger than the transactions.
+    price_driven = net_3m is None or net_3m >= 0 or abs(val_3m or 0) > abs(net_3m)
+    detail["tic_price_driven"] = bool(price_driven)
+
+    mag_total = 0.0
+    if tot_3m is not None and tot_3m < 0 and not price_driven:
+        mag_total = min(MAGNITUDE_CAP, abs(tot_3m) * TOT_PCT_PER_POINT)
+
+    # The bill book. Not suppressed for price, because bills are short enough
+    # that valuation barely moves them - a drawdown here is a quantity change,
+    # which is what makes it the cleaner distress signal.
+    mag_st = 0.0
+    if len(st_series) >= 4 and max(st_series[-4:]) >= ST_MIN_BOOK_BN:
+        peak = max(st_series[-4:])
+        drawdown = _pct_change(st_series[-1], peak)
+        # Gated twice. A bill book shrinking while the TOTAL position grows is a
+        # rotation into duration (Finland: total +19.5%, bills -30.8%), and a net
+        # buyer did not raise dollars (Brazil +$1.3bn, Hong Kong +$5.2bn).
+        if (drawdown is not None and drawdown <= -ST_MIN_DRAWDOWN_PCT
+                and tot_3m is not None and tot_3m <= 0
+                and net_3m is not None and net_3m < 0):
+            detail["tic_st_drawdown_pct"] = round(drawdown, 1)
+            mag_st = min(MAGNITUDE_CAP, abs(drawdown) * ST_PCT_PER_POINT)
+
+    raw = max(mag_total, mag_st)
+    if raw <= 0:
+        return 0.0, detail
+
+    share = (tot_series[-1] / global_total * 100) if global_total else 0.0
+    weight = 1 + min(1.0, share / SIZE_WEIGHT_FULL_SHARE_PCT) * (SIZE_WEIGHT_MAX - 1)
+
+    detail["tic_magnitude_basis"] = (
+        "short-term liquidation" if mag_st > mag_total else "total position"
+    )
+    return min(MAGNITUDE_CAP, raw * weight), detail
+
+
+def _series_values(db, metric, country_id, latest, days):
+    """Ascending values for one metric and country inside a window."""
+    if metric is None or latest is None:
+        return []
+    rows = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == country_id,
+        TimeSeries.date >= latest - timedelta(days=days),
+    ).order_by(TimeSeries.date.asc()).all()
+    return [float(r.value) for r in rows]
+
+
+def _sum_recent(db, metric, country_id, latest, months):
+    """Sum of the last `months` observations, or None when there are none."""
+    vals = _series_values(db, metric, country_id, latest, days=months * 32)
+    return sum(vals[-months:]) if vals else None
 
 
 def treasury_flows(db: Session, country_id: int, tic_latest) -> dict:

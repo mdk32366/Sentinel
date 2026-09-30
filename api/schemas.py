@@ -271,6 +271,12 @@ class CompositeCountry(BaseModel):
     tic_valuation_1m_bn: Optional[float] = None
     tic_net_3m_bn: Optional[float] = None
     tic_flow_months: Optional[int] = None
+    # D-0084. What dimension 1's magnitude was built from, so the surface can
+    # say rather than present a bare number.
+    tic_3m_pct: Optional[float] = None
+    tic_st_drawdown_pct: Optional[float] = None
+    tic_magnitude_basis: str = "none"
+    tic_price_driven: bool = False
     tic_state: str = "reported"
     tic_last_reported_bn: Optional[float] = None
     tic_last_reported_date: Optional[str] = None

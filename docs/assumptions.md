@@ -645,87 +645,42 @@ current reading is remarkable or routine.
 (`calibration_months`), and the strip describes what was observed - "fallen in 9
 of the last 12 months" - rather than asserting that it is unusual.
 
-### A-0021 - Dimension 1 scores holdings change, which includes price
+### A-0021 - CLOSED by D-0084 - holdings change includes price
 
-**Measured, and option 1 is done (`D-0083`). The scoring question stays open.**
+Dimension 1 read the change in **holdings**, which moves with transactions and
+with price. Japan, July 2026: holdings -$12.7bn, transactions **+$0.9bn**,
+valuation -$12.1bn. A net buyer, scored as a seller.
 
-Dimension 1 reads month-on-month change in **holdings**. Holdings move for two
-reasons: someone transacted, or the bonds repriced. The scorer cannot tell them
-apart.
+**Option 1 was done first** (`D-0083`): the country panel shows the split.
+**Option 2 is now done** (`D-0084`), accepted on the condition that it improves
+reliability. Measured, it does - of 31 countries whose three-month position
+fell, **19 fell for reasons other than selling** and five were net buyers, while
+every genuine seller (Japan, China, Germany, France, all 84-93% transactions)
+is kept.
 
-**The clearest case.** Japan, July 2026: holdings **-$12.7bn**, net transactions
-**+$0.9bn**, long-term valuation **-$12.1bn**. Japan bought $9.7bn of bills and
-sold $8.8bn of bonds; the decline was price. Dimension 1 scored it as a seller.
-Switzerland the same month is the same shape.
+**Option 3 - score net sales outright - remains rejected**, and the measurement
+is why: across 3,192 country-months the position change and the published flows
+disagree by more than 10% of the move **65% of the time**. France's July carries
+a -$28.9bn residual, the UK's +$60.8bn. Net sales is cleaner about intent and
+worse about completeness, so it gates the magnitude rather than replacing it.
 
-It is not a uniform bias. China's decline was 88% transactions and Germany's
-93%, so the input is right for some countries and inverted for others, which is
-worse than a consistent error because it cannot be corrected for.
+### A-0022 - CLOSED by D-0084 - the list ranked by proportion, not impact
 
-**Why the obvious fix is not a fix.** Scoring net sales instead looks like a
-one-line change. Measured across **3,192 country-months**, the position change
-and the published flows disagree by:
+Dimension 1's magnitude scaled with a country's own position, so $1bn of selling
+was worth **0.27 points to Japan and 90.91 to Uruguay** - a 337-fold difference.
+Japan sold $88.6bn over three months and scored 15.4; Argentina *bought* $0.9bn
+and scored 38.0.
 
-```
-more than 10% of the move:  2,067  (64.8%)
-more than 25% of the move:  1,532  (48.0%)
-more than 50% of the move:  1,003  (31.4%)
-```
+**Closed by `D-0084`** with option 2 of the four recorded: weight the
+proportional move by the country's share of total foreign holdings, which
+`D-0079` already publishes. 1.0x to 1.5x, capped, because the judgement is that
+proportion leads and size modifies.
 
-France's July 2026 carries a **-$28.9bn residual** that neither transactions nor
-valuation explains; the UK's carries **+$60.8bn**. These are benchmark
-revisions, reclassifications and TIC's known custodial bias - securities held
-through a London or Cayman intermediary are attributed to the intermediary.
+**It was not the whole fix.** The larger part turned out to be *which*
+proportion is measured. Japan's total position moved 8% while its **bill book
+fell 54%** - the book a sovereign liquidates first to raise dollars. Weighting
+the total-position percentage alone would have taken Japan from 15.4 to about
+20; reading the bill book takes it to 42.0 and puts it at the top, which is
+where the transactions say it belongs.
 
-So net sales is **cleaner about intent and worse about completeness**. Swapping
-one incomplete measure for another, silently, is not an improvement.
-
-**Done: option 1.** `D-0083` puts the split on the country panel - holdings
-move, of which transacted, of which repriced, plus the three-month transaction
-total - and says in words when the two point opposite ways. No score changed.
-
-**Still open.**
-
-2. **Suppress where valuation dominates.** If the valuation component exceeds
-   the transaction component the move is not posture. A targeted fix for the
-   Japan case rather than a rewrite, and it does change scores.
-3. **Score on net sales.** Only with the residual problem understood, because
-   65% of country-months carry one above 10%.
-
-Related and larger: `F-0099` - the magnitude term is a *percentage*, so a dollar
-of selling is worth 337 times more to Uruguay than to Japan. Fixing the input
-without fixing that would leave the bigger misranking in place.
-
-### A-0022 - The stress list ranks by proportion, not by market impact
-
-`F-0099`. Dimension 1's magnitude term is `min(30, abs(mom_pct) * 3)` - a
-percentage of the country's own position. One billion dollars of Treasury
-selling scores **0.27 points for Japan and 90.91 for Uruguay**, a 337-fold
-difference, because the term has no notion of size.
-
-**The consequence, live.** Japan sold $88.6bn over three months and scores 15.4.
-Argentina *bought* $0.9bn and scores 38.0. A reader ranking by this list would
-look at the wrong countries.
-
-**Why it has not been changed.** Every option alters every score in the model:
-
-1. **Score dollars, capped.** Simple, and it inverts the problem - a large
-   holder trimming 0.5% would outrank a small one liquidating entirely, when
-   the small one is in far more distress.
-2. **Weight the percentage by size.** For example scale by the country's share
-   of total foreign holdings, which is published (`D-0079`). Keeps proportion
-   meaningful while letting $88.6bn register. Most promising, and needs a
-   calibration the way `D-0080` needed one.
-3. **Score both and report them separately** - a "proportion" rank and an
-   "impact" rank. Changes no existing number and admits there are two questions.
-4. **Leave it and disclose**, as `D-0078` did for coverage.
-
-**What the decision needs.** Not an argument about which is principled, but the
-before-and-after: run each option across all 34 scoring countries and see which
-moves. The data is in place, so this is a measurement rather than a debate - the
-`A-0017` approach, which has twice now turned a plausible-sounding rule into a
-measured one.
-
-**What must not happen** is a quiet reweighting. The scores are published;
-changing what they rank without saying so is the failure `D-0078` exists to
-prevent.
+Japan 15.4 -> 42.0, Argentina 38.0 -> 8.0, and no country at the 50 cap.
