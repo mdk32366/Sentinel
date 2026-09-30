@@ -72,6 +72,7 @@ ERROR_FIELD_LIMIT = 480
 CHECKS = [
     {
         "key": "treasury_yields",
+        "period": "day",
         "label": "US Treasury yield curve",
         "patterns": ["DGS%", "DFII%"],
         "max_age_days": 5,       # weekend + 1-day FRED lag + holiday headroom
@@ -80,6 +81,7 @@ CHECKS = [
     },
     {
         "key": "oil",
+        "period": "day",
         "label": "Crude oil (Brent / WTI)",
         "patterns": ["DCOIL%"],
         "max_age_days": 8,
@@ -88,6 +90,7 @@ CHECKS = [
     },
     {
         "key": "dollar_index",
+        "period": "day",
         "label": "Broad dollar index",
         "patterns": ["DTWEXBGS"],
         "max_age_days": 12,      # H.10 is weekly
@@ -96,6 +99,7 @@ CHECKS = [
     },
     {
         "key": "gold_price",
+        "period": "day",
         "label": "Gold spot price",
         "patterns": ["GOLD_SPOT_USD"],
         "max_age_days": 8,       # D-0041: LBMA daily fix, not the month-end CSV.
@@ -108,6 +112,7 @@ CHECKS = [
     },
     {
         "key": "gold_reserves",
+        "period": "month",
         "label": "Gold reserves by country",
         "patterns": ["GOLD_RESERVES"],
         # D-0076. Was 200, marked PROVISIONAL, for a quarterly hand-downloaded
@@ -118,9 +123,12 @@ CHECKS = [
         #
         # Derived rather than inherited, because today produced two thresholds
         # (F-0089, F-0091) that no healthy source could ever satisfy, and in
-        # both cases the false alarm concealed the real defect. 95 covers the
-        # cycle plus drift; one missed release reaches ~110 and trips it.
-        "max_age_days": 95,
+        # D-0077 retuned this from 95 to 65, for the same reason as TIC: 95 was
+        # measured from the first of the data month. Measured from the period
+        # end, IRFCL runs 28-55 days behind - the 2026-09-28 release covered to
+        # 2026-08-31, 28 days. 65 covers that plus drift; a missed release
+        # reaches ~86 and trips it.
+        "max_age_days": 65,
         "pipelines": ["Gold_Reserves", "Gold_Reserve_Changes", "Gold_Reserves_IMF"],
         "note": (
             "IMF IRFCL line 56, monthly, fine troy ounces converted to tonnes. "
@@ -130,6 +138,7 @@ CHECKS = [
     },
     {
         "key": "tic",
+        "period": "month",
         "label": "TIC Treasury holdings",
         "patterns": ["TIC%"],
         # F-0089. This was 55, described as "released ~45 days in arrears".
@@ -147,9 +156,13 @@ CHECKS = [
         # always-red guard from harmless into the thing that teaches a reader
         # to ignore the strip (P9 in the other direction).
         #
-        # 110 covers a full cycle plus the drift the note mentions. A missed
-        # release reaches ~136 days and trips this; nothing healthy does.
-        "max_age_days": 110,
+        # D-0077 retuned this from 110 to 85. The 110 was measured from the
+        # row's label - the first of the data month - and had to cover 77-106
+        # days for that reason. Measured from the period END the same cycle is
+        # 47-76 days: the 2026-09-16 release published data covering to
+        # 2026-07-31, which was 47 days old on arrival. 85 covers that plus
+        # drift; one missed release reaches ~106 and trips it.
+        "max_age_days": 85,
         "pipelines": ["TIC_Holdings"],
         "note": (
             "SLT Table 5. Monthly, dated to the first of the data month and "
@@ -158,6 +171,7 @@ CHECKS = [
     },
     {
         "key": "cds",
+        "period": "day",
         "label": "Sovereign CDS spreads",
         "patterns": ["%\\_CDS\\_%"],
         "max_age_days": 4,
@@ -171,6 +185,7 @@ CHECKS = [
     },
     {
         "key": "sovereign_yields",
+        "period": "month",
         "label": "OECD sovereign 10Y yields",
         "patterns": ["IRLTLT01%"],
         "max_age_days": 70,      # monthly OECD series, published in arrears
@@ -179,6 +194,7 @@ CHECKS = [
     },
     {
         "key": "reserves_ex_gold",
+        "period": "month",
         "label": "Total reserves ex-gold (TRESEG)",
         "patterns": ["TRESEG%"],
         "max_age_days": 100,
@@ -187,6 +203,7 @@ CHECKS = [
     },
     {
         "key": "money_supply",
+        "period": "year",
         "label": "Broad money growth",
         "patterns": ["BROAD_MONEY_GROWTH"],
         # F-0091, and the second instance of F-0089's arithmetic error that
@@ -210,8 +227,17 @@ CHECKS = [
         # `SourceRegressionError` in the fetcher, which asks whether the newest
         # year the API offers made it into the database - answerable in days
         # rather than years. See A-0016 for the year-end dating that would make
-        # this number meaningful.
-        "max_age_days": 960,
+        # this number meaningful - and D-0077 is that work. Measured from the
+        # end of the data year rather than 1 January, the same cycle is 194-559
+        # days instead of 558-923: the 2026-07-13 release carried calendar 2025,
+        # which ended 194 days earlier. 600 rather than 960.
+        #
+        # Still wide, because the source is annual and published 6-18 months in
+        # arrears - that is the source's nature, not a compensating fudge. The
+        # sharp guard for this series remains `SourceRegressionError` in the
+        # fetcher, which asks whether the newest year the API offers reached the
+        # database and is answerable in days.
+        "max_age_days": 600,
         "pipelines": ["Broad_Money_Growth"],
         "note": (
             "World Bank FM.LBL.BMNY.ZG, annual, dated to 1 January of the "
@@ -383,6 +409,50 @@ def calibrate(db: Session) -> str:
     return "\n".join(lines)
 
 
+# D-0077 / A-0016. Every series is stored dated to the START of the period it
+# describes: a TIC row for July 2026 is dated 2026-07-01, and a broad-money row
+# for calendar 2025 is dated 2025-01-01. But the observation describes a period
+# that ENDS later - TIC's own file says "Holdings at end of time period" - so an
+# age measured from the stored date overstates staleness by up to a full period,
+# and every tolerance had to be inflated to compensate.
+#
+# The inflation was real: TIC needed 110 days and broad money 960, which is wide
+# enough to be nearly decorative. Measuring from the period end instead gives a
+# guard that can actually detect a missed release.
+#
+# `A-0016` recorded this as a migration of stored dates, which it is not. Dates
+# are left alone: rewriting three whole series would mean an irreversible UPDATE
+# across the history, and any half-applied version would leave the same holding
+# recorded under two conventions. Deriving the coverage end at read time gets the
+# identical arithmetic with nothing to undo.
+PERIOD_DAYS = {"day": 1, "month": 1, "quarter": 3, "year": 12}
+
+
+def coverage_end(period_start, period):
+    """The last day of the period a row beginning at `period_start` describes.
+
+    A daily series covers its own date. A July 2026 monthly row covers to
+    2026-07-31; a Q3 quarterly row to 2026-09-30; a calendar-2025 annual row to
+    2025-12-31.
+    """
+    if period_start is None:
+        return None
+    months = PERIOD_DAYS.get(period, 1)
+    if period == "day":
+        return period_start
+    month = period_start.month - 1 + months
+    year = period_start.year + month // 12
+    month = month % 12 + 1
+    # First day of the following period, minus one day.
+    return datetime(year, month, 1) - timedelta(days=1)
+
+
+def _age_from_coverage(period_start, period, now):
+    """Days since the observation's period ended, not since its label."""
+    end = coverage_end(period_start, period)
+    return None if end is None else (now - end).days
+
+
 def _classify(age_days, max_age_days):
     if age_days is None:
         return "unknown"
@@ -402,13 +472,16 @@ def get_freshness_report(db: Session) -> dict:
     for check in CHECKS:
         latest_by_code = _latest_dates_by_pattern(db, check["patterns"])
 
+        period = check.get("period", "day")
+
         if latest_by_code:
             newest = max(latest_by_code.values())
-            age_days = (now - newest).days
+            # D-0077: measured from the end of the period the row describes.
+            age_days = _age_from_coverage(newest, period, now)
             # the single laggard within the group is often the real story
             oldest_code = min(latest_by_code, key=lambda c: latest_by_code[c])
             oldest_date = latest_by_code[oldest_code]
-            oldest_age = (now - oldest_date).days
+            oldest_age = _age_from_coverage(oldest_date, period, now)
         else:
             newest = age_days = None
             oldest_code = oldest_date = oldest_age = None
@@ -438,6 +511,13 @@ def get_freshness_report(db: Session) -> dict:
 
         sources.append({
             "key": check["key"],
+            # D-0077. The stored date labels the period; this is when the period
+            # it describes actually ended, which is what the age is measured
+            # from and what a reader should be shown.
+            "period": period,
+            "coverage_end": (
+                coverage_end(newest, period).date().isoformat() if newest else None
+            ),
             "label": check["label"],
             "status": status,
             "latest_date": newest.date().isoformat() if newest else None,

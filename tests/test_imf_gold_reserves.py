@@ -307,13 +307,14 @@ class TestItIsWiredIn(unittest.TestCase):
         self.assertIn("Gold_Reserves_IMF", src["pipelines"])
 
     def test_the_tolerance_suits_a_monthly_source_now(self):
-        # IRFCL publishes ~3 weeks after month end and rows are dated to the
-        # first of the month, so the newest row is ~50 days old on arrival and
-        # ~80 the day before the next release. 200 was set for a quarterly
-        # hand-downloaded CSV and was marked PROVISIONAL.
+        # IRFCL publishes ~3 weeks after month end. D-0077 measures age from the
+        # end of the data month rather than its first day, so the cycle is 28-55
+        # days: the 2026-09-28 release covered to 2026-08-31, 28 days earlier.
+        # 200 was set for a quarterly hand-downloaded CSV and marked PROVISIONAL;
+        # 95 was the label-based figure; this is the coverage-based one.
         src = next(s for s in CHECKS if s["key"] == "gold_reserves")
-        self.assertGreaterEqual(src["max_age_days"], 80)
-        self.assertLess(src["max_age_days"], 110)
+        self.assertGreaterEqual(src["max_age_days"], 55)
+        self.assertLess(src["max_age_days"], 86)  # a missed release reaches ~86
 
     def test_the_note_no_longer_says_MANUAL(self):
         src = next(s for s in CHECKS if s["key"] == "gold_reserves")

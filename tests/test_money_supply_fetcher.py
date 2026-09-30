@@ -188,8 +188,13 @@ class TestItIsActuallyScheduled(unittest.TestCase):
 class TestTheToleranceIsReachable(unittest.TestCase):
     """F-0091 / F-0089's second instance, predicted by A-0015."""
 
-    BEST_CASE_AGE = 558   # 2025-01-01 row, available 2026-07-13
-    WORST_CASE_AGE = 923  # still newest when the next annual release lands
+    # D-0077 retargeted these to the period end. The 2026-07-13 release carried
+    # calendar 2025, which ENDED 2025-12-31 - 194 days earlier, not 558. The
+    # 1 January date is the year's label, not the age of the observation, and
+    # this is the series where that convention did the most damage: a tolerance
+    # of 960 days is wide enough to be nearly decorative.
+    BEST_CASE_AGE = 194   # calendar 2025, available 2026-07-13
+    WORST_CASE_AGE = 559  # still newest when the next annual release lands
 
     def _src(self):
         src = next((s for s in CHECKS if s["key"] == "money_supply"), None)
@@ -204,7 +209,9 @@ class TestTheToleranceIsReachable(unittest.TestCase):
         self.assertGreaterEqual(self._src()["max_age_days"], self.WORST_CASE_AGE)
 
     def test_it_still_catches_a_wholly_missed_annual_release(self):
-        self.assertLess(self._src()["max_age_days"], self.WORST_CASE_AGE + 400)
+        # A skipped annual release puts the newest observation past ~925 days
+        # from its coverage end.
+        self.assertLess(self._src()["max_age_days"], self.WORST_CASE_AGE + 366)
 
     def test_the_note_no_longer_says_MANUAL(self):
         # It is not manual any more. A note describing a fixed condition is

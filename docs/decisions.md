@@ -1773,3 +1773,58 @@ stores it.
 **What this did not fix.** Angola's entire IRFCL series is a thousandfold out
 and is rejected, so Angola has no gold data rather than wrong gold data. It is
 not in the WGC set either. `A-0018`.
+
+### D-0077 - Age is measured from when the period ended, not from its label
+
+**A-0016.** Every series is stored dated to the START of the period it
+describes. A TIC row for July 2026 is dated `2026-07-01`; a broad-money row for
+calendar 2025 is dated `2025-01-01`. But the observation describes a period that
+**ends** later - TIC's own file says "Holdings at end of time period" - so an
+age measured from the stored date overstates staleness by up to a full period.
+
+Every tolerance had been inflated to absorb that, and the inflation was large
+enough to matter:
+
+| source | period | age by label | age by coverage | tolerance was | now |
+|---|---|---|---|---|---|
+| `tic` | month | 91d | **61d** | 110 | **85** |
+| `gold_reserves` | month | 60d | **30d** | 95 | **65** |
+| `money_supply` | year | 637d | **273d** | 960 | **600** |
+
+960 days is wide enough to be nearly decorative. That was not generosity - it
+was the cost of measuring a calendar year's data from the first of January.
+
+**Not done as a migration, which is what `A-0016` proposed.** Rewriting three
+whole series is an irreversible `UPDATE` across the history, a half-applied
+version would leave one holding recorded under two conventions, and the gold
+series would collide with itself - WGC quarter-start rows map to the same
+quarter-end as IMF month-start rows for the third month. Deriving
+`coverage_end` at read time is the same arithmetic with nothing to undo, and it
+fixes the display problem too, which a migration would also have had to do
+separately.
+
+I have recorded this as a deliberate substitution rather than doing it quietly:
+the destructive version remains available if the stored dates themselves matter
+for some reason I have not seen.
+
+**Computed as "first day of the next period, minus one day"** rather than from a
+table of month lengths, so February and leap years need no special case.
+`period` is declared on all ten sources and a test fails if any is missing -
+a missing period silently defaults to daily, which would restore the original
+overstatement for exactly the monthly and annual sources this is about.
+
+**Only the three inflated tolerances were retuned.** `reserves_ex_gold` at 100
+and `sovereign_yields` at 70 were set by `calibrate` from observed data, and
+shifting the measurement basis by a month gives them *more* headroom, not less -
+so leaving them cannot cause a false alarm. Stated in a test rather than left
+for someone to conclude they were overlooked.
+
+**One threshold deliberately keeps the old basis.** `MAX_SOURCE_AGE_DAYS = 140`
+in `treasury_holdings.py` is applied against the parsed row date, which is the
+first of the data month; the pipeline never sees a coverage end. Two thresholds
+measured against two different things is exactly `F-0087`, so the difference is
+written down in the test rather than silently carried.
+
+**On screen**, the confidence strip now shows the coverage end and reads
+"61d since period end" rather than "91d old". Showing a period label beside an
+age measured from the period's end is how a reader concludes the two disagree.
