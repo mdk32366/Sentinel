@@ -109,10 +109,22 @@ class TestTicStaleness(unittest.TestCase):
                          "failed")
 
     def test_the_limit_accommodates_a_real_publication_cycle(self):
-        """TIC is monthly at ~45 days in arrears, so a healthy newest row is
-        around 60 days old and 75 at the end of a cycle. A limit that fired on
-        those would be the decoration D-0024 exists to prevent."""
-        self.assertGreater(MAX_SOURCE_AGE_DAYS, 75)
+        """A limit that fires on a healthy source is the decoration D-0024
+        exists to prevent.
+
+        F-0089 corrects the arithmetic this case used to assert. It said "~45
+        days in arrears, so a healthy newest row is around 60 days old and 75
+        at the end of a cycle" and checked `> 75`. The arrears are counted
+        from the wrong end: a row is dated to the FIRST of its data month and
+        the release covers the month ending two months earlier, so the
+        2026-09-16 release published a row dated 2026-07-01 that was already
+        77 days old, reaching ~106 before the next release.
+
+        `> 75` therefore passed a constant of 100 that would have refused a
+        current file for the last fortnight of every cycle. The case was not
+        weakened - it was measuring the wrong cycle.
+        """
+        self.assertGreater(MAX_SOURCE_AGE_DAYS, 106)
 
     def test_stale_source_error_is_distinguishable(self):
         """It must not be swallowed by the per-country error path, which

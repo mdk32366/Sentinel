@@ -1667,3 +1667,35 @@ data. This half delivers the assurance, and the honest content of that
 assurance is that the composite's inputs are old. Saying so on the screen is
 the prerequisite for fixing it, not a substitute: the data half is open
 work, tracked as `A-0015`.
+
+### D-0075 - TIC reads SLT Table 5; the history file keeps its parser
+
+**Choice.** `TIC_MFH_URL` is `slt_table5.txt`. `mfhhis01.txt` keeps a name,
+`TIC_MFH_HISTORY_URL`, and nothing scheduled reads it.
+
+**Why keep the legacy parser at all.** Table 5 carries a rolling 13 months.
+`mfhhis01.txt` carries years, and that history is the only machine-readable
+source for it. The two-row header path is therefore a live format with a real
+use, not code kept out of sentiment - and it is fixture-tested, including the
+case that matters: a bare year row (`Country 2025 2025`) must not be mistaken
+for an ISO month row, since both begin with "Country".
+
+**Dates stay on the first of the month.** The file says "Holdings at end of
+time period", so dating rows to month-end would be more accurate and would
+tighten the healthy age range from 77-106 days to 47-76 - a meaningfully
+faster detection of a missed release. It is not done here because every
+existing row is dated to the first, so the change is a migration of the whole
+series rather than a pipeline edit, and a half-applied one would duplicate
+history under two conventions. Recorded as the reason the tolerances in
+`F-0089` are as large as they are, and left as open work rather than done
+quietly as part of something else.
+
+**Thresholds derived, not guessed.** `F-0089`. The watchdog warns at 110 and
+the pipeline refuses at 140, both computed from the release calendar: newest
+row 77 days old on arrival, ~106 the day before the next release, ~136 after
+one missed release, ~166 after two. The test file asserts against those
+derived figures rather than against the constants, so a future edit to a
+constant cannot also edit its own justification.
+
+**What this does not fix.** `money_supply` and `gold_reserves` remain MANUAL
+with no fetcher - 75 of 165 points. `A-0015`.

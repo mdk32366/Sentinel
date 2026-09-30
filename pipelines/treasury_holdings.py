@@ -1,11 +1,20 @@
 """
 Treasury Holdings Data Pipeline
 --------------------------------
-Fetches US Treasury holdings by country from TIC (Treasury International Capital)
-Data source: https://ticdata.treasury.gov/Publish/mfhhis01.txt
+Fetches US Treasury holdings by country from TIC (Treasury International
+Capital).
+
+Data source: SLT Table 5, "Major Foreign Holders of Treasury Securities".
 Runs monthly on day 15 via scheduler.
+
+F-0088: this pointed at `Publish/mfhhis01.txt` for nine months. That file is
+still served, still 200, still updated in place by every release - and it
+stopped being extended past December 2025, because Treasury retired the
+standalone MFH release in March 2023 and folded the table into the SLT
+dataset. It is the *history* file. The current table is Table 5 of SLT.
 """
 
+import re
 import requests
 import logging
 from datetime import datetime
@@ -15,11 +24,45 @@ from database.models import Metric, Country, TimeSeries, UpdateLog
 
 logger = logging.getLogger(__name__)
 
-TIC_MFH_URL = "https://ticdata.treasury.gov/Publish/mfhhis01.txt"
+TIC_BASE = "https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents"
 
-# D-0045 / F-0050. TIC MFH is monthly, released roughly 45 days in arrears, so
-# a healthy newest row is about 60 days old and 75 at the end of a cycle. 100
-# is the first value that does not fire on a correctly updating source.
+# SLT Table 5 - "Major Foreign Holders of Treasury Securities".
+#
+# F-0088. Not `Publish/mfhhis01.txt`, which this used for nine months. Both
+# files are served by the same release and both carried a September 2026
+# last-modified; only this one contains September 2026 *data*. The landing
+# page names this URL as "direct link to the MFH table", and the file names
+# itself in its own fourth line - the one authority on which file is current
+# was inside the file all along.
+TIC_MFH_URL = f"{TIC_BASE}/slt_table5.txt"
+
+# The history file, kept for backfill only. It holds years of monthly data
+# that Table 5's rolling 13-month window does not, so it is worth having a
+# name for - but nothing scheduled reads it, because reading it is the bug.
+TIC_MFH_HISTORY_URL = "https://ticdata.treasury.gov/Publish/mfhhis01.txt"
+
+# D-0045 / F-0050. The age at which this pipeline refuses the file outright.
+#
+# F-0089: this was 100, on the reasoning that "a healthy newest row is about
+# 60 days old and 75 at the end of a cycle". Both figures are too low by about
+# a month. Rows are dated to the first of the data month and the release runs
+# ~2.5 months behind, so the newest row is 77 days old the day it is published
+# and ~106 the day before the next release. 100 sits inside that range: the
+# guard would have refused a perfectly current file for the last two weeks of
+# every cycle.
+#
+# It never did, because the source was frozen at 303 days the whole time this
+# number existed - the bug was masked by the bug it was written for.
+#
+# 140 refuses a file that has missed two releases while passing one that has
+# missed none.
+#
+# F-0087: this is the age at which this pipeline REFUSES THE FILE, which is a
+# different question from the age at which a reader should be told the source
+# has missed its release. The latter is `tic.max_age_days` in
+# pipelines/freshness_watchdog.py, which is 55. Both numbers are right; they
+# are not interchangeable, and the UI briefly used this one to answer the
+# watchdog's question.
 #
 # This exists because the pipeline reported `success` for nine months while
 # re-importing a file frozen at December 2025: 10,009 rows updated, 0 inserted,
@@ -27,7 +70,7 @@ TIC_MFH_URL = "https://ticdata.treasury.gov/Publish/mfhhis01.txt"
 # worked, and the data never moved. A pipeline that cannot tell "I imported
 # current data" from "I re-imported a frozen year" is not reporting success,
 # it is reporting completion.
-MAX_SOURCE_AGE_DAYS = 100
+MAX_SOURCE_AGE_DAYS = 140
 
 
 class StaleSourceError(RuntimeError):
@@ -41,11 +84,23 @@ class StaleSourceError(RuntimeError):
 
 MONTH_ABBR_SET = {"Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"}
 
+# SLT Table 5 column headers: "2026-07". Anchored on four digits so a stray
+# "2026" year cell from the legacy layout cannot match.
+ISO_MONTH_RE = re.compile(r"\d{4}-(0[1-9]|1[0-2])")
+
 SKIP_ROWS = {
     "All Other", "Grand Total", "For. Official",
     "Treasury Bills", "T-Bonds & Notes", "Of which:",
     "Country",
 }
+
+# Table 5's aggregate rows. They are not countries and have no ISO code, so
+# they were already dropped at the mapping step - but only after being parsed
+# into the result dict, where "Of Which: Foreign Official" at 3773.1 sat above
+# Japan looking exactly like the largest holder. Matched by prefix because the
+# suffixes vary ("Treasury Bills", "T-Bonds & Notes") and because the existing
+# SKIP_ROWS entry is "Of which:", which does not match a capital W.
+SKIP_PREFIXES = ("Of Which:", "Of which:", "Table 5", "Holdings at end", "Link:")
 
 COUNTRY_MAPPING = {
     "Japan": "JPN",
@@ -137,8 +192,26 @@ def fetch_tic_mfh_data() -> str:
 
 def parse_tic_mfh(text: str) -> dict:
     """
-    Parse the tab-delimited TIC MFH file.
-    Structure:
+    Parse a tab-delimited TIC MFH file, in either published layout.
+
+    **SLT Table 5** (the current release) heads its columns with ISO months
+    on the same row as the `Country` label:
+
+        Country\t2026-07\t2026-06\t2026-05\t...
+        Japan\t1103.9\t1116.7\t1143.1\t...
+
+    **mfhhis01.txt** (the history file) splits the header across two rows and
+    stacks a fresh pair for every year:
+
+        \tDec\tNov\t...
+        Country\t2025\t2025\t...
+
+    Both are handled, and both are exercised by fixtures. The history layout
+    is not dead code kept for sentiment: it is a real format still served,
+    and the reason this function must be able to tell them apart is that
+    reading the wrong one silently yields a frozen year (`F-0088`).
+
+    Legacy structure:
       - Leading header rows (ignore)
       - Month row: \tDec\tNov\t... (first col blank)
       - Year row: Country\t2025\t2025\t...
@@ -163,6 +236,21 @@ def parse_tic_mfh(text: str) -> dict:
         if not non_empty:
             continue
 
+        # SLT Table 5 header: "Country" followed by ISO months, one row.
+        #
+        # Checked before the legacy year row below, which also starts with
+        # "Country" but requires `pending_months` from a preceding month row.
+        # Normalised to the same "%b %Y" strings the legacy path produces, so
+        # the caller's strptime contract is untouched.
+        if cols[0] == "Country":
+            iso = [c for c in non_empty if ISO_MONTH_RE.fullmatch(c)]
+            if iso:
+                current_dates = [
+                    datetime.strptime(c, "%Y-%m").strftime("%b %Y") for c in iso
+                ]
+                pending_months = []
+                continue
+
         # Month header row: first col blank, first non-empty value is a month abbr
         if cols[0] == "" and non_empty[0] in MONTH_ABBR_SET:
             pending_months = [c for c in non_empty if c in MONTH_ABBR_SET]
@@ -184,7 +272,11 @@ def parse_tic_mfh(text: str) -> dict:
                 or "HOLDINGS" in country
                 or "billions" in country
                 or "AT END" in country
-                or "MAJOR" in country):
+                or "MAJOR" in country
+                # Table 5 prose and aggregate rows. "Link:" is the line that
+                # names the current file (F-0088) and is still a header, not a
+                # country.
+                or country.startswith(SKIP_PREFIXES)):
             continue
 
         if not current_dates:

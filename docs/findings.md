@@ -2745,3 +2745,105 @@ One wording now, always spelled out.
 stale and 90 does not, so a smuggled-in default fails the case. The test it
 replaces asserted the client constant equalled 100 to match the pipeline -
 it pinned the wrong contract, and pinned it accurately.
+
+### F-0088 - The TIC pipeline read the history file for nine months
+
+**The symptom**, carried for nine months: `TIC_Holdings` reported `success`
+every run - 10,009 rows updated, 0 inserted - with the newest row frozen at
+December 2025 and ageing to 303 days.
+
+**The cause.** `TIC_MFH_URL` pointed at
+`https://ticdata.treasury.gov/Publish/mfhhis01.txt`. Treasury **retired the
+standalone MFH release in March 2023** and folded the table into the SLT
+dataset as **Table 5**. `mfhhis01.txt` is the *history* file. It is still
+served, still returns 200, and is still rewritten by every release - its
+last-modified was 2026-09-16, the date of the September release - and it is
+no longer extended past December 2025.
+
+Every signal available to the pipeline said the source was healthy. The
+request succeeded, the file was fresh by HTTP, the parse succeeded, 10,009
+rows were written. The only signal that disagreed was the data itself, which
+is precisely what `D-0045` was built to check, and it did: `StaleSourceError`
+fired correctly for nine months.
+
+**Why I did not find it sooner.** I had read `mfhhis01.txt`, seen its footer
+dated `9/16/2026` with `"(2025 revised July 14, 2026)"`, and concluded the
+file was actively maintained but that the current release could not be
+located. Both halves were true. The conclusion was wrong: a maintained file
+and a current file are not the same thing, and I let a recent last-modified
+stand in for recent data - the same substitution the pipeline was making.
+
+**What found it.** Loading the TIC landing page in a real browser, which is
+the one route left untried after `mfhhis02`-`12` returned 404, `mfh.txt`
+proved frozen at Jan 2023, and the page's served HTML proved to contain no
+links. The rendered DOM contains 353 links, one of them captioned *"direct
+link to the MFH table"*, pointing at `slt_table5.html`. Alongside it, a
+"Notice" dated 03-15-2023 - the retirement.
+
+**And the file names itself.** Line 4 of `slt_table5.txt` is
+`Link: https://.../slt_table5.txt`. The authority on which file is current
+was inside the file all along, in a line the parser was skipping as prose.
+
+**Sample size.** One URL, nine months, 303 days of drift, 50 of 165 composite
+points.
+
+**Fixed.** The scheduled URL is `slt_table5.txt`. `parse_tic_mfh` gained the
+Table 5 layout - ISO months on the `Country` row rather than a month row and
+a year row - normalised to the same `"%b %Y"` keys, so the caller's
+`strptime` contract is untouched. The history layout still parses and is
+still fixture-tested: it is the only source of pre-2025 monthly data.
+
+Live result: 20 countries, Jul 2025 to Jul 2026, newest row **91 days old**
+rather than 303. The "Of Which: Foreign Official" aggregates now skip at the
+parser rather than at the ISO-mapping step - at 3773.1 one of them sorted
+above Japan and looked exactly like the largest holder of US Treasuries.
+
+**The lesson.** A source that answers is not a source that is current, and a
+file that is *written* is not a file that is *extended*. HTTP freshness and
+data freshness are different facts, and only one of them is about the data.
+
+
+### F-0089 - Both TIC staleness thresholds were below the source's best case
+
+**Found immediately after `F-0088`**, when the live file's newest row came
+back 91 days old against a watchdog tolerance of 55.
+
+A row is dated to the **first** of its data month, and a release covers the
+month ending **two months earlier**. The 2026-09-16 release published July
+2026, so a row dated 2026-07-01 was **77 days old the day it arrived**, and
+sits there reaching **~106 days** before the next release.
+
+| Threshold | Was | Healthy range | Verdict |
+|---|---|---|---|
+| `freshness_watchdog` `tic.max_age_days` | 55 | 77-106 | **unreachable** - could never report current |
+| `treasury_holdings` `MAX_SOURCE_AGE_DAYS` | 100 | 77-106 | refuses a current file for the last fortnight of every cycle |
+
+Both came from one sentence - *"monthly, released ~45 days in arrears"* -
+repeated in two files. The arrears are counted from the wrong end of the
+month, and the figure is about 30 days short.
+
+**Why nothing noticed.** The source was frozen at 303 days for the entire
+life of both numbers. **Every threshold agrees about a year-old file.** The
+thresholds were wrong and untestable at the same time, by the same cause: a
+broken guard hidden behind the break it was guarding against.
+
+**What made it urgent rather than latent.** `D-0074` had just put the
+watchdog's verdict on every tab. A tolerance of 55 against a best case of 77
+means the strip would have read *"1 of 6 sources is not current"* about a TIC
+that had published on time that morning - and a permanently red guard is what
+teaches a reader to stop reading it. Fixing the source would have *created* a
+false alarm on seven surfaces.
+
+**Sample size.** Two constants, one wrong sentence, 100% of release cycles.
+
+**Fixed.** Watchdog 55 -> **110** (a full cycle plus the drift its own note
+mentions; a missed release reaches ~136 and still trips). Pipeline 100 ->
+**140** (refuses a file that has missed two releases, passes one that has
+missed none). The ordering is now asserted: the warning must come before the
+refusal, or the pipeline rejects data the screen still calls current.
+
+`tests/test_tic_table5.py` pins both against `BEST_CASE_AGE = 77` and
+`WORST_CASE_AGE = 106` derived from the release calendar rather than from the
+constants, and one case fails if the phrase "45 days in arrears" reappears
+without the correction - the wrong number was justified by a wrong sentence,
+and leaving the sentence is how the number comes back.

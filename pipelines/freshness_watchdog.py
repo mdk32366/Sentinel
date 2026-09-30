@@ -118,9 +118,29 @@ CHECKS = [
         "key": "tic",
         "label": "TIC Treasury holdings",
         "patterns": ["TIC%"],
-        "max_age_days": 55,      # monthly, released ~45 days in arrears
+        # F-0089. This was 55, described as "released ~45 days in arrears".
+        # The arrears are counted from the wrong end. A row is dated to the
+        # FIRST of its data month, and the release covers the month ending two
+        # months earlier: the 2026-09-16 release published July 2026, so a row
+        # dated 2026-07-01 was 77 days old the day it arrived. It then sits
+        # there until the next release, reaching ~106 days.
+        #
+        # So 55 was not merely tight, it was UNREACHABLE - the watchdog could
+        # never have called TIC current, at any moment in the cycle, however
+        # promptly Treasury published. It went unnoticed while TIC was
+        # genuinely frozen at 303 days, where every threshold agrees. D-0074
+        # then put that verdict on every tab, which is what turned an
+        # always-red guard from harmless into the thing that teaches a reader
+        # to ignore the strip (P9 in the other direction).
+        #
+        # 110 covers a full cycle plus the drift the note mentions. A missed
+        # release reaches ~136 days and trips this; nothing healthy does.
+        "max_age_days": 110,
         "pipelines": ["TIC_Holdings"],
-        "note": "Release date drifts within the month.",
+        "note": (
+            "SLT Table 5. Monthly, dated to the first of the data month and "
+            "published ~2.5 months later, so 77-106 days old is healthy."
+        ),
     },
     {
         "key": "cds",
