@@ -81,7 +81,7 @@ export function GoldReservesTab({ onCountrySelect, latestAll = {} }) {
             <thead>
               <tr>
                 <ColHeader label="#" tip="Rank by gold holdings, largest to smallest." align="right" />
-                <ColHeader label="Country" tip="Sovereign nation or monetary authority (e.g. IMF, ECB) reporting central bank gold reserves to the IMF IFS database, as compiled by the World Gold Council." align="left" />
+                <ColHeader label="Country" tip="Sovereign nation or monetary authority reporting central bank gold to the IMF. Read from the IMF IRFCL return directly rather than from the World Gold Council compilation of it (D-0076)." align="left" />
                 <ColHeader label="As Of" tip="Quarter of the most recent data point for this country. Gold reserves are reported quarterly. Some countries lag 1–2 quarters behind due to reporting delays — dates vary by country." align="right" />
                 <ColHeader label="Tonnes" tip="Gold holdings in metric tonnes. 1 metric tonne = 32,150 troy ounces. The US holds ~8,133t — the largest national gold reserve in the world. Russia and China have been the most consistent accumulators since 2014." align="right" />
                 <ColHeader label="% of Total" tip="This country's share of all reported central bank gold holdings worldwide. A rising share indicates active accumulation relative to peers." align="right" />
@@ -117,7 +117,7 @@ export function GoldReservesTab({ onCountrySelect, latestAll = {} }) {
           </table>
         </div>
       </div>
-      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Source: World Gold Council (IMF IFS) · Quarterly data · Reporting lag ~2 months</div>
+      <div style={{ marginTop: 12, fontFamily: "monospace", fontSize: 11, color: "#1E2D3D" }}>Source: IMF IRFCL (line 56) · Monthly · Reporting lag ~2 months · World Gold Council retained as backfill for non-filers</div>
     </div>
   );
 }

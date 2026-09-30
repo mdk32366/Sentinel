@@ -239,7 +239,7 @@ export function CompositeTab({ onCountrySelect }) {
       <div style={{ marginTop:12, fontFamily:"monospace", fontSize:11, color:"#1E2D3D" }}>
         <DataAsOf
           asOf={data.as_of}
-          source="US Treasury TIC · World Gold Council · FRED"
+          source="US Treasury TIC · IMF IRFCL · World Bank · FRED · World Government Bonds"
           style={{ marginTop: 0 }}
         />
       </div>

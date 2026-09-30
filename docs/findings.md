@@ -3182,3 +3182,61 @@ touched the database. And a guard written in the same hour as three cry-wolf
 findings can still be a cry-wolf guard: I only caught it by running it against
 the live feed and reading the count, which is the step that tells a plausible
 rule from a working one.
+
+### F-0096 - The ABOUT tab told the reader three automated sources were manual, and recommended the frozen TIC file
+
+**Found by checking whether the country tooltips had shipped.** They had - all
+six tiles, hover and keyboard focus, live in the deployed bundle. But the same
+grep showed `"quarterly report"` twice, and following it opened the source
+catalogue on the ABOUT tab.
+
+| Claim on screen | Reality |
+|---|---|
+| TIC: *"Parsed from mfhhis01.txt - tab-delimited historical file"* | `F-0088`. The frozen history file, **still being recommended to the reader** after the pipeline was moved off it |
+| Gold Reserves: *"Monthly (MANUAL)"*, download the CSV and replace `data\gold_reserves.csv` | Automated from IMF IRFCL, monthly (`D-0076`) |
+| Broad Money: *"Annual (MANUAL)"*, *"Download via curl"* | Automated, checked monthly (`F-0091`) |
+| Spot Gold: *"Monthly (MANUAL)"*, download from WGC | LBMA daily fix, automated since `D-0041` |
+| Sovereign CDS | **Absent entirely**, and listed under FUTURE as *"Requires Bloomberg or Markit data"* |
+| TreasuryDirect | Absent entirely |
+
+Three of five sources carried a `manual: true` flag that drew an amber border
+on the card, and one of the two it did *not* flag - TIC - was the most broken of
+the lot. The roadmap promised a CDS integration requiring a Bloomberg terminal
+while dimension 7 was scoring 21 sovereigns off a free public board, one day
+old.
+
+**Why this surface is the worst place for it.** Every other screen shows data,
+and a reader can judge data. This one makes claims about **provenance**, and a
+reader has no way to tell a wrong claim from a right one. It is the page whose
+entire purpose is to answer "where does this come from", and it was answering
+with instructions to go and download a file by hand.
+
+**Sample size.** 5 source entries of 5 materially wrong or incomplete, 2 live
+sources missing, 2 shipped features listed as future work, 9 provenance strings
+across 7 components.
+
+**Fixed.** The catalogue is rewritten against the pipelines as they now are,
+`manual` is false for every source - which removes the amber border from the
+whole list, a visual claim that nothing is hand-fed, true for the first time -
+and CDS and TreasuryDirect are added. The FUTURE list drops the two shipped
+items and gains `A-0016` and `A-0017`. Eight other stale provenance strings
+across the country tiles, CROSS-ASSET, COMPOSITE, GOLD, ADMIN and the analyst
+brief footer now name IMF IRFCL rather than a quarterly WGC download.
+
+**Why it could drift at all.** `SOURCES` and `FUTURE` were local `const`s
+inside `AboutTab.jsx`, so nothing could reach them. Moved to
+`ui/src/lib/dataSources.js` and pinned by `dataSources.test.js`: no source may
+be marked manual, every source must state a cadence and a lag, the TIC URL must
+name `slt_table5` and not `mfhhis`, gold must credit the IMF, every scored
+source must appear, and FUTURE may not list anything the catalogue already
+ships.
+
+`tests/test_dgs30_d0016.py` needed one line for the move - and it had been
+written to expect exactly that, searching a candidate list rather than naming a
+file, *"so it should not fail again the next time the component is moved"*. It
+did not fail for the wrong reason, which is what a well-written guard buys.
+
+**The lesson.** Documentation of provenance rots in the same way code does, and
+faster, because nothing runs it. Every one of these claims was true when
+written. Three of them were falsified **today**, by me, in the same session -
+which is the argument for the test rather than for more care.
