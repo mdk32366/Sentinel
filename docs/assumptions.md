@@ -769,3 +769,36 @@ liquidation and calls the comparison a ranking.
 
 Not acted on. Recorded so the half-implementation is visible as a choice rather
 than an oversight.
+
+### A-0024 - The frozen-source rule is implemented three times, separately
+
+`D-0045` is now enforced in three places - `treasury_holdings`,
+`gold_price_import` and `gold_fetcher` - as three near-identical blocks: track
+the newest written observation, compare to a module constant, roll back and
+raise with a message naming the row, the limit and the refresh URL.
+
+**Why they were not unified.** The three bounds are genuinely different (140,
+70, 240) because the cadences are different, so the constant cannot be shared.
+What could be shared is the check itself, and extracting it would mean editing
+two pipelines that are currently correct and in production to fix a problem that
+has not yet occurred.
+
+**The risk being accepted.** `F-0047` is the standing example of two
+implementations of one idea drifting apart, and this is three. The most likely
+drift is not in the logic but in the *message*: `gold_price_import` says
+"present but frozen", `treasury_holdings` says "the fetch and parse both
+succeeded", and a reader debugging at 2am benefits from those being the same
+sentence.
+
+**What is holding the line meanwhile.**
+`test_gold_source_freshness.TestEveryFileBackedSourceHasABound` asserts that all
+three declare an integer `MAX_SOURCE_AGE_DAYS`, and that **no two of them are
+equal** - an equal pair would mean one was copied rather than derived, which is
+the mistake `D-0080` made and `D-0088` had to undo. A fourth file-backed source
+added without a bound fails that test.
+
+**What would settle it.** A `pipelines/source_freshness.py` holding the
+exception and an `assert_source_fresh(newest, limit_days, source, refresh_url)`
+helper, with all three callers moved onto it in one pass and the existing tests
+kept as the proof nothing changed. Half a day, no behaviour change, and best
+done when one of the three next needs touching for another reason.

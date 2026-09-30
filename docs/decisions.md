@@ -2445,3 +2445,63 @@ rendering the same judgement. They are separate because one runs in Python and
 one in the browser; a test asserts they agree on the dimensions and the maxima,
 because `F-0047` is the standing example of two implementations of one idea
 drifting apart.
+
+### D-0090 - `D-0045` applied to gold reserves, the third file-backed source
+
+`F-0103` brought the gold reserves job back from 35 consecutive `NameError`
+failures. Asked whether gold was fixed *permanently*, the answer was no, and
+the reason was already in the register.
+
+**`gold_reserves.py` fetches nothing.** It reads `data/gold_reserves.csv`, a
+file a human downloads from the WGC; the docstring has always said "re-download
+monthly to keep current" and nothing enforced it. Today's run inserted 921 rows
+only because it was clearing a backlog it had never been able to import. **Every
+run after it would have inserted 0 and reported `success` forever** - which is
+`F-0050` exactly, in a second pipeline.
+
+`D-0045` already ruled on this shape: *a frozen source is a failure, not a
+success and not a `partial`*. The rule was implemented for TIC
+(`treasury_holdings.MAX_SOURCE_AGE_DAYS = 140`) and for the gold **price**
+(`gold_price_import.MAX_SOURCE_AGE_DAYS = 70`), and never for gold
+**reserves**. Plausibly *because* of `F-0103`: a job that dies on `NameError`
+never reaches the point where a freshness check would matter. Fixing the crash
+did not create this hole, it exposed it.
+
+**The guard lives in `import_wgc_csv`**, not in either wrapper, because two
+entry points - `run_gold_reserves_fetch` (the scheduler) and `run_gold_fetch`
+(the route) - both write `UpdateLog(pipeline_name="Gold_Reserves")`. A guard in
+one would have left the other lying.
+
+**Deriving the bound, which is the whole difficulty.** Rows are dated
+FIRST-of-quarter, so a *perfectly current* file is already old by this measure.
+From the only two real downloads this repository has:
+
+| Downloaded | Newest row | Age at download |
+|---|---|---|
+| 2026-06-24 | Q1 26 (2026-01-01) | **174 days** |
+| 2026-09-26 | Q2 26 (2026-04-01) | **178 days** |
+
+That is the *fresh* state. The newest row then stays newest until the WGC
+publishes the following quarter, so a promptly-refreshed file peaks around
+214-220 days. A file that has missed a whole quarter sits past 270.
+
+**240** is chosen to sit in that gap. Anything tighter fires on data that is as
+current as the WGC makes possible - `F-0089`, the cry-wolf failure that gets a
+guard switched off within a week. Anything looser cannot detect a skipped
+quarter, which is `D-0024` decoration.
+
+**Uncertainty stated rather than hidden.** The WGC publication lag is bounded by
+observation at <= 88 days and not pinned more precisely, so 214-220 is an
+estimate and 240 carries the slack for it. If this ever fires on a
+just-downloaded file the number is wrong, and the error message names the
+newest row and its age so the correction is a measurement rather than a guess.
+
+**Consequence with a date.** The shipped file's newest observation is
+2026-04-01, which is 182 days old today. **If nobody refreshes it, this guard
+fires on 2026-11-27** and the job starts logging `failed`. That is the intended
+behaviour and it is the first time this pipeline will ever have told the truth
+about its own source.
+
+**Also surfaced, not only enforced.** The result carries `source_latest` and
+`source_age_days`, so the file can be watched ageing rather than only reported
+on once it is too late.
