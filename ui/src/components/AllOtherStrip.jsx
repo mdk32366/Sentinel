@@ -1,3 +1,5 @@
+import { trillions } from "../lib/format";
+
 /**
  * What the countries the model cannot see individually are doing together.
  *
@@ -33,7 +35,7 @@ export function AllOtherStrip({ signal }) {
     v == null ? "#5A6878" : v < 0 ? "#E07B5A" : "#5DB87A";
 
   const figures = [
-    { label: "level", val: `$${(signal.level_bn / 1000).toFixed(2)}T`, color: "#8A9BAC" },
+    { label: "level", val: `$${trillions(signal.level_bn)}T`, color: "#8A9BAC" },
     { label: "share of total", val: signal.share_pct == null ? "—" : `${signal.share_pct.toFixed(2)}%`, color: "#8A9BAC" },
     { label: "1mo", val: pct(signal.mom_pct), color: dirColor(signal.mom_pct) },
     { label: "3mo", val: pct(signal.three_month_pct), color: dirColor(signal.three_month_pct) },

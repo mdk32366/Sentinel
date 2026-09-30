@@ -127,6 +127,42 @@ TIC_AGGREGATES = {
             "table's twenty are inside this figure (F-0097)."
         ),
     },
+    # D-0080. A SUBSET of Grand Total, not a peer of All Other, so it must
+    # never be added to either. It is the cut that separates central-bank
+    # holdings from private ones, which is closer to this application's thesis
+    # than anything else on the table.
+    #
+    # The two components are captured with it because Table 5 publishes them and
+    # they must sum to the headline - a free integrity check on every run, and
+    # the bills/bonds mix is a duration posture in its own right.
+    #
+    # Exact-label matched, not prefix matched: all three begin "Of Which:
+    # Foreign Official".
+    "Of Which: Foreign Official": {
+        "code": "TIC_FOREIGN_OFFICIAL",
+        "name": "TIC Foreign Official Holdings",
+        "description": (
+            "US Treasuries held by foreign official institutions - central banks "
+            "and sovereign funds - across all holders, named and unnamed. A "
+            "subset of Grand Total, never additive with All Other."
+        ),
+    },
+    "Of Which: Foreign Official Treasury Bills": {
+        "code": "TIC_FOREIGN_OFFICIAL_BILLS",
+        "name": "TIC Foreign Official - Treasury Bills",
+        "description": (
+            "The bill component of foreign official holdings. With T-bonds it "
+            "must sum to the headline; the share in bills is a duration posture."
+        ),
+    },
+    "Of Which: Foreign Official T-Bonds & Notes": {
+        "code": "TIC_FOREIGN_OFFICIAL_BONDS",
+        "name": "TIC Foreign Official - T-Bonds and Notes",
+        "description": (
+            "The long component of foreign official holdings. With bills it must "
+            "sum to the headline (D-0080)."
+        ),
+    },
     "Grand Total": {
         "code": "TIC_GRAND_TOTAL",
         "name": "TIC Grand Total Foreign Holdings",

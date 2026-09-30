@@ -1,14 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  asLocalDate,
-  formatDate,
-  formatValue,
-  scoreColor,
-  spreadBasisPoints,
-  spreadColor,
-  tierColor,
-  tierLabel,
-} from "./format";
+import { asLocalDate, formatDate, formatValue, scoreColor, spreadBasisPoints, spreadColor, tierColor, tierLabel, trillions } from "./format";
 
 describe("formatValue", () => {
   it("renders a percent to two places", () => {
@@ -204,5 +195,32 @@ describe("asLocalDate / formatDate — F-0071", () => {
     // application IS a calendar date - the API stamps observations at
     // midnight, it does not record the moment they were taken.
     expect(asLocalDate("2026-08-01T00:00:00Z").getDate()).toBe(1);
+  });
+});
+
+describe("trillions", () => {
+  it("rounds a midpoint away from zero rather than down", () => {
+    // (5475.0 / 1000).toFixed(2) is "5.47": 5.475 has no exact binary
+    // representation and lands just below the midpoint. The real Foreign
+    // Official private side is $5,475.0bn, so the screen read $5.47T while the
+    // payload said 5.475 — small, and still a number the code did not mean.
+    expect(trillions(5475.0)).toBe("5.48");
+  });
+
+  it("agrees with toFixed where there is no midpoint", () => {
+    expect(trillions(1842.4)).toBe("1.84");
+    expect(trillions(3773.1)).toBe("3.77");
+    expect(trillions(9248.1)).toBe("9.25");
+  });
+
+  it("returns null rather than NaN for a missing value", () => {
+    expect(trillions(null)).toBeNull();
+    expect(trillions(undefined)).toBeNull();
+    expect(trillions(NaN)).toBeNull();
+  });
+
+  it("handles zero and negatives", () => {
+    expect(trillions(0)).toBe("0.00");
+    expect(trillions(-5475.0)).toBe("-5.48");
   });
 });

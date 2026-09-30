@@ -102,3 +102,26 @@ export function spreadColor(spreadBps) {
   if (spreadBps > 0) return "#E8C547";
   return "#7EB8C9";
 }
+
+
+/**
+ * Billions to trillions, rounded half away from zero.
+ *
+ * `(5475.0 / 1000).toFixed(2)` is **"5.47"**, not "5.48": 5.475 has no exact
+ * binary representation and lands just below the midpoint, so toFixed rounds it
+ * down. The figure on screen then disagrees with the figure in the payload by a
+ * cent of a trillion dollars — small, and still a number the code did not mean.
+ *
+ * Scaling to an integer first puts the rounding on a value that IS exact.
+ */
+export function trillions(billions, dp = 2) {
+  if (billions == null || Number.isNaN(billions)) return null;
+  const scale = 10 ** dp;
+  // Math.round is half-UP, not half-away-from-zero: Math.round(-547.5) is -547.
+  // Every figure here is positive today, so the sign handling is for the claim
+  // in the docstring rather than for a case on screen — but a helper whose
+  // comment and behaviour disagree is how the next caller gets surprised.
+  const scaled = (billions / 1000) * scale;
+  const rounded = Math.sign(scaled) * Math.round(Math.abs(scaled));
+  return (rounded / scale).toFixed(dp);
+}
