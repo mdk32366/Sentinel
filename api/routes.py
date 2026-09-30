@@ -409,6 +409,27 @@ def trigger_treasury_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get("/diagnostics/data-age")
+def get_data_age(db: Session = Depends(get_db)):
+    """Per-country data age, per monitored source (A-0017).
+
+    The watchdog answers "is this source current". This answers "is it current
+    FOR THIS COUNTRY", which is a different question with a different answer:
+    `money_supply` is correctly `ok` at the source while Canada's newest broad
+    money figure is 2008 (`F-0092`).
+
+    Read-only, and it computes no verdict. `A-0017` asked for the distribution
+    before inventing four more cutoffs, and this is that measurement.
+    """
+    from pipelines.data_age_report import per_country_age_report
+
+    try:
+        return per_country_age_report(db)
+    except Exception as e:
+        logger.error(f"Data age report failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/fetch/gold-reserves-imf")
 def trigger_imf_gold_fetch(db: Session = Depends(get_db)):
     """Fetch monthly gold holdings from IMF IRFCL (D-0076).
