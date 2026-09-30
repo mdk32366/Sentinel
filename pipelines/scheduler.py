@@ -17,6 +17,7 @@ from pipelines.gold_price_fetcher import run_gold_price_fetch
 from pipelines.composite_stress import persist_composite_snapshot
 from pipelines.money_supply_fetcher import run_money_supply_fetch
 from pipelines.imf_gold_reserves import run_imf_gold_fetch
+from pipelines.tic_table3 import run_tic_table3_fetch
 
 logger = logging.getLogger(__name__)
 # ORDER-01 B5. Set once on the scheduler rather than repeated on every
@@ -61,6 +62,7 @@ SCHEDULED_PIPELINES = {
     "TreasuryDirect",
     "Broad_Money_Growth",
     "Gold_Reserves_IMF",
+    "TIC_Table3",
 }
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
@@ -160,6 +162,32 @@ def scheduled_treasury_direct_fetch():
             logger.warning(f"Treasury Direct anomalies: {result['anomalies']}")
     except Exception as e:
         logger.error(f"Scheduled Treasury Direct fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
+def scheduled_tic_table3_fetch():
+    """Per-country Treasury holdings for every reporter (D-0081).
+
+    SLT Table 5 names the twenty largest holders; Table 3 carries all 76. Runs
+    on the 15th at 03:30, half an hour after the Table 5 fetch and from the same
+    release, because it validates itself against Table 5 before writing - the
+    two must reproduce each other for the named twenty.
+    """
+    db = None
+    try:
+        db = get_session()
+        result = run_tic_table3_fetch(db)
+        logger.info(
+            f"TIC Table 3: {result['status']} - {result['inserted']} inserted, "
+            f"{result['updated']} updated, {result['countries']} countries, "
+            f"newest {result.get('newest_date')}"
+        )
+        if result.get("unmapped"):
+            logger.warning(f"TIC Table 3 unmapped labels: {result['unmapped']}")
+    except Exception as e:
+        logger.error(f"Scheduled TIC Table 3 fetch failed: {e}", exc_info=True)
     finally:
         if db is not None:
             db.close()
@@ -369,6 +397,14 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled gold price daily at 02:30 UTC")
+
+    scheduler.add_job(
+        scheduled_tic_table3_fetch,
+        CronTrigger(day=15, hour=3, minute=30),
+        id="tic_table3", name="TIC Holdings, All Countries (Table 3)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled TIC Table 3 monthly on day 15 at 03:30 UTC")
 
     scheduler.add_job(
         scheduled_imf_gold_fetch,

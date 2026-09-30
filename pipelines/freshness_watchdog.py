@@ -163,7 +163,8 @@ CHECKS = [
         # 2026-07-31, which was 47 days old on arrival. 85 covers that plus
         # drift; one missed release reaches ~106 and trips it.
         "max_age_days": 85,
-        "pipelines": ["TIC_Holdings"],
+        # D-0081 adds Table 3, the all-countries feed, from the same release.
+        "pipelines": ["TIC_Holdings", "TIC_Table3"],
         "note": (
             "SLT Table 5. Monthly, dated to the first of the data month and "
             "published ~2.5 months later, so 77-106 days old is healthy."

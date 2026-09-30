@@ -37,6 +37,7 @@ EXPECTED_CRON_JOBS = {
     # sources, the only place that says what is supposed to stay fresh.
     "money_supply",
     "imf_gold",   # D-0076
+    "tic_table3", # D-0081
 }
 EXPECTED_ONE_SHOTS = {"startup_fetches", "startup_cds_fetch"}
 
