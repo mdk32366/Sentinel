@@ -186,6 +186,42 @@ class TestNeitherSurfaceRepeatsAKnownFalsehood(unittest.TestCase):
                         f"{name} names mfhhis01 without marking it as wrong",
                     )
 
+    def test_no_surface_still_describes_the_pre_D0084_scoring(self):
+        """D-0084 replaced dimension 1's magnitude and no tab was edited.
+
+        Every description was left pointing at a month-on-month percentage of
+        the total position — the rule that could not see Japan liquidate 54% of
+        its bill book. F-0100 fixed the ones a sweep found; this stops the next
+        one needing a sweep.
+
+        Scoped to code, not comments: several files legitimately EXPLAIN the old
+        rule to say why it was replaced, and an assertion matching that prose
+        would fail on its own documentation — which happened five times before
+        `strip_js_comments` existed.
+        """
+        from pathlib import Path
+
+        root = Path(__file__).resolve().parents[1] / "ui" / "src"
+        stale = [
+            "MoM decline magnitude",
+            "MoM decline + consecutive",
+            "scores the magnitude at up to 30 points",
+        ]
+        offenders = []
+        for path in root.rglob("*.js*"):
+            if ".test." in path.name:
+                continue
+            code = strip_js_comments(path.read_text(encoding="utf-8"))
+            for phrase in stale:
+                if phrase in code:
+                    offenders.append(f"{path.name}: {phrase}")
+        self.assertEqual(offenders, [], f"pre-D-0084 scoring text: {offenders}")
+
+    def test_about_does_not_understate_the_tic_country_count(self):
+        # D-0081 took TIC from Table 5's twenty to Table 3's 76. The catalogue
+        # said "20 reporting countries" for four hours after that shipped.
+        self.assertNotIn("20 reporting countries", strip_js_comments(about_text()))
+
     def test_admin_names_the_composite_snapshot_consequence(self):
         # F-0090: a manual fetch leaves the stored score behind until 04:45. An
         # operator who does not know that will read a stale score as current.
