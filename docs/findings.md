@@ -3598,3 +3598,46 @@ Both assertions can now fail.
 weakest in the suite, because it is satisfied by a component that has been
 deleted. Every one of them needs a sibling asserting what *is* rendered, or it
 is measuring nothing.
+
+### F-0105 - Two facts in the rotation plan had gone stale before the rotation
+
+`D-0044` deferred credential rotation to Friday 2026-10-02 and stated the
+exposure being accepted "so it is a decision and not a drift". Re-measured
+today, two days later and two days early, **two of its load-bearing facts were
+wrong**.
+
+**1. `GROK_API_KEY` is deployed.** `D-0044` says: "`GROK_API_KEY` is not set in
+Fly at all, so nothing in production can spend it", and on that basis excluded
+it from the delay's risk. `flyctl secrets list` returns it today with status
+`Deployed`. It is a live, spendable credential and belongs in Friday's scope.
+
+**2. The FRED exposure is 14 rows, not 21.** `F-0010` measured 21 plaintext
+occurrences on 2026-09-28; today it is **16 occurrences across 14 rows**, all
+`FRED` runs with status `partial`, spanning 2026-08-31 to 2026-09-28. Smaller,
+and now precisely targetable - which the scrub needs and did not have.
+
+**The more useful half of the re-measurement.** The code that writes those rows
+is clean: `fred_fetcher.py` has exactly one path from exception to
+`UpdateLog.error_message` and it is redacted before the insert. But the
+redaction **has never been exercised in production** - there have been **69
+FRED runs since the last leaking row and all 69 succeeded.** Correct by
+inspection, unproven by observation. Those are different claims and the runbook
+now says which one is being relied on.
+
+**Why this is a finding and not a note.** `D-0044` was explicitly written to
+stop an accepted risk from drifting into an unexamined one, and it still
+drifted - in four days, in a document whose entire purpose was to prevent that.
+An accepted risk needs re-measuring at the moment it is acted on, not only at
+the moment it is accepted. The register records what was true when written;
+`F-0102` said the same thing about prose four hours after fixing it, and this
+is the same failure applied to a security decision.
+
+**A third thing fell out of writing the runbook.** `AUTH_USERNAME` is the
+application's own name, derivable in seconds from the public Fly hostname.
+`D-0044` lists only `AUTH_PASSWORD` for rotation. With `F-0009` having put the
+password in public git history, rotating one half leaves the other half
+guessable - that is not a credential pair, it is two public strings. The
+runbook rotates both.
+
+Runbook: `docs/rotation-2026-10-02.md`. No values in it - the repository is
+public by the owner's decision.
