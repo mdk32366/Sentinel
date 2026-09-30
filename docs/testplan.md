@@ -320,3 +320,50 @@ would have rotted.
 whether a collapsed strip actually draws the eye are not things jsdom can
 answer, and `F-0086` is the standing reminder that a styling claim no test
 can check is a claim.
+
+### T-0088 - The current TIC table, offline
+
+`tests/test_tic_table5.py`, 17 cases, no network.
+
+**Layout.** Both published layouts are parsed from text fixtures: Table 5's
+single ISO-month header row and the history file's stacked month/year pair.
+The case that earns its place is `test_a_year_row_alone_does_not_set_dates` -
+both layouts begin their header with `Country`, so the new branch had to be
+prevented from swallowing the legacy one. And
+`test_iso_months_normalise_to_the_callers_date_format` runs the caller's own
+`strptime("01 %s", "%d %b %Y")` over every key, because a key of `"2026-07"`
+parses in neither layout and would have turned the whole import into
+per-country errors while still reporting `partial`.
+
+**Aggregates.** `test_aggregate_rows_are_not_countries` exists because "Of
+Which: Foreign Official" at 3773.1 sorted above Japan. It had no ISO code so
+it never reached the database - but it sat in the parser's output looking
+exactly like the largest holder of US Treasuries, one mapping table away from
+being published.
+
+**Thresholds.** `TestThresholdsAHealthySourceCanSatisfy` asserts against
+`BEST_CASE_AGE = 77` and `WORST_CASE_AGE = 106`, both derived from the
+release calendar, **not** from the constants they check. A test that reads its
+expectation out of the value under test would have passed at 55 as happily as
+at 110. The suite also fails if the phrase "45 days in arrears" reappears
+without the `F-0089` correction beside it: the wrong number was justified by
+a wrong sentence, and the sentence is how the number comes back.
+
+**Retargeted, not weakened.** `test_the_limit_accommodates_a_real_publication
+_cycle` asserted `MAX_SOURCE_AGE_DAYS > 75`. It passed at 100, a value that
+would have refused a current file for the last fortnight of every cycle. The
+bound is now 106. The case was measuring the wrong cycle, not testing too
+loosely.
+
+### T - What is NOT tested here, and why
+
+**The live Treasury URL is not fetched by the suite.** Same reason as the
+other live endpoints: a gate that needs the internet fails for reasons
+unrelated to the change being gated. The live file was parsed by hand before
+the fixtures were written, and the fixture is a trimmed copy of it.
+
+**Nothing asserts that Table 5 is still the current table.** That is the
+`F-0088` failure mode and no offline test can catch it - a URL that returns
+200 and parses cleanly is indistinguishable from a URL that is current. The
+`D-0045` data-age guard is the only thing that can see it, which is exactly
+what it did for nine months.
