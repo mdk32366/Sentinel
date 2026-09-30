@@ -1,5 +1,8 @@
 import { useState } from "react";
 
+import { useApiResource } from "../hooks/useApiResource";
+import { ForeignOfficialStrip } from "../components/ForeignOfficialStrip";
+
 import { latestValue, yoyPercent, yoySeries } from "../lib/usaSeries";
 import { buildYieldSeries } from "../lib/yieldSeries";
 import { useUSASeries } from "../hooks/useUSASeries";
@@ -25,6 +28,11 @@ export function USADashboard() {
   const [customRate, setCustomRate] = useState(null);
 
   const data = useUSASeries(range);
+  // D-0086. This page asserts that foreign demand is weakening. D-0080 measures
+  // it: official holdings fell 2.92% over twelve months and their share of all
+  // foreign holdings fell 1.86 points, while private holdings rose 4.82%. The
+  // claim was made in prose above with nothing behind it.
+  const { data: composite } = useApiResource(`/stress/composite`);
 
   const m2 = data["WM2NS"] || [];
 
@@ -40,8 +48,13 @@ export function USADashboard() {
           The US is the <span style={{ color: "#C8A96E" }}>issuer</span> of the reserve asset being monitored globally.
           US stress is not forced selling — it&apos;s the Fed&apos;s ability to manage <span style={{ color: "#C8A96E" }}>$36T in debt</span> as
           foreign demand weakens, the dollar debasement math, and whether the bond market will accept the terms the Fed is offering.
+          <span style={{ color: "#5A6878" }}> Whether official demand is in fact weakening is measured directly below, from the TIC Foreign Official series rather than asserted.</span>
         </div>
       </div>
+
+      {/* D-0086. The evidence for the sentence above: it is the issuer's page,
+          and whether central banks are still financing it is the question. */}
+      <ForeignOfficialStrip signal={composite?.summary?.foreign_official} />
 
       {/* Range */}
       <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>

@@ -93,7 +93,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tooltipLabel="Holdings"
         />
         <SeriesChart
-          title={`GOLD RESERVES (tonnes) — ${goldHistory?.data_points} quarters`}
+          // D-0076: the IMF series is monthly. It said "quarters".
+          title={`GOLD RESERVES (tonnes) — ${goldHistory?.data_points} readings`}
           rows={goldRows}
           dataKey="tonnes"
           stroke="#E8C547"

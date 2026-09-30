@@ -2298,3 +2298,18 @@ frontend tests stub `fetch` and the backend tests never rendered the tile.
 `tests/test_holdings_surface.py` now asserts the properties that were violated
 rather than the rendering, which is the only kind of check that survives the
 data changing again.
+
+### D-0086 - The issuer's page shows whether official demand is actually weakening
+
+The USA surface asks a different question from every other country view - not
+"is this country selling?" but "can the issuer carry the debt?" - and its
+opening paragraph asserts that stress comes as *"foreign demand weakens"*.
+
+Nothing on the page showed whether it was. `D-0080` measures it directly:
+official holdings fell **2.92%** over twelve months and their share of all
+foreign holdings fell **1.86 points**, while private holdings rose **4.82%**.
+
+`ForeignOfficialStrip` is reused rather than reimplemented, so the figure on the
+issuer's page and the figure on COMPOSITE cannot disagree - which is the failure
+`F-0087` and `F-0090` were both instances of. The prose now points at the
+measurement instead of standing alone.

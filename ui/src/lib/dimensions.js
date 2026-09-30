@@ -28,14 +28,20 @@ export const STRESS_DIMENSIONS = [
     label: "Treasury",
     max: 50,
     color: "#C8A96E",
-    desc: "MoM decline + consecutive months",
+    // D-0084 replaced a month-on-month percentage of the total position. It
+    // could not see Japan selling 54% of its bill book, and it paid 0.27 points
+    // per $bn to Japan against 90.91 to Uruguay (F-0099).
+    desc: "Worst of a 3-month fall in the total position or a drawdown in the bill book, weighted by size · plus consecutive declining months",
   },
   {
     key: "gold_score",
     label: "Gold Reserves",
     max: 40,
     color: "#E8C547",
-    desc: "QoQ decline + consecutive quarters",
+    // F-0094: "consecutive quarters" counted consecutive ROWS, which was true
+    // only while the source was quarterly. D-0076 made it monthly (IMF IRFCL),
+    // so the series is resampled to one reading per quarter.
+    desc: "QoQ decline + consecutive quarters, resampled from the monthly IMF series",
   },
   {
     key: "monetary_score",

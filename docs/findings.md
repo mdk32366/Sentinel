@@ -3428,3 +3428,75 @@ rather than by market impact since the dimension was written, and nothing said
 so. The user noticed from domain knowledge - that Japan and Argentina had both
 moved and neither appeared - which is the kind of check the system should have
 been able to make for itself.
+
+### F-0100 - The scoring explanations described a model that no longer exists, and one that never did
+
+Found by sweeping every surface after `D-0084` rewrote dimension 1. The tab code
+was untouched, so every description of the scoring was left pointing at the old
+formula - and one had been wrong since it was written.
+
+| Surface | Said | Reality |
+|---|---|---|
+| `dimensions.js` | "MoM decline + consecutive months" | `D-0084`: worst of a 3-month total fall or a bill-book drawdown, size-weighted |
+| COMPOSITE `T` tooltip | "MoM decline magnitude (0-30, scaled)" | same |
+| `dimensions.js` gold | "QoQ decline + consecutive quarters" | `F-0094`: resampled from a **monthly** series |
+| COMPOSITE `G` tooltip | "QoQ decline magnitude" | same |
+| GOLD "As Of" tooltip | "reported quarterly" | `D-0076`: monthly IMF IRFCL |
+| Country panel chart | "N **quarters**" | monthly readings |
+| ABOUT signal tier | **"MoM decline magnitude (0-40pts) + consecutive declining months (0-30pts) + acceleration (0-20pts)"** | **no such formula has ever existed** - the real one was 30/20, and there is no acceleration term anywhere in the scorer |
+
+That last row is the one worth dwelling on. It was not made stale by today's
+work: it described a 40/30/20 formula with an "acceleration" component the
+codebase has no concept of, on the tab whose purpose is to explain the model.
+Nobody had checked it against the scorer, because nothing could.
+
+**And the ABOUT tab still carried a "MONTHLY MANUAL UPDATE CHECKLIST"** whose
+first item told the operator to download a World Gold Council CSV and commit it
+to the repository - months after `D-0076` automated gold from the IMF. `F-0096`
+rewrote the source catalogue on that same tab and missed the block entirely,
+because it moved one exported constant out for testing and left the rest of the
+component unread.
+
+**Fixed.** Every description now states the rule as implemented, with the point
+values and the finding that produced it. The checklist is replaced by what an
+operator actually needs: nothing requires a download, the confidence strip
+reports per-source freshness, a manual fetch needs an explicit snapshot refresh
+(`F-0090`), and per-country data age has an endpoint (`A-0017`).
+
+**The lesson.** A test that reads one exported constant proves nothing about the
+component around it. `F-0096` moved `SOURCES` and `FUTURE` to a lib file and
+tested those; the stale checklist was fifteen lines below the import and no
+test could see it.
+
+
+### F-0101 - Two fields were stripped between the scorer and the browser for a second time
+
+`F-0082` established that FastAPI's `response_model` is a **filter**: any key the
+model does not declare is removed from the response, silently.
+
+`F-0097` then added `tic_state` and `tic_last_reported_bn` to **two** producers -
+`composite_stress.py` and `gold_fetcher.py` - declared them on
+`CompositeCountry`, and shipped. `CrossAssetItem` was never touched.
+
+So the CROSS-ASSET tab's `n/r` rendering, written in the same change to
+distinguish a completed liquidation from a country below the reporting
+threshold, **has never once appeared.** The field it reads was deleted between
+the scorer and the browser.
+
+**Nothing caught it.** The frontend test supplied the field itself in a stub.
+The backend contract test covers `CompositeCountry` and nothing covered this
+model. The tab rendered a dash, which is what it renders for missing data
+anyway. It was found by reading the live payload during a surface sweep.
+
+**Sample size.** 2 fields, 1 model, 41 rows on the tab, every render since
+`F-0097` shipped.
+
+**Fixed**, and generalised. `tests/test_response_model_coverage.py` now checks
+producer against model for `CrossAssetItem` and `HoldingsResponse` as well,
+because a rule that was enforced for exactly one model out of several is a rule
+that will be broken again by the next person who adds a field to two producers.
+
+**Also found in the same sweep**: the GOLD tab formatted every reading as a
+quarter (`2026-Q3`), a habit from the World Gold Council series. `D-0076` made
+it monthly, so Germany's **August** figure was displayed as three months of
+data.

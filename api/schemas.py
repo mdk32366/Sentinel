@@ -217,6 +217,13 @@ class CrossAssetItem(BaseModel):
     tic_mom_pct: Optional[float] = None
     tic_consecutive_months: int
     no_tic_holdings: bool
+    # F-0101. F-0097 added these to gold_fetcher.py and to the CROSS-ASSET tab
+    # and did NOT declare them here, so response_model stripped them and the
+    # "n/r" rendering never once appeared. The same defect as F-0082, found by
+    # reading the live payload rather than by any test: the composite contract
+    # test covers CompositeCountry and nothing covered this model.
+    tic_state: Optional[str] = None
+    tic_last_reported_bn: Optional[float] = None
     gold_tonnes: Optional[float] = None
     gold_mom_pct: Optional[float] = None
     gold_consecutive_months: int
