@@ -256,6 +256,10 @@ class CompositeCountry(BaseModel):
     gold_score: float
     m2_growth_pct: Optional[float] = None
     m2_year: Optional[int] = None
+    # F-0092. Declared because response_model is a FILTER, not a validator
+    # (F-0079): an undeclared field is stripped silently, which is how the
+    # entire CDS dimension once vanished between the scorer and the screen.
+    m2_stale: bool = False
     monetary_score: int
     spread_bps: Optional[float] = None
     spread_widening_bps: Optional[float] = None

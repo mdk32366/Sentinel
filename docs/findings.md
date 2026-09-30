@@ -2964,3 +2964,74 @@ not merely fail to help - it actively conceals the failure it was built to
 find, by making the alarm state the normal state. Two of today's sources had
 one; `A-0015` now says to assume the third does too, and to re-derive every
 tolerance from the source's real calendar rather than from a sentence about it.
+
+### F-0092 - Dimension 3 scored whatever year it found, and one was 2008
+
+**Found immediately after `F-0091`**, checking that the repaired money-supply
+path actually fed the scorer. It did. It also revealed what it had been
+feeding it.
+
+Countries leave World Bank broad-money reporting and do not come back. Newest
+year available per country, from production:
+
+| Country | Newest year | Value | Points it was earning |
+|---|---|---|---|
+| Canada | **2008** | 14.9% | 0 - by one tenth of a point |
+| Switzerland | 2016 | 3.3% | 0 |
+| Saudi Arabia | 2017 | 0.2% | 0 |
+| Russia | 2020 | 16.7% | **10** |
+| Singapore | 2020 | 13.2% | 0 |
+| Philippines | 2022 | 7.8% | 0 |
+| Turkey | 2025 | 37.9% | 20 |
+
+`order_by(TimeSeries.date.desc()).first()` took the newest row and scored it,
+with no reference to what "newest" meant for that country. Russia earned 10
+points from a 2020 figure, displayed beside Turkey's 2025 figure with nothing
+distinguishing them.
+
+**Canada is the more alarming row.** 14.9% is one tenth of a point below the
+15% first rung. An eighteen-year-old number was not scoring *by luck* - nothing
+in the code was declining to score it.
+
+**Why nothing caught it.** The watchdog's verdict on `money_supply` is
+`ok`, and that verdict is correct: the SOURCE is current, because 2025 data
+exists for the countries that still report. The staleness is **per country**,
+which is precisely the `laggard` idea the watchdog already applies to
+`reserves_ex_gold` - one level further down, and not applied here. A
+source-level freshness check cannot see a country-level gap, and `D-0074` had
+just put that source-level verdict on every tab.
+
+**Sample size.** 6 of 22 countries with money data were on pre-2024 figures;
+one was scoring; one more was a rounding error away from scoring.
+
+**Fixed.** `MAX_M2_DATA_AGE_YEARS = 3`, relative to the current year rather
+than an absolute cutoff - a hardcoded `>= 2023` would quietly start admitting
+five- then six-year-old data, which is the rot `F-0089` is about. In 2026 that
+admits 2023-2025: the newest year the World Bank offers, plus one fully missed
+release of slack, and no more.
+
+The figure is **still reported**. "Canada last reported broad money in 2008" is
+a fact worth seeing; scoring it was the defect, not showing it. The result
+carries `m2_growth_pct`, `m2_year` and now `m2_stale`, so the UI can tell "no
+data" from "old data" - which call for opposite reactions. The signal text says
+`- too old to score`, because a signal that reads identically whether or not it
+contributed is how a reader sums the narrative and gets a different number from
+the score. The methodology panel states the cutoff, since the cutoff is part of
+the rule.
+
+`m2_stale` is declared on `CompositeCountry`. `F-0079`: `response_model` is a
+filter, not a validator, and an undeclared field is stripped in silence - which
+is how the entire CDS dimension once vanished between the scorer and the
+screen. A stripped `m2_stale` would have left the UI showing a stale figure as
+current, which is the bug this finding is about.
+
+**Guarded** by `tests/test_m2_staleness_cutoff.py`, including a case that reads
+the source and asserts the three scoring rungs are **indented inside** the
+`if not m2_stale` branch rather than merely following it - `D-0027`, a guard
+that stands aside is not a guard.
+
+**The lesson, and it is the day's fourth variation.** An aggregate verdict is
+not a verdict about its parts. `money_supply` was green at the source and
+eighteen years stale for Canada; `reserves_ex_gold` was green at 60 days and
+333 for Russia. The watchdog already knew to look inside one source for a
+laggard and nothing looked inside the other.
