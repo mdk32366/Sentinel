@@ -3,6 +3,7 @@ import { useApiResource } from "../hooks/useApiResource";
 import { ColHeader } from "../components/ColHeader";
 import { CountryDetail } from "../components/CountryDetail";
 import { DataAsOf } from "../components/DataAsOf";
+import { DataConfidence } from "../components/DataConfidence";
 import { LoadFailure } from "../components/LoadFailure";
 import { freshness } from "../lib/freshness";
 
@@ -36,6 +37,8 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
   return (
     <div>
       {/* Summary cards */}
+      <DataConfidence sourceKeys={["tic"]} />
+
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
           { label: "Total Foreign Holdings", val: `$${(total / 1000).toFixed(2)}T` },
@@ -152,7 +155,6 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
       <DataAsOf
         asOf={holdings.date}
         source="US Treasury TIC"
-        note="the TIC source has not published since then; every holding below is that old"
       />
     </div>
   );

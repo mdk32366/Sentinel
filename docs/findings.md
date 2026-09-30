@@ -2693,3 +2693,55 @@ caught either, because neither jsdom nor a build computes table layout.
 **Fixed.** Fourteen `<col>` elements — thirteen sized to their content, and
 the prose column unsized so it takes the slack rather than every column
 taking a share of it.
+
+### F-0087 - Three different numbers for how stale TIC may be
+
+**Found while** wiring a data-confidence strip onto every tab (`D-0074`) and
+having to decide which threshold it should show.
+
+There were three, all live, all describing the same question:
+
+| Where | Value | What it actually governs |
+|---|---|---|
+| `pipelines/treasury_holdings.py` `MAX_SOURCE_AGE_DAYS` | 100 | the age at which the pipeline **refuses to import the file** |
+| `pipelines/freshness_watchdog.py` `tic.max_age_days` | 55 | the age at which the source **has missed its release** |
+| `ui/src/lib/freshness.js` `TIC_TOLERANCE_DAYS` | 100 | the age at which the footer **turned red** |
+
+The first two are legitimately different questions and both numbers are
+right. The third is the defect: I had copied the pipeline's *rejection*
+threshold into the UI and used it to answer the *watchdog's* question. Its
+own docstring said the UI and the pipeline "should agree about what too old
+means" - the reasoning was sound and it was pointed at the wrong pipeline.
+
+**What it would have looked like.** A TIC date 60 days old renders the
+footer in neutral ink reading "60 days old", directly beneath a confidence
+strip reading **"1 of 1 source is not current"**. Two components
+contradicting each other about a single date on a single screen - worse than
+either being wrong on its own, because a reader who sees them disagree can
+no longer use either.
+
+**Not currently visible.** TIC is 303 days old, past both numbers, so today
+they happen to agree. The window of disagreement is 56-100 days, which TIC
+will pass through the moment it starts publishing again - the fix arriving
+*before* the data does, rather than after somebody notices the screen
+arguing with itself.
+
+**Sample size.** One source, one threshold, a 45-day window of disagreement.
+
+**Fixed.** `freshness()` no longer defaults its tolerance: given none it
+reports the age and makes no ruling at all. `TIC_TOLERANCE_DAYS` is deleted.
+The thresholds live in the watchdog, one per source, and reach the screen
+through `DataConfidence`, which reads `max_age_days` off the report rather
+than holding a number. The client now holds no staleness threshold of any
+kind.
+
+**A second thing it dragged out.** `freshness()` rendered `"302 days old"`
+when it had ruled a date stale and `"302d"` when it had not. Once the ruling
+moved out, the terse form became the *normal* one - so the fix for `F-0083`
+would have quietly reverted to "(302d)" on the very tab it was written for.
+One wording now, always spelled out.
+
+**Guarded.** `freshness.test.js` asserts a tolerance of 37 rules a date
+stale and 90 does not, so a smuggled-in default fails the case. The test it
+replaces asserted the client constant equalled 100 to match the pipeline -
+it pinned the wrong contract, and pinned it accurately.

@@ -3,6 +3,7 @@ import { goldSeries, momChange, reservesSeries, ticSeries } from "../lib/country
 import { useApiResource } from "../hooks/useApiResource";
 import { useCountryDetail } from "../hooks/useCountryDetail";
 import { useCountryNarrative } from "../hooks/useCountryNarrative";
+import { DataConfidence } from "./DataConfidence";
 import { AnalystBrief } from "./country/AnalystBrief";
 import { CountryStatCards } from "./country/CountryStatCards";
 import { LiquidationBanner } from "./country/LiquidationBanner";
@@ -61,6 +62,11 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           <button onClick={onClose} style={{ background: "transparent", border: "1px solid #1E2D3D", color: "#5A6878", borderRadius: 2, padding: "6px 14px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>✕</button>
         )}
       </div>
+
+      <DataConfidence
+        sourceKeys={["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields"]}
+        label="Sources on this panel"
+      />
 
       <LiquidationBanner ticHistory={ticHistory} goldRows={goldRows} iso={iso} />
 

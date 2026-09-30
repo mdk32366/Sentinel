@@ -10,6 +10,7 @@ import { useApiResource } from "./hooks/useApiResource";
 import { useChartSeries } from "./hooks/useChartSeries";
 import { useMarketSeries } from "./hooks/useMarketSeries";
 import { CustomTooltip } from "./components/CustomTooltip";
+import { DataConfidence } from "./components/DataConfidence";
 import { StatCard } from "./components/StatCard";
 import { Ticker } from "./components/Ticker";
 import { AboutTab } from "./pages/AboutTab";
@@ -86,6 +87,10 @@ export default function App() {
 
         {tab === "MARKETS" && (
           <>
+            {/* D-0074: the twelve cards draw on four sources of different
+                cadence - daily yields, weekly dollar index, monthly CPI and
+                M2. One of them is 637 days old. */}
+            <DataConfidence sourceKeys={["treasury_yields", "oil", "dollar_index", "gold_price"]} />
             <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 12, marginBottom: 28 }}>
               {METRICS.map(m => (
                 <StatCard
