@@ -32,9 +32,16 @@ const SIGNAL = {
   bills_share_of_official_pct: 9.39,
   bills_share_move_12m_points: -1.16,
   components_reconcile: true,
-  points: 13,
-  sustained: true,
-  calibration_months: 13,
+  // D-0088: 79 months from Table 3, not the 13 Table 5 carries.
+  points: 79,
+  sustained: false,
+  unusual: false,
+  share_move_percentile: 84,
+  median_move_12m_points: -3.23,
+  trend: {
+    from: "2020-01-01", from_share_pct: 59.34, to_share_pct: 40.8,
+    share_change_pp: -18.54, level_change_pct: -9.51, months: 79,
+  },
   note:
     "US Treasuries held by foreign official institutions — central banks and " +
     "sovereign funds — across every holder, named and unnamed. A subset of the " +
@@ -89,13 +96,28 @@ describe("ForeignOfficialStrip", () => {
     }
   });
 
-  it("describes a sustained decline in terms of persistence, not one month", () => {
-    // The threshold is 8 of 12 falls plus a 1pp cumulative move, because the
-    // 3-month magnitude distribution has no gap: 0.5pp fires on 7 of 10
-    // windows, 1.25pp on none. Reusing All Other's 0.5pp would have been
-    // F-0089 in a new place.
+  it("reports the structural trend rather than a 12-month flag", () => {
+    // D-0088. The original rule flagged a "sustained decline" on 9 falls in 12.
+    // Against the 79 months Table 3 carries, 9 falls is the MEDIAN window and
+    // that rule fired on 70% of windows — decoration (D-0024). The finding is
+    // the six-year drift, which no 12-month window can show.
     render(<ForeignOfficialStrip signal={SIGNAL} />);
-    expect(screen.getByText(/fallen in 9 of the last 12 months/)).toBeTruthy();
+    expect(screen.getByText(/59\.34% → 40\.80%/)).toBeTruthy();
+    expect(screen.getByText(/-18\.54pp over 79 months/)).toBeTruthy();
+  });
+
+  it("says where the last twelve months sit in that history", () => {
+    // The context that turned the flag from a finding into decoration: the
+    // current window is at the 84th percentile, i.e. milder than most.
+    render(<ForeignOfficialStrip signal={SIGNAL} />);
+    expect(screen.getByText(/84th percentile/)).toBeTruthy();
+    expect(screen.getByText(/not unusual within it/)).toBeTruthy();
+  });
+
+  it("speaks up only when the window is in the steepest tenth", () => {
+    render(<ForeignOfficialStrip signal={{ ...SIGNAL, unusual: true, share_move_12m_points: -5.8 }} />);
+    expect(screen.getByText(/steepest tenth/)).toBeTruthy();
+    expect(screen.getByText(/accelerating/)).toBeTruthy();
   });
 
   it("says the private share rose by construction, not as a claim about buyers", () => {
@@ -105,11 +127,25 @@ describe("ForeignOfficialStrip", () => {
     expect(screen.getByText(/by construction/)).toBeTruthy();
   });
 
-  it("stays quiet when the trend is not sustained", () => {
-    const calm = { ...SIGNAL, sustained: false, falls_of_last_12: 5,
-      share_move_12m_points: -0.2 };
+  it("renders without a trend when the series is too short to have one", () => {
+    // A fresh database has Table 5's 13 months before Table 3 has run.
+    const thin = { ...SIGNAL, trend: undefined };
+    const { container } = render(<ForeignOfficialStrip signal={thin} />);
+    expect(container.textContent).not.toMatch(/undefined|NaN/);
+    expect(screen.queryByText(/Since 2020/)).toBeNull();
+  });
+
+  it("reports an ordinary window as ordinary, with the percentile", () => {
+    // D-0088. This test used to assert the absence of "fallen in", a string the
+    // component stopped producing when `sustained` was retired - it passed
+    // because nothing could make it fail (D-0024). It now exercises the rule
+    // that is actually live: -1.86pp is the 84th percentile, not an alarm.
+    const calm = { ...SIGNAL, unusual: false, share_move_12m_points: -1.86,
+      share_move_percentile: 84 };
     render(<ForeignOfficialStrip signal={calm} />);
-    expect(screen.queryByText(/fallen in/)).toBeNull();
+    expect(screen.queryByText(/steepest tenth/)).toBeNull();
+    expect(screen.getByText(/84th percentile/)).toBeTruthy();
+    expect(screen.getByText(/not unusual within it/)).toBeTruthy();
   });
 
   it("shouts when bills and bonds do not reconcile", () => {

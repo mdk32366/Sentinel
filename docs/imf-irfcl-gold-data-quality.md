@@ -1,8 +1,11 @@
 # IMF IRFCL — gold volume scale anomalies (Angola, Brazil)
 
 `A-0018`. Drafted for sending to **datahelp@imf.org**, the contact given in the
-IRFCL dataset metadata. **Not sent** — an outbound message on the maintainer's
-behalf is theirs to send, not mine.
+IRFCL dataset metadata.
+
+**Authorized to send 2026-09-30. Not yet sent.** Update this line the moment it
+goes out, with the date - a draft that has been authorized reads exactly like a
+draft that has been sent, and the difference is the whole point of the file.
 
 Copy the section below as the body.
 

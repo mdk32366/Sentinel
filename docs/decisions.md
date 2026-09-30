@@ -2363,3 +2363,85 @@ to `HoldingsResponse`, failing on fields `HoldingItem` declares correctly. It is
 now anchored at four-space indent, so it reads the endpoint's own return. A
 guard that cannot tell a nested return from the outer one reports the wrong
 model, which is worse than not reporting.
+
+### D-0088 - The Foreign Official alarm was recalibrated against six years, and lost
+
+`A-0020` asked a question I could not answer when I wrote the rule: is a
+12-month share decline of this shape ordinary for this series, or is it the
+de-dollarization it looks like? `D-0080` had only the **thirteen months** SLT
+Table 5 carries, so it chose a threshold - 8 or more falls in 12 steps, plus a
+1.0pp cumulative move - from a window barely longer than the rule itself.
+
+`D-0081` had already supplied the answer without my noticing. Table 3 carries
+the same Foreign Official and Grand Total aggregates back to **2020-01**:
+**79 months, not 13**. Measured against it, the finding inverts.
+
+| | |
+|---|---|
+| Falls per 12-month window | min 4, **median 9**, max 11 |
+| The old rule's hit rate | **47 of 67 windows - 70%** |
+| Current 12-month move | **-1.86pp, the 84th percentile** |
+| p10 of the distribution | **-5.10pp** |
+
+Nine falls in twelve is the **median window**. The flag was not detecting a
+decline; it was detecting that this series declines, which is its permanent
+condition. It fired on 70% of all windows - a light that has been on for most of
+six years, and `D-0024`'s definition of decoration.
+
+**And it was pointing the wrong way.** The current window, the one it was lit
+for, is among the *mildest* in the series: 56 of 67 windows were more negative.
+
+**Retired, and replaced by two things rather than one.** `unusual` fires on this
+series' own worst decile (-5.10pp), so it fires about a tenth of the time by
+construction. Beside it the surface now always states where the window sits -
+"the 84th percentile, against a median of -3.23pp" - because the honest reading
+of a declining series is that the decline continued, not that nothing happened.
+
+The real finding was never in a 12-month window. It is structural, and it is
+larger than any of them: official share **59.34% -> 40.80% since 2020-01,
+-18.54pp, while private holdings rose 91.6%**. That is reported as a `trend`
+block. A six-year drift is not an event, and dressing it as one is what the old
+flag did.
+
+**`sustained` is kept as an explicit `False` rather than deleted**, because
+`D-0042` serves stored snapshots as written: a missing key renders as absent
+data where an explicit False renders as "not flagged", which is what it means.
+
+**A second defect fell out of the same change.** `twelve_month_pct` divided by
+`rows[0]`, which was twelve months back *only while the series was exactly
+thirteen months long*. The moment Table 3 deepened it, the figure became a
+six-and-a-half-year change still labelled "twelve month": **-9.51% where the
+truth is -2.92%**. Nothing failed; the number simply started meaning something
+else. `all_other_signal` had the identical expression and is still on 13 months,
+so it was correct today and would have broken the same way tomorrow. Both now
+index `rows[-13]` and a test pins the expression.
+
+### D-0089 - A score needs a denominator; it does not need rescaling
+
+`A-0019` option 4 proposed normalising the composite by the points a country can
+actually be measured on - a score of 8.0 from two dimensions and 42.0 from five
+are not comparable, and `D-0078` disclosed that without fixing it.
+
+**I implemented half of it and refused the other half, and the measurement is
+the reason.** Rescaling the raw score to the full 165 makes **Malta read 77.0 -
+CRISIS - on 60 points of evidence**, outranking Japan's 42.0 measured on all
+165. Ghana and Mongolia reach STRESSED by the same route. Malta scores 28 of 40
+on gold and has no Treasury position, no CDS quote and no broad money; the
+rescaling multiplies that thin evidence by 2.75 and calls the product a crisis.
+**Less evidence would produce a higher score**, which is worse than the
+incomparability it set out to cure and is the same shape as `F-0097`: a number
+asserted where an observation is missing.
+
+What ships is the part that survives its own test - the **denominator and the
+rate**. Every country now carries `available_points` and
+`score_pct_of_available`, and the country panel reads "Measured on 60 of 165
+points - 28.0 is 46.7% of what could be scored here." Malta's 46.7% and Japan's
+25.5% are comparable and neither is inflated. **Tiers stay on the absolute
+score**, so nothing silently rescores.
+
+`available_points()` in `pipelines/composite_stress.py` mirrors
+`unavailableDimensions()` in `ui/src/lib/coverage.js`, which was already
+rendering the same judgement. They are separate because one runs in Python and
+one in the browser; a test asserts they agree on the dimensions and the maxima,
+because `F-0047` is the standing example of two implementations of one idea
+drifting apart.

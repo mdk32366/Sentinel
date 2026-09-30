@@ -53,6 +53,13 @@ def run_gold_reserves_fetch(db: Session) -> dict:
         raise FileNotFoundError(msg)
 
     try:
+        # F-0103. This called `import_wgc_csv` without importing it, so every
+        # run raised NameError - 35 of 35 in the log, and the job has never
+        # once succeeded. Imported here rather than at module scope because
+        # gold_fetcher imports composite_stress, and a top-level import would
+        # add a third module to that chain for one function.
+        from pipelines.gold_fetcher import import_wgc_csv
+
         # Delegate to the proven gold_fetcher implementation
         result = import_wgc_csv(db, csv_path=CSV_PATH)
 

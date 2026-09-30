@@ -29,13 +29,18 @@ function pct(v) {
 export function ForeignOfficialStrip({ signal }) {
   if (!signal) return null;
 
-  const sustained = signal.sustained;
-  const accent = sustained ? "#C8A96E" : "#2A3D50";
+  // D-0088. `sustained` is retired: measured against the 79 months Table 3
+  // carries rather than the 13 Table 5 does, 9 falls in 12 is the MEDIAN
+  // window and that rule fired on 70% of windows. `unusual` fires on the
+  // series' own worst decile.
+  const unusual = signal.unusual;
+  const trend = signal.trend;
+  const accent = unusual ? "#C8A96E" : "#2A3D50";
   const dir = (v) => (v == null ? "#5A6878" : v < 0 ? "#E07B5A" : "#5DB87A");
 
   const figures = [
     { label: "official", val: `$${trillions(signal.level_bn)}T`, color: "#8A9BAC" },
-    { label: "share of total", val: signal.share_pct == null ? "—" : `${signal.share_pct.toFixed(2)}%`, color: sustained ? "#C8A96E" : "#8A9BAC" },
+    { label: "share of total", val: signal.share_pct == null ? "—" : `${signal.share_pct.toFixed(2)}%`, color: unusual ? "#C8A96E" : "#8A9BAC" },
     { label: "private", val: signal.private_bn == null ? "—" : `$${trillions(signal.private_bn)}T`, color: "#8A9BAC" },
     { label: "12mo", val: pct(signal.twelve_month_pct), color: dir(signal.twelve_month_pct) },
     { label: "share move 12mo", val: pp(signal.share_move_12m_points), color: dir(signal.share_move_12m_points) },
@@ -62,9 +67,21 @@ export function ForeignOfficialStrip({ signal }) {
         {signal.note}
       </div>
 
-      {sustained && (
-        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#C8A96E", lineHeight: 1.6, marginTop: 4 }}>
-          {`Official holdings have fallen in ${signal.falls_of_last_12} of the last 12 months, taking the official share of all foreign holdings ${pp(signal.share_move_12m_points)}. Private holders hold the remainder by construction, so their share rose by the same amount. This describes central banks as a group and says nothing about any one of them.`}
+      {/* The structural finding, which no 12-month window can show. */}
+      {trend && (
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: "#8A9BAC", lineHeight: 1.6, marginTop: 4 }}>
+          {`Since ${trend.from.slice(0, 7)}: official share ${trend.from_share_pct.toFixed(2)}% → ${trend.to_share_pct.toFixed(2)}% (${pp(trend.share_change_pp)} over ${trend.months} months), official holdings ${pct(trend.level_change_pct)}. Private holders hold the remainder by construction, so their share rose by the same amount. This describes central banks as a group and says nothing about any one of them.`}
+        </div>
+      )}
+
+      {/* Where the last twelve months sit in that history — the context that
+          turned the original "sustained decline" flag from a finding into
+          decoration (D-0088). */}
+      {signal.share_move_12m_points != null && signal.share_move_percentile != null && (
+        <div style={{ fontFamily: "monospace", fontSize: 10, color: unusual ? "#C8A96E" : "#5A6878", lineHeight: 1.6, marginTop: 4 }}>
+          {unusual
+            ? `The last 12 months (${pp(signal.share_move_12m_points)}) are in the steepest tenth of this series' own history — the decline is accelerating.`
+            : `The last 12 months (${pp(signal.share_move_12m_points)}) sit at the ${signal.share_move_percentile}th percentile of this series' own history, against a median of ${pp(signal.median_move_12m_points)}. The long decline continues; this window is not unusual within it.`}
         </div>
       )}
 

@@ -94,6 +94,15 @@ export function StressContribution({ iso }) {
           <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", letterSpacing: "0.08em", marginBottom: 6 }}>
             {`NOT SCORED FOR THIS COUNTRY · ${unreachablePoints(row)} OF 165 POINTS UNREACHABLE`}
           </div>
+          {/* D-0089. The rate, which IS comparable between countries,
+              beside the absolute score, which is not. The rescaling that option
+              proposed is absent on purpose — it makes Malta read 77.0 on 60
+              points of evidence, outranking Japan measured on all 165. */}
+          {row.available_points != null && row.score_pct_of_available != null && (
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#8A9BAC", lineHeight: 1.6, marginBottom: 6 }}>
+              {`Measured on ${row.available_points} of 165 points — ${Number(row.composite_score).toFixed(1)} is ${row.score_pct_of_available.toFixed(1)}% of what could be scored here.`}
+            </div>
+          )}
           {unavailable.map((d) => (
             <div key={d.key} style={{ fontFamily: "monospace", fontSize: 10, color: "#8A6A5A", lineHeight: 1.6, marginBottom: 4 }}>
               <span style={{ color: "#5A6878" }}>{d.label} (max {d.max}) — </span>{d.reason}

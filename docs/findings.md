@@ -3536,3 +3536,65 @@ sentence that goes stale for a reason nobody has thought of yet. The structural
 guards - ADMIN's route and job coverage, the response-model contract tests -
 are the ones that generalise, and the difference showed today: ADMIN was right
 without anyone touching it.
+
+### F-0103 - The gold job has never once succeeded
+
+`pipelines/gold_reserves.py` called `import_wgc_csv(db, csv_path=CSV_PATH)` and
+**never imported that name**. Every scheduled run raised `NameError`:
+**35 of 35 in the update log, for the whole life of the job.**
+
+Two things hid it, and both are worth naming.
+
+**The watchdog said `ok`.** It measures the *age of the data*, and `D-0076`
+fills the gold metric from the IMF on a separate schedule. So the World Gold
+Council backfill failing left no gap on any surface. A freshness check cannot
+see a pipeline that is not the only writer of its own metric - it reports the
+health of the number, not of the job.
+
+**The failure was recorded and not read.** The call sits inside a `try`, so the
+pipeline dutifully wrote a `failed` UpdateLog row thirty-five times. The
+information was never missing. Nobody was looking at it, and nothing made anyone
+look - `D-0027` from the other direction: a guard that records and does not
+raise its voice is only marginally better than one that stands aside.
+
+**Fixed** with a function-local import, deliberately: `gold_fetcher` imports
+`composite_stress`, and a module-scope import would pull a third module into
+that chain for one function.
+
+**Guarded generally, not specifically.** `tests/test_pipeline_names_resolve.py`
+walks the AST of every `run_*`, `compute_*`, `persist_*` and `import_*` function
+in `pipelines/` and asserts that every plain-name call resolves to something the
+module binds - an import, a module-level definition, a local, or a builtin. An
+import-time check cannot catch this because the call is inside a function, and
+the suite could not catch it because nothing calls these entry points without a
+database. The test carries a reconstruction of the defect, so a guard that has
+stopped being able to fail on the thing it was written for will say so.
+
+**It found something on its first run**, though not another `NameError`:
+`pipelines/scheduler.py` began with a **UTF-8 BOM**, left by a PowerShell
+`Out-File` in an earlier session. Python compiles it happily, so it was
+invisible - but every tool that reads that file as `utf-8` rather than
+`utf-8-sig` sees `U+FEFF` before `import` and fails to parse it. The BOM is
+stripped and the guard reads `utf-8-sig`, so the next one cannot break it.
+
+### F-0104 - A test that asserted the absence of a string nothing could produce
+
+`ForeignOfficialStrip.dom.test.jsx` held `queryByText(/fallen in/)` expected to
+be null, under the name "stays quiet when the trend is not sustained". `D-0088`
+retired `sustained` and the component stopped producing that sentence entirely -
+so the test asserted the absence of a string that **no input could make
+appear**. It passed, and would have passed against a component that rendered
+nothing at all.
+
+Found by `no-unused-vars` on an unrelated line two tests above it, not by
+anything looking for vacuous assertions. That is luck, and worth recording as
+luck.
+
+Retargeted at the rule that is actually live: an ordinary window renders its
+percentile and the median, and does *not* render the "steepest tenth" sentence.
+Both assertions can now fail.
+
+**The pattern, for the fifth or sixth time today.** An absence assertion is the
+weakest in the suite, because it is satisfied by a component that has been
+deleted. Every one of them needs a sibling asserting what *is* rendered, or it
+is measuring nothing.
