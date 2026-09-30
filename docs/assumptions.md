@@ -524,7 +524,7 @@ Result: TIC 91d -> 61d (tolerance 110 -> 85), gold 60d -> 30d (95 -> 65), broad
 money 637d -> 273d (960 -> 600). The destructive migration remains available if
 the stored dates themselves ever matter.
 
-### A-0017 - Per-country data age is unchecked everywhere except dimension 3
+### A-0017 - CLOSED by D-0081 and the gold cutoff - per-country data age was unchecked outside dimension 3
 
 `F-0092` put a per-country freshness cutoff on the monetary dimension after
 finding Canada scored on 2008 data. **No other dimension has one.**
@@ -554,6 +554,34 @@ this from a worry into a number. Only then is it worth deciding whether each
 dimension needs its own cutoff or whether the watchdog should derive laggards
 per country instead of carrying one by hand.
 
+---
+
+**CLOSED, and the table above is now mostly wrong in the good direction.**
+
+**Dimension 1 no longer needs one.** `D-0081` took TIC from the 20 countries of
+Table 5 to the 76 of Table 3, and re-measuring the laggards afterwards gave
+**25 -> 2**. The risk in the row above was a country scoring off a stale row;
+dimension 1 already reads a 200-day `tic_hist` window, and with Table 3 behind
+it there is almost nothing older than that to read.
+
+**Dimension 2 needed one badly.** 33 of 98 gold readings were stale, the oldest
+by **3,104 days**, and **Ghana was scoring 24 of its 40 gold points on a
+364-day-old reading**. `MAX_GOLD_DATA_AGE_DAYS = 200` is derived rather than
+picked: it admits both cadences that actually write this metric - the IMF's
+monthly IRFCL and the WGC's quarterly release, with slack for a late filing -
+and excludes 35 countries, **exactly one of which was scoring**. A cutoff that
+changed nothing would have been decoration; a cutoff that silenced a third of
+the map would have been an outage.
+
+**Dimensions 5 and 7 stand as assessed.** Petrodollar derives from a global oil
+price, so there is no per-country age to check. CDS already has one in effect.
+
+The general lesson is the one `F-0092` started: **every dimension that reads a
+per-country series needs a per-country age**, and the two that did not have one
+each turned out to have a real country scoring on real stale data. Not one of
+those was found by the watchdog, because the watchdog reports per source and
+the failure is per country.
+
 ### A-0018 - Angola has no gold data, and the IMF report is drafted but unsent
 
 **Status: half closed.**
@@ -582,7 +610,7 @@ the composite's scored set, so the cost today is nil.
 particular whether any country in the scored set has joined it. The same defect
 arriving in Turkey or Poland would remove a country the model relies on.
 
-### A-0019 - Dimension 1 can only speak about twenty countries
+### A-0019 - CLOSED by D-0081, D-0083 and D-0089 - dimension 1 could only speak about twenty countries
 
 **Options 1, 2 and 3 are done (`D-0078`, `D-0079`, `D-0081`). Option 4 remains
 open and is now much less necessary.**
@@ -617,7 +645,23 @@ holders, and most coverage badges clear on their own.
   instead of 20 it now addresses a much smaller residue. Not worth the
   disruption until `A-0021` is settled.
 
-### A-0020 - The Foreign Official trend is calibrated on one year
+---
+
+**CLOSED. Option 4 was implemented in part and refused in part - see `D-0089`.**
+
+The refusal is the interesting half. Normalising the score to the points a
+country can be measured on makes **Malta read 77.0 - CRISIS - on 60 points of
+evidence**, outranking Japan's 42.0 measured on all 165, because rescaling
+multiplies thin evidence rather than discounting it. What shipped is the
+denominator and the rate (`available_points`, `score_pct_of_available`), which
+are comparable between countries without inflating anyone; tiers stay on the
+absolute score.
+
+What is left of the original problem is much smaller than it was. Options 1-3
+took dimension 1 from 20 countries to 76 and disclosed the gaps for the rest;
+option 4's remaining gap is recorded as `A-0023`.
+
+### A-0020 - CLOSED by D-0088 - the Foreign Official trend was calibrated on one year
 
 `D-0080` reports foreign official holdings as a **sustained** decline: the share
 of all foreign holdings fell in 9 of the last 12 months, -1.86pp cumulatively,
@@ -644,6 +688,27 @@ current reading is remarkable or routine.
 **Until then** the figure is reported with its calibration stated in the payload
 (`calibration_months`), and the strip describes what was observed - "fallen in 9
 of the last 12 months" - rather than asserting that it is unusual.
+
+---
+
+**CLOSED by `D-0088`, and the answer was the unflattering one.**
+
+"What would answer it" named deeper history as the requirement. `D-0081` had
+already loaded it the same day - **SLT Table 3 carries these aggregates back to
+2020-01, 79 months rather than 13** - and I did not connect the two until this
+assumption was re-read.
+
+Against that distribution: **9 falls in 12 is the median window**, the rule
+fired on **70% of all windows**, and the -1.86pp move it was lit for sits at the
+**84th percentile** - among the mildest in the series. It was decoration, and
+it was pointing the wrong way.
+
+Replaced by a worst-decile threshold derived from this series (`unusual`,
+-5.10pp) plus an always-stated percentile, and by a `trend` block for the
+finding that is actually there: **official share 59.34% -> 40.80% since 2020
+while private holdings rose 91.6%**. The de-dollarization is real. It is a
+six-year drift, not a twelve-month event, and the old flag could not tell the
+difference because it had never seen more than one year.
 
 ### A-0021 - CLOSED by D-0084 - holdings change includes price
 
@@ -684,3 +749,20 @@ the total-position percentage alone would have taken Japan from 15.4 to about
 where the transactions say it belongs.
 
 Japan 15.4 -> 42.0, Argentina 38.0 -> 8.0, and no country at the 50 cap.
+
+### A-0023 - The rate is published but nothing ranks by it
+
+`D-0089` publishes `score_pct_of_available` on every country and refuses to rank
+by it, because rescaling inflates thin evidence. Both halves are defensible and
+together they leave a gap: the COMPOSITE list is still ordered by an absolute
+score that means different things for different countries, and the rate that
+would fix that is sitting one field away, rendered only on the country panel.
+
+**What would settle it** is whether a reader ever wants the rate-ordered list.
+My instinct is that they want it *filtered* rather than reordered - "show me the
+countries measured on 100+ points" is a question with an answer, where "rank
+Malta's 46.7% against Japan's 25.5%" compares a gold reading to a bill
+liquidation and calls the comparison a ranking.
+
+Not acted on. Recorded so the half-implementation is visible as a choice rather
+than an oversight.

@@ -653,6 +653,7 @@ def compute_composite_stress(db: Session) -> dict:
         gold_consec = 0
         gold_tonnes = None
         selling_gold = False
+        gold_stale = False
 
         if gold_metric and gold_latest:
             gold_rows = db.query(TimeSeries).filter(
@@ -677,7 +678,21 @@ def compute_composite_stress(db: Session) -> dict:
             # now means what it says whatever cadence the rows arrive at.
             gold_hist = _last_per_quarter(gold_rows)
 
-            if gold_hist:
+            # A-0017. Too old to describe current behaviour. The TONNAGE is
+            # still reported - "Venezuela last reported 161t in 2018" is worth
+            # seeing - but it cannot earn points, exactly as F-0092 ruled for
+            # broad money.
+            gold_stale = bool(
+                gold_hist
+                and (tic_latest or gold_latest)
+                and (gold_latest - gold_hist[-1].date).days > MAX_GOLD_DATA_AGE_DAYS
+            )
+
+            if gold_hist and gold_stale:
+                # Reported, not scored.
+                gold_tonnes = float(gold_hist[-1].value)
+
+            if gold_hist and not gold_stale:
                 gold_tonnes = float(gold_hist[-1].value)
                 if len(gold_hist) >= 2:
                     gold_prev = float(gold_hist[-2].value)
@@ -871,6 +886,16 @@ def compute_composite_stress(db: Session) -> dict:
             "m2_stale": m2_stale,
             **treasury_flows(db, country.id, tic_latest),
             **mag_detail,
+            "gold_stale": gold_stale,
+            **(lambda avail: {
+                "available_points": avail,
+                "score_pct_of_available": (
+                    round(raw_score / avail * 100, 1) if avail else None
+                ),
+            })(available_points(
+                tic_state, gold_tonnes, gold_stale, m2_stale, m2_year,
+                cds_data.get("coverage"),
+            )),
             "tic_state": tic_state,
             "tic_last_reported_bn": round(tic_last_bn, 1) if tic_last_bn is not None else None,
             "tic_last_reported_date": tic_last_date.date().isoformat() if tic_last_date else None,
@@ -1202,6 +1227,78 @@ def get_treseg_signal(db: Session, iso: str, no_tic: bool) -> dict:
 # with the last 4 unreachable for every country. The same shape as F-0089 and
 # F-0091: a threshold nobody re-derived after the arithmetic changed around it.
 GOLD_WINDOW_DAYS = 600
+
+# A-0017. Dimension 2 will not score a country whose newest gold reading is
+# older than this.
+#
+# The per-country age report (A-0017's own diagnostic) found 33 of 98 countries
+# beyond the laggard threshold and a maximum of **3,104 days** - Venezuela's
+# newest reading is from 2018. Ghana was scoring **24 of 40 points** on a
+# 364-day-old figure, which is dimension 2's version of F-0092: a number too old
+# to describe current behaviour, scored as though it described it.
+#
+# 200 days, because the series has two cadences. IMF IRFCL is monthly and lands
+# 28-55 days behind (D-0076); the World Gold Council backfill for the ~24
+# countries IRFCL does not carry is quarterly and can legitimately be ~150 days
+# old. A cutoff tight enough for the monthly feed would exclude quarterly
+# reporters who are perfectly current, which is F-0089's mistake. 200 admits
+# both and excludes 35 countries, exactly one of which currently scores.
+#
+# The other dimensions did not need one, which the same report established:
+# dimension 1 is protected by its own 200-day `tic_hist` window (a country
+# outside it gets neither magnitude nor persistence), dimension 3 has
+# MAX_M2_DATA_AGE_YEARS (F-0092) and dimension 7 admits a quote only within
+# MAX_CDS_AGE_DAYS.
+MAX_GOLD_DATA_AGE_DAYS = 200
+
+# ── D-0089 (A-0019 option 4): score out of what can actually speak ─────────
+#
+# The raw maximum is 165, and no country is measured on all of it. Germany's
+# Treasury dimension cannot speak (`F-0097`), Ghana's gold reading is a year old
+# (`A-0017`), Canada's broad money is from 2008 (`F-0092`). A score of 8.0 built
+# from two dimensions and a score of 42.0 built from five are not comparable,
+# and `D-0078` disclosed that without fixing it.
+#
+# **The rescaling this option proposed is NOT implemented, and the measurement
+# is why.** Dividing the raw score by the available points and multiplying back
+# to 165 makes Malta - 28 points of gold and nothing else - read **77.0, a
+# CRISIS**, outranking Japan's 42.0 measured on the full model. Ghana and
+# Mongolia reach STRESSED the same way. Less evidence would produce a higher
+# score, which is strictly worse than the incomparability it set out to fix and
+# is the same shape as `F-0097`: a number asserted where an observation is
+# missing.
+#
+# What is implemented is the part that survives: the DENOMINATOR, and the rate.
+# Malta reads 46.7% of 60 available points and Japan 25.5% of 165. Those are
+# comparable and neither is inflated. Tiers stay on the absolute score, so
+# nothing silently rescores.
+DIMENSION_MAX = {
+    "tic_score": 50,
+    "gold_score": 40,
+    "monetary_score": 35,
+    "petro_score": 20,
+    "cds_score": 20,
+}
+
+
+def available_points(tic_state, gold_tonnes, gold_stale, m2_stale, m2_year,
+                     cds_coverage):
+    """How much of the 165-point model can speak about this country.
+
+    Mirrors `ui/src/lib/coverage.js`, which renders the same judgement. The two
+    are separate because one runs in Python and one in the browser; the tests
+    assert they agree on the dimensions and the maxima.
+    """
+    total = DIMENSION_MAX["petro_score"]  # oil price is global; always computable
+    if tic_state not in ("below_threshold", "no_data"):
+        total += DIMENSION_MAX["tic_score"]
+    if gold_tonnes is not None and not gold_stale:
+        total += DIMENSION_MAX["gold_score"]
+    if m2_year is not None and not m2_stale:
+        total += DIMENSION_MAX["monetary_score"]
+    if cds_coverage == "quoted":
+        total += DIMENSION_MAX["cds_score"]
+    return total
 
 
 def _last_per_quarter(rows):

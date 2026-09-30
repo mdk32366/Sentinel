@@ -317,6 +317,16 @@ class CompositeCountry(BaseModel):
     tic_st_drawdown_pct: Optional[float] = None
     tic_magnitude_basis: str = "none"
     tic_price_driven: bool = False
+    # A-0017. Dimension 2 will not score a gold reading older than 200 days.
+    # The tonnage is still reported - "Venezuela last reported 161t in 2018" is
+    # worth seeing - so the flag has to travel with it.
+    gold_stale: bool = False
+    # D-0089. How much of the 165-point model could speak about this
+    # country, and the score as a rate of it. The rescaling the option proposed
+    # is deliberately NOT here: it makes Malta read 77.0 - a CRISIS - on 60
+    # points of evidence, outranking Japan measured on all of it.
+    available_points: Optional[int] = None
+    score_pct_of_available: Optional[float] = None
     tic_state: str = "reported"
     tic_last_reported_bn: Optional[float] = None
     tic_last_reported_date: Optional[str] = None

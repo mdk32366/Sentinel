@@ -69,6 +69,20 @@ AGGREGATE_PREFIXES = (
     "Total ", "Memo:", "Of Which:",
 )
 
+# A-0020. Three of those aggregates are wanted as global series, and Table 3
+# carries them back to **2020-01** where Table 5 carries thirteen months. That
+# difference decided the calibration: against 13 months a 9-of-12 decline in the
+# official share looked like a finding, and against 79 it is the MEDIAN.
+#
+# Captured here rather than only from Table 5 (D-0079, D-0080) so the same
+# metrics gain six years of history. The two readings agree for the months both
+# cover - Table 3's 2026-07 Foreign Official is $3,773.1bn, exactly Table 5's.
+TABLE3_AGGREGATES = {
+    "Grand Total": "TIC_GRAND_TOTAL",
+    "Of Which: Foreign Official": "TIC_FOREIGN_OFFICIAL",
+    "Of Which: Foreign Non-Official": "TIC_FOREIGN_NON_OFFICIAL",
+}
+
 # Table 3 labels our `countries` table does not carry under that name, with the
 # ISO code each should have.
 #
@@ -131,6 +145,15 @@ METRICS = {
             "position moved 8% (D-0084)."
         ),
     },
+    "TIC_FOREIGN_NON_OFFICIAL": {
+        "name": "TIC Foreign Non-Official Holdings",
+        "description": (
+            "Privately held foreign Treasuries, published directly by SLT Table "
+            "3 rather than derived as Grand Total minus official. 79 months to "
+            "2026-07 (A-0020). Rose 91.6% over that window while official "
+            "holdings fell 9.5%."
+        ),
+    },
     "TIC_UST_LT_VALUATION": {
         "name": "TIC Long-Term Treasury Valuation Change by Country",
         "description": (
@@ -166,6 +189,33 @@ def fetch_table3(timeout: int = 90) -> str:
 
 def is_aggregate(label: str) -> bool:
     return label.startswith(AGGREGATE_PREFIXES)
+
+
+def parse_table3_aggregates(text: str) -> dict:
+    """`{metric_code: {date: value_bn}}` for Table 3's global aggregate rows.
+
+    `A-0020`. The same rows Table 5 publishes, with **79 months** of history
+    instead of thirteen. Converted to billions like everything else here.
+    """
+    out = {}
+    for line in text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+        cols = line.split("\t")
+        if len(cols) <= COL_HOLDINGS:
+            continue
+        code = TABLE3_AGGREGATES.get(cols[COL_COUNTRY].strip())
+        if not code:
+            continue
+        period = cols[COL_DATE].strip()
+        if len(period) != 7 or period[4] != "-" or not period[:4].isdigit():
+            continue
+        raw = cols[COL_HOLDINGS].strip()
+        try:
+            value = float(raw) / 1000.0
+            date = datetime(int(period[:4]), int(period[5:7]), 1)
+        except ValueError:
+            continue
+        out.setdefault(code, {})[date] = round(value, 3)
+    return out
 
 
 def parse_table3(text: str) -> tuple[list[dict], list[str]]:
@@ -390,6 +440,31 @@ def run_tic_table3_fetch(db: Session, validate: bool = True) -> dict:
                     ))
                     inserted += 1
 
+        # A-0020. The aggregates, as global series. Six years of history for
+        # the Foreign Official calibration rather than the thirteen months
+        # Table 5 carries.
+        agg_written = 0
+        for code, by_date in parse_table3_aggregates(text).items():
+            agg_metric = _ensure_metric(db, code) if code in METRICS else (
+                db.query(Metric).filter_by(code=code).first()
+            )
+            if agg_metric is None:
+                continue
+            for date, value in by_date.items():
+                existing = db.query(TimeSeries).filter(
+                    TimeSeries.metric_id == agg_metric.id,
+                    TimeSeries.country_id.is_(None),
+                    TimeSeries.date == date,
+                ).first()
+                if existing:
+                    existing.value = Decimal(str(value))
+                    existing.updated_at = datetime.utcnow()
+                else:
+                    db.add(TimeSeries(
+                        metric_id=agg_metric.id, country_id=None,
+                        date=date, value=Decimal(str(value)),
+                    ))
+                agg_written += 1
         db.commit()
 
         status = "partial" if (rejected or unmapped) else "success"
@@ -423,6 +498,7 @@ def run_tic_table3_fetch(db: Session, validate: bool = True) -> dict:
             "status": status, "inserted": inserted, "updated": updated,
             "skipped": skipped, "countries": len(countries),
             "newest_date": newest.date().isoformat() if newest else None,
+            "aggregate_points": agg_written,
             "rejected": rejected, "unmapped": sorted(unmapped),
             "created_countries": sorted(created),
         }

@@ -422,3 +422,75 @@ agreement was measured once, by hand, against production, and is recorded in
 fails when either revises - and revisions are the normal behaviour of both. The
 standing guard is instead the plausibility ceiling, which needs no second
 source to be right.
+
+### T-0088b - The Foreign Official threshold, against the series it came from
+
+`tests/test_foreign_official_calibration.py`, 11 cases, no network.
+
+The point of these is that **the threshold must not be able to justify
+itself**. `FO_WORST_DECILE_PP` is asserted against `OBSERVED_P10 = -5.10`, a
+constant measured from the real 79-month series and written into the test file,
+not read back out of `tic_aggregate`. A test that imports the value under test
+and compares it to itself passes at any value, which is how `D-0080`'s rule
+survived being calibrated on thirteen months.
+
+Three properties are pinned, each of which the retired rule failed or would
+have failed:
+
+* **More severe than the median window** (`-5.10 < -3.23`). A threshold at the
+  median fires half the time, and the old one fired on 70% of windows.
+* **Quiet on the current window** (`-1.86 > -5.10`). The recalibration is
+  pointless if the flag stays lit.
+* **Still reachable** (`-5.10 > -6.98`, the observed minimum). `F-0089` is the
+  opposite failure - a bound nothing can cross - and it is one edit away from
+  here.
+
+`test_it_is_not_all_other_s_threshold` asserts the two series' thresholds are
+**not** equal. They share a unit and nothing else, and inheriting one across
+two distributions is the exact mistake `D-0080` avoided by hand and a later
+edit could make by accident.
+
+`TestTheRetiredRuleWouldHaveBeenDecoration` holds the arithmetic - 9 falls is
+the median, the old rule hit 47 of 67 windows - as plain numbers, so the reason
+for the change survives the code that implemented it being rewritten.
+
+`test_the_twelve_month_window_is_twelve_months` reads the source for
+`rows[-13]`. It is a source assertion rather than a behavioural one because the
+defect was silent: `rows[0]` returned a real number, of the right shape and
+sign, that simply stopped being a twelve-month change when the series got
+longer. Nothing about the output said so.
+
+### T-0089 - Every pipeline entry point resolves its own names
+
+`tests/test_pipeline_names_resolve.py`, 5 cases, no network, no database.
+
+Walks the AST of every `run_*`, `compute_*`, `persist_*` and `import_*`
+function in `pipelines/` and asserts each plain-name call resolves to an
+import, a module-level definition, a local binding, or a builtin. `F-0103` is
+why: `gold_reserves` called `import_wgc_csv` without importing it and failed
+**35 of 35 runs** without anything noticing.
+
+**Why the obvious checks could not catch it.** The call is inside a function,
+so importing the module succeeds. The entry points need a database, so the
+suite never calls them. Lint was not run against `pipelines/` in the gate. The
+watchdog read the age of the data rather than the outcome of the job, and a
+second pipeline was writing the same metric.
+
+Two of the five cases exist to keep the guard honest rather than to test the
+pipelines: one reconstructs the defect and asserts the check fires on it, and
+two assert it does *not* fire on a correctly imported name, at module scope and
+function scope. `F-0104` is the standing argument for that - a guard nobody has
+watched fail is a guard nobody has tested.
+
+**Known limit.** It resolves plain `Name` calls only, not attribute calls
+(`mod.fn()`), and it does not follow `*` imports. Both would need real name
+resolution rather than a syntax walk. The defect class it does cover is the one
+that actually occurred.
+
+### T - What is NOT tested here, and why
+
+**The rescaled composite is not tested, because it does not exist.**
+`D-0089` measured it - Malta 77.0 on 60 points - and refused to ship it. There
+is no test for the rescaling because there is no rescaling; the measurement
+lives in the decision, where a reader will find it before re-proposing the idea.
+

@@ -109,7 +109,10 @@ def all_other_signal(db: Session) -> dict | None:
         "share_pct": share,
         "mom_pct": _pct(level, rows[-2].value) if len(rows) >= 2 else None,
         "three_month_pct": _pct(level, rows[-4].value) if len(rows) >= 4 else None,
-        "twelve_month_pct": _pct(level, rows[0].value) if len(rows) >= 13 else None,
+        # D-0088: rows[-13]. Correct today only because All Other is still the
+        # 13-month Table 5 series; it would have gone wrong the moment that
+        # deepened, exactly as Foreign Official did.
+        "twelve_month_pct": _pct(level, rows[-13].value) if len(rows) >= 13 else None,
         "share_move_3m_points": share_move,
         "consecutive_declines": consec,
         "points": len(rows),
@@ -127,40 +130,42 @@ def all_other_signal(db: Session) -> dict | None:
     }
 
 
-# ── Foreign Official (D-0080) ───────────────────────────────────────────────
+# ── Foreign Official (D-0080, recalibrated by D-0088) ───────────────────────
 #
-# A SUBSET of Grand Total, never additive with All Other: it spans every
-# holder, named and unnamed. Where All Other answers "what are the countries we
-# cannot see doing", this answers "what are CENTRAL BANKS doing" - which is the
-# question this application exists to ask.
+# A SUBSET of Grand Total, never additive with All Other: it spans every holder.
+# Where All Other answers "what are the countries we cannot see doing", this
+# answers "what are CENTRAL BANKS doing" - the question this application exists
+# to ask.
 #
-# `SHARE_MOVE_PCT_POINTS = 0.5`, derived for All Other, is NOT reused here. This
-# series is far more volatile in share terms: against the thirteen months to
-# 2026-07, 0.5pp over three months fires on **7 of 10 windows**. Inheriting a
-# threshold across two series that happen to share a unit is exactly F-0089 and
-# F-0091 - a number carried from where it was derived to where it was not.
+# `A-0020` asked whether the first rule was calibrated on enough history. It was
+# not, and the answer inverted the finding.
 #
-# Nor is a magnitude threshold used at all. The observed 3-month moves run
-# -1.21 to +0.55 with no gap between ordinary and notable: 0.75pp fires on 4 of
-# 10, 1.0pp on 2, 1.25pp on none. There is no value that separates signal from
-# noise, so none is invented.
+# `D-0080` used the thirteen months SLT Table 5 carries and flagged a
+# "sustained decline" on 9 falls in 12 with a 1.0pp cumulative move. Against the
+# **79 months** Table 3 carries (`D-0081`), 9 falls is the **median** window and
+# that rule fires on **70% of windows**. It was decoration (`D-0024`) - a light
+# that has been on for most of six years.
 #
-# The robust signal is PERSISTENCE. Over the same window the share fell in 9 of
-# 12 monthly steps for a cumulative -1.87pp. One noisy month cannot produce
-# that, and it is computable from the history that exists.
-FO_SUSTAINED_MIN_FALLS = 8      # of the last 12 monthly steps
-FO_SUSTAINED_MIN_MOVE_PP = 1.0  # cumulative 12-month share move
+# Worse, it was pointing the wrong way. The current 12-month move of -1.86pp
+# sits at the **84th percentile**: 56 of 67 windows were more negative. The
+# present period is among the SLOWEST declines in the series, and the flag said
+# something was happening.
+#
+# So notability is now measured against this series' own distribution rather
+# than against a threshold chosen from a short window. The worst decile fires
+# about a tenth of the time by construction, which is what a signal should do.
+FO_WORST_DECILE_PP = -5.10   # p10 of 67 rolling 12-month share moves
+FO_MEDIAN_MOVE_PP = -3.23    # the median, for context on the surface
 
-# Calibrated on ONE thirteen-month window, which is all Table 5 carries. Stated
-# rather than marked PROVISIONAL and forgotten, which is what happened to the
-# gold tolerance for months (D-0076). Re-derive when a second year exists: the
-# question is whether 9-of-12 falls is ordinary for this series or is the
-# de-dollarization it currently appears to be.
-FO_CALIBRATION_MONTHS = 13
+# The real finding is structural and much larger than any 12-month window:
+# official share 59.34% -> 40.80% since 2020-01 while private holdings rose
+# 91.6%. Reported as a trend rather than an alarm, because a six-year drift is
+# not an event.
+FO_TREND_START = "2020-01"
 
 
 def foreign_official_signal(db: Session) -> dict | None:
-    """Central-bank holdings, their share, their duration mix, and the private side.
+    """Central-bank holdings, their share, their duration mix, and the trend.
 
     System-level like `all_other_signal`. Foreign Official spans ALL holders, so
     it is not about the non-reporters and must not be read as a refinement of
@@ -186,21 +191,37 @@ def foreign_official_signal(db: Session) -> dict | None:
     shares = [(r.date, share_at(r)) for r in rows]
     shares = [(d, v) for d, v in shares if v is not None]
 
-    # Persistence over the last twelve monthly steps.
     steps = [shares[i][1] - shares[i - 1][1] for i in range(1, len(shares))][-12:]
     falls = sum(1 for v in steps if v < 0)
     move_12m = (
         round(shares[-1][1] - shares[-13][1], 2) if len(shares) >= 13 else None
     )
 
-    # The private side is derived, not stored: Grand Total minus official. A
-    # stored copy would be a second thing to keep in step with two others.
-    private = round(total - level, 1) if total else None
-
-    b, n = bills.get(latest.date), bonds.get(latest.date)
-    reconciles = (
-        None if b is None or n is None else abs((b + n) - level) <= 0.5
+    # D-0088. Where this window sits in the series' own history, rather than
+    # against a number chosen from a short one.
+    window_moves = sorted(
+        shares[i][1] - shares[i - 12][1] for i in range(12, len(shares))
     )
+    percentile = None
+    if move_12m is not None and len(window_moves) >= 24:
+        below = sum(1 for v in window_moves if v < move_12m)
+        percentile = round(below / len(window_moves) * 100)
+
+    # The structural trend: the finding a 12-month window cannot show.
+    trend = None
+    if len(shares) >= 60:
+        trend = {
+            "from": shares[0][0].date().isoformat(),
+            "from_share_pct": shares[0][1],
+            "to_share_pct": shares[-1][1],
+            "share_change_pp": round(shares[-1][1] - shares[0][1], 2),
+            "level_change_pct": _pct(level, rows[0].value),
+            "months": len(shares),
+        }
+
+    private = round(total - level, 1) if total else None
+    b, n = bills.get(latest.date), bonds.get(latest.date)
+    reconciles = None if b is None or n is None else abs((b + n) - level) <= 0.5
     bills_share = round(b / level * 100, 2) if b is not None and level else None
     bills_share_12m = None
     if len(rows) >= 13:
@@ -209,11 +230,9 @@ def foreign_official_signal(db: Session) -> dict | None:
         if ob is not None and ol:
             bills_share_12m = round(bills_share - (ob / ol * 100), 2)
 
-    sustained = bool(
-        move_12m is not None
-        and falls >= FO_SUSTAINED_MIN_FALLS
-        and abs(move_12m) >= FO_SUSTAINED_MIN_MOVE_PP
-    )
+    # Fires about a tenth of the time by construction, on this series' own
+    # worst decile - not on a threshold that was true of thirteen months.
+    unusual = bool(move_12m is not None and move_12m <= FO_WORST_DECILE_PP)
 
     return {
         "as_of": latest.date.date().isoformat(),
@@ -223,19 +242,27 @@ def foreign_official_signal(db: Session) -> dict | None:
         "private_share_pct": round(private / total * 100, 2) if private and total else None,
         "mom_pct": _pct(level, rows[-2].value) if len(rows) >= 2 else None,
         "three_month_pct": _pct(level, rows[-4].value) if len(rows) >= 4 else None,
-        "twelve_month_pct": _pct(level, rows[0].value) if len(rows) >= 13 else None,
+        # D-0088: rows[-13], not rows[0]. This said rows[0] and was correct
+        # only while the series was exactly thirteen months long (Table 5). With
+        # Table 3's 79 months it silently became a six-and-a-half-year change
+        # labelled "twelve month" - -9.51% instead of the true -2.92%.
+        "twelve_month_pct": _pct(level, rows[-13].value) if len(rows) >= 13 else None,
         "share_move_12m_points": move_12m,
+        "share_move_percentile": percentile,
+        "median_move_12m_points": FO_MEDIAN_MOVE_PP,
         "falls_of_last_12": falls,
+        "trend": trend,
         "bills_bn": b,
         "bonds_bn": n,
         "bills_share_of_official_pct": bills_share,
         "bills_share_move_12m_points": bills_share_12m,
-        # Table 5 publishes the components; they must sum to the headline. A
-        # free integrity check on every run rather than a trusted parse.
         "components_reconcile": reconciles,
         "points": len(rows),
-        "sustained": sustained,
-        "calibration_months": FO_CALIBRATION_MONTHS,
+        "unusual": unusual,
+        # D-0088 retired `sustained`: 9 falls in 12 is the median window, so it
+        # was true for most of six years. Kept as False rather than removed so
+        # an older cached snapshot does not render a missing key as absent data.
+        "sustained": False,
         "note": (
             "US Treasuries held by foreign official institutions - central banks "
             "and sovereign funds - across every holder, named and unnamed. A "
