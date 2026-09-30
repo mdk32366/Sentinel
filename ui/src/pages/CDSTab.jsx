@@ -3,6 +3,7 @@ import { useApiResource } from "../hooks/useApiResource";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { CDSCoverageBanner } from "../components/CDSCoverageBanner";
 import { ColHeader } from "../components/ColHeader";
+import { InfoTip } from "../components/InfoTip";
 import { DataConfidence } from "../components/DataConfidence";
 
 const FETCH_KEY = "cds";
@@ -96,19 +97,36 @@ export function CDSTab({ onCountrySelect }) {
       {/* Summary Cards */}
       <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
         {[
-          { label: "Countries with CDS", val: data.length },
-          { label: "Highest 5Y CDS", val: `${Math.max(...data.map(d => d.cds_5y || 0))} bps` },
+          { label: "Countries with CDS", val: data.length,
+            tip: "Sovereigns with a usable 5Y quote today. 31 instruments are configured and the board does not quote all of them every day, so this moves. A country missing here is excluded from dimension 7 rather than scored zero — no quote is not the same as a tight spread." },
+          { label: "Highest 5Y CDS", val: `${Math.max(...data.map(d => d.cds_5y || 0))} bps`,
+            tip: "The widest 5Y spread on the board, in basis points — the market's annual price to insure $100 of that sovereign's debt against default. Quotes above 10,000bps are refused rather than shown: they are ISDA standard coupons on a distressed credit, not running spreads, which is how Russia once appeared at 13,775bps (F-0074)." },
           // D-0062: the curve-inversion tile is gone. With no 10Y from
           // this source there is no term structure to invert, so it counted
           // instances of something unmeasurable. Widening is the signal this
           // board CAN support, and the one the score actually uses.
-          { label: "Widening >20% (6M)", val: data.filter(d => (d.var_6m_pct || 0) > 20).length },
-          { label: "Very High (>300 bps)", val: data.filter(d => (d.cds_5y || 0) > 300).length },
+          { label: "Widening >20% (6M)", val: data.filter(d => (d.var_6m_pct || 0) > 20).length,
+            tip: "Sovereigns whose 5Y spread has widened more than 20% over six months. Direction, not level: a credit moving from 60bps to 75bps is repricing even though 75bps is still tight. This is worth 5 points in dimension 7, on top of whatever the level earns. D-0062 replaced a curve-inversion tile here — with no 10Y quote from this source there was no term structure to invert, so it counted something unmeasurable." },
+          { label: "Very High (>300 bps)", val: data.filter(d => (d.cds_5y || 0) > 300).length,
+            tip: "Sovereigns priced above 300bps, the third rung of the scoring ladder (200 / 350 / 600 bps, D-0067). Above roughly 300bps a credit is no longer investment-grade in the market's pricing regardless of its rating. The count is a breadth measure: one country at 400bps is idiosyncratic, six is a repricing of the asset class." },
         ].map((s, i) => (
-          <div key={i} style={{ background: "#0F1923", border: "1px solid #1A2530", borderTop: "2px solid #C8A96E", borderRadius: 2, padding: "14px 20px", flex: "1 1 150px" }}>
-            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>{s.label}</div>
+          // D-0087. Through the same InfoTip the MARKETS cards, the column
+          // headers and the country tiles use (D-0056) rather than a fifth
+          // implementation. Hover and keyboard focus both.
+          <InfoTip
+            key={i}
+            as="div"
+            title={s.label}
+            tip={s.tip}
+            placement="below"
+            align="left"
+            tabIndex={0}
+            style={{ background: "#0F1923", border: "1px solid #1A2530", borderTop: "2px solid #C8A96E", borderRadius: 2, padding: "14px 20px", flex: "1 1 150px", cursor: "help", outline: "none" }}>
+            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
+              <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>{s.label}</span>
+            </div>
             <div style={{ fontFamily: "monospace", fontSize: 22, fontWeight: 700, color: "#E8E0D0" }}>{s.val}</div>
-          </div>
+          </InfoTip>
         ))}
       </div>
 

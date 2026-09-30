@@ -322,6 +322,59 @@ def get_all_holdings(
         ).all()
         lt_only = [r for r in lt_rows if r[0] not in have]
 
+    # D-0087. Movement and its type, per country. Read in three queries rather
+    # than one per country: 60 rows x 3 metrics would be 180 round trips.
+    from pipelines.tic_state import classify_movement, describe_movement
+
+    def _by_country(code, dates):
+        m = db.query(Metric).filter_by(code=code).first()
+        if m is None:
+            return {}
+        rows = db.query(TimeSeries.country_id, TimeSeries.date, TimeSeries.value).filter(
+            TimeSeries.metric_id == m.id,
+            TimeSeries.date.in_(dates),
+        ).all()
+        out = {}
+        for cid, dt, val in rows:
+            out.setdefault(cid, {})[dt] = float(val)
+        return out
+
+    months = [
+        d for (d,) in db.query(TimeSeries.date).filter(
+            TimeSeries.metric_id == metric.id
+        ).distinct().order_by(TimeSeries.date.desc()).limit(4).all()
+    ]
+    prev_month = months[1] if len(months) > 1 else None
+
+    holdings_hist = _by_country("TIC_UST_HOLDINGS", months)
+    nets = _by_country("TIC_UST_NET_SALES", months)
+    vals = _by_country("TIC_UST_LT_VALUATION", months)
+    ids = {r[0]: r for r in db.query(Country.id, Country.iso_code).all()}
+    id_by_iso = {iso: cid for cid, iso in db.query(Country.id, Country.iso_code).all()}
+
+    def movement_for(iso, current):
+        cid = id_by_iso.get(iso)
+        if cid is None:
+            return {}
+        prior = holdings_hist.get(cid, {}).get(prev_month) if prev_month else None
+        net1 = nets.get(cid, {}).get(as_of)
+        val1 = vals.get(cid, {}).get(as_of)
+        net3 = sum(v for d, v in (nets.get(cid) or {}).items() if d in months[:3]) \
+            if nets.get(cid) else None
+        kind = classify_movement(net1, val1)
+        return {
+            "change_1m_bn": round(current - prior, 2) if prior is not None else None,
+            "change_1m_pct": (
+                round((current - prior) / prior * 100, 2)
+                if prior not in (None, 0) else None
+            ),
+            "net_1m_bn": round(net1, 2) if net1 is not None else None,
+            "valuation_1m_bn": round(val1, 2) if val1 is not None else None,
+            "net_3m_bn": round(net3, 2) if net3 is not None else None,
+            "movement": kind,
+            "movement_note": describe_movement(kind, net1, val1),
+        }
+
     holdings = [
         {
             "country_code": r[0],
@@ -329,6 +382,7 @@ def get_all_holdings(
             "holdings_billions_usd": round(float(r[3]), 2),
             "percent_of_total": round((float(r[3]) / denominator) * 100, 1),
             "long_term_only": False,
+            **movement_for(r[0], float(r[3])),
         }
         for r in results
     ] + [
@@ -631,6 +685,67 @@ def get_gold_reserves(
 
     total_tonnes = sum(float(r[3]) for r in results)
 
+    # D-0087. Movement and its kind. Gold is held in TONNES - a pure quantity -
+    # so unlike Treasuries there is no price component to separate out: a change
+    # here is always a decision. The "kind" is therefore direction and
+    # PERSISTENCE, which is what dimension 2 scores, rather than the
+    # transactions-versus-price split the Treasury surfaces need.
+    gold_hist = {}
+    if metric is not None:
+        recent = db.query(
+            TimeSeries.country_id, TimeSeries.date, TimeSeries.value
+        ).filter(
+            TimeSeries.metric_id == metric.id,
+            TimeSeries.country_id.isnot(None),
+        ).order_by(TimeSeries.date.asc()).all()
+        for cid, dt, val in recent:
+            gold_hist.setdefault(cid, []).append((dt, float(val)))
+
+    iso_to_id = {iso: cid for cid, iso in db.query(Country.id, Country.iso_code).all()}
+
+    def gold_movement(iso, current):
+        series = gold_hist.get(iso_to_id.get(iso)) or []
+        if len(series) < 2:
+            return {}
+        vals = [v for _, v in series]
+        prev = vals[-2]
+        three = vals[-4] if len(vals) >= 4 else None
+
+        consec = 0
+        for i in range(len(vals) - 1, 0, -1):
+            if vals[i] < vals[i - 1]:
+                consec += 1
+            else:
+                break
+
+        change_1m = current - prev
+        change_3m = current - three if three is not None else None
+        pct_3m = (
+            round(change_3m / three * 100, 2)
+            if three not in (None, 0) and change_3m is not None else None
+        )
+
+        if consec >= 2:
+            kind, note = "selling", (
+                f"Reserves have fallen for {consec} consecutive readings. "
+                f"Persistence is what dimension 2 scores, at 4 points each."
+            )
+        elif change_1m < -0.05:
+            kind, note = "selling", "Reserves fell this period."
+        elif change_1m > 0.05:
+            kind, note = "accumulating", "Reserves rose this period."
+        else:
+            kind, note = "stable", "No material change in tonnage."
+
+        return {
+            "change_1m_tonnes": round(change_1m, 1),
+            "change_3m_tonnes": round(change_3m, 1) if change_3m is not None else None,
+            "change_3m_pct": pct_3m,
+            "consecutive_declines": consec,
+            "movement": kind,
+            "movement_note": note,
+        }
+
     return {
         "as_of": "per-country latest (varies by reporting lag)",
         "total_metric_tonnes": round(total_tonnes, 1),
@@ -646,6 +761,7 @@ def get_gold_reserves(
                 "as_of_date": r[2].strftime("%Y-%m") if r[2] else None,
                 "metric_tonnes": round(float(r[3]), 1),
                 "percent_of_total": round((float(r[3]) / total_tonnes) * 100, 1),
+                **gold_movement(r[0], float(r[3])),
             }
             for r in results
         ]

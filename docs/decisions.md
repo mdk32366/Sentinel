@@ -2313,3 +2313,53 @@ foreign holdings fell **1.86 points**, while private holdings rose **4.82%**.
 issuer's page and the figure on COMPOSITE cannot disagree - which is the failure
 `F-0087` and `F-0090` were both instances of. The prose now points at the
 measurement instead of standing alone.
+
+### D-0087 - Movement, and what kind of movement, on HOLDINGS and GOLD; tooltips on the CDS tiles
+
+**Three asks in one pass.**
+
+**The CDS monitor tiles** carried no explanation at all - four numbers with
+labels and nothing behind them. They now use the same `InfoTip` as the MARKETS
+cards, the column headers and the country tiles (`D-0056`) rather than a fifth
+implementation, with hover and keyboard focus. Each says what the figure
+measures and what it does in the model: the count excludes rather than
+zero-scores a missing quote; the maximum refuses anything above 10,000bps
+because those are ISDA coupons, not running spreads (`F-0074`); widening is
+direction rather than level and earns 5 points on top of it; and the >300bps
+count is a breadth measure against the 200/350/600 ladder (`D-0067`).
+
+**Movement on HOLDINGS, with its type.** A change in holdings is not
+self-explanatory, and this is the whole of `A-0021`: Japan's July 2026 was
+**-$12.7bn of position and +$0.9bn of transactions**. It bought. A column
+showing only the change says the opposite of what happened, and that reading is
+what misranked Japan for as long as dimension 1 existed (`F-0099`).
+
+The table now carries the change, the **kind** - `sold`, `bought`, `repriced`,
+`flat` - and the three-month net transaction total. The label comes from
+`classify_movement` in `pipelines/tic_state.py`, **the same rule the scorer
+applies** to suppress a price-driven magnitude, so the word a reader sees and
+the number the model produces cannot disagree. `repriced` is rendered in a muted
+gold rather than a risk colour: a position that moved on price is not a
+decision, and colouring it like one would invert the point.
+
+**Movement on GOLD, and an honest difference.** Gold is held in **tonnes** - a
+pure quantity - so unlike Treasuries there is no price component to separate
+out: a change is always a decision. Offering a `repriced` label there would
+invent a distinction the data cannot support. The kind of movement is therefore
+its **direction and persistence**, which is exactly what dimension 2 scores at
+4 points per consecutive declining quarter. The tab shows the one-period change,
+the three-period change with its percentage, and the consecutive-decline run.
+
+**One renderer for both.** `MovementCell` is shared, because `F-0047` is the
+standing example of two implementations of one idea drifting apart - and a
+second cell would drift in its colours and its rounding long before it drifted
+in its logic.
+
+**A guard corrected rather than worked around.** The movement fields reach the
+client through a nested `movement_for()` helper inside the holdings endpoint,
+and `test_response_model_coverage.py` - written hours earlier in `F-0101` -
+matched *every* `return {` in the endpoint and attributed that helper's row keys
+to `HoldingsResponse`, failing on fields `HoldingItem` declares correctly. It is
+now anchored at four-space indent, so it reads the endpoint's own return. A
+guard that cannot tell a nested return from the outer one reports the wrong
+model, which is worse than not reporting.

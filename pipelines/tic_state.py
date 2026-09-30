@@ -105,3 +105,67 @@ def describe(state: str, last_bn: float | None, last_date: datetime | None) -> s
     if state == NO_DATA:
         return "No TIC data — never among the reported holders"
     return "Reported in the current TIC release"
+
+
+# ── Movement, and what kind (D-0087) ────────────────────────────────────────
+#
+# A change in holdings is not self-explanatory. Japan's July 2026 was -$12.7bn
+# of position and **+$0.9bn of transactions**: it bought, and the fall was
+# price. Showing the movement without its type invites the reading that cost
+# 1,050 points across 32 countries (`F-0097`) and misranked Japan for as long
+# as dimension 1 existed (`F-0099`).
+#
+# One classifier, shared by the HOLDINGS surface and the composite, because
+# `F-0047` is the standing example of two implementations of one idea drifting.
+
+# Below this a month's transactions are rounding, not a decision.
+FLAT_BN = 0.05
+
+SOLD = "sold"
+BOUGHT = "bought"
+REPRICED = "repriced"
+FLAT = "flat"
+UNKNOWN = "unknown"
+
+MOVEMENT_LABEL = {
+    SOLD: "sold",
+    BOUGHT: "bought",
+    REPRICED: "repriced",
+    FLAT: "unchanged",
+    UNKNOWN: "no flow data",
+}
+
+
+def classify_movement(net_bn, valuation_bn):
+    """What kind of movement this was: `sold`, `bought`, `repriced` or `flat`.
+
+    `repriced` wins when the valuation swing is larger than the transactions -
+    the position moved, but not because anyone decided anything. That is the
+    same test dimension 1 uses to suppress a price-driven magnitude (`A-0021`),
+    so the label a reader sees and the rule the score applies agree.
+    """
+    if net_bn is None:
+        return UNKNOWN
+    val = abs(valuation_bn or 0)
+    if abs(net_bn) < FLAT_BN:
+        return REPRICED if val >= FLAT_BN else FLAT
+    if val > abs(net_bn):
+        return REPRICED
+    return SOLD if net_bn < 0 else BOUGHT
+
+
+def describe_movement(kind, net_bn=None, valuation_bn=None):
+    """One phrase a reader can act on, naming the figure behind the label."""
+    if kind == UNKNOWN:
+        return "Movement not decomposed - no transaction data for this country."
+    if kind == REPRICED:
+        return (
+            f"The position moved mainly on price, not transactions"
+            + (f" (transacted ${net_bn:+,.1f}bn, valuation ${valuation_bn:+,.1f}bn)"
+               if net_bn is not None and valuation_bn is not None else "")
+            + ". Dimension 1 does not score this as selling (A-0021)."
+        )
+    if kind == FLAT:
+        return "No material transactions this month."
+    verb = "sold" if kind == SOLD else "bought"
+    return f"Net {verb} ${abs(net_bn):,.1f}bn in transactions this month."
