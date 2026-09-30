@@ -42,7 +42,11 @@ export const STRESS_DIMENSIONS = [
     label: "Monetary / M2",
     max: 35,
     color: "#6A8FC4",
-    desc: "Broad money growth — domestic debasement",
+    // F-0092: the cutoff is part of the rule, so it belongs in the rule's
+    // description. Countries leave World Bank broad-money reporting and do not
+    // come back — Canada's newest figure is 2008 — and this dimension used to
+    // score whatever the newest year was, however old.
+    desc: "Broad money growth — domestic debasement. Not scored when a country's newest figure is over 3 years old",
   },
   {
     key: "petro_score",

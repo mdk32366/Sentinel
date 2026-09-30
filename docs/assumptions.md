@@ -537,3 +537,33 @@ superseded rows is a destructive operation and needs explicit authorisation.
 
 Recorded so the inflated tolerances in `F-0089` and `F-0091` are understood as
 a consequence of this convention rather than as generosity.
+
+### A-0017 - Per-country data age is unchecked everywhere except dimension 3
+
+`F-0092` put a per-country freshness cutoff on the monetary dimension after
+finding Canada scored on 2008 data. **No other dimension has one.**
+
+The watchdog reports per *source*. `reserves_ex_gold` carries a hand-written
+`laggard` entry naming one series, and that is the only per-country age check
+in the system. It exists because somebody noticed, not because anything
+derives it.
+
+| Dimension | Per-country age check | Known risk |
+|---|---|---|
+| 3 - Monetary | **Yes** (`MAX_M2_DATA_AGE_YEARS`) | closed by `F-0092` |
+| 1 - Treasury | No | Table 5 is a 13-month window, so a country absent from recent months could score off an older row |
+| 2 - Gold | No | WGC reporting gaps are plausible; unmeasured |
+| 5 - Petrodollar | No | derived from a global oil price, so lower risk |
+| 7 - CDS | Partial | `MAX_CDS_AGE_DAYS = 10` admits a quote per instrument, which is a per-country check in effect |
+
+**Risk.** The same shape as `F-0092`, in four more places: a source the
+watchdog calls current, containing a country whose own newest row is years
+old, scored as though it were current. `F-0092` found one country actually
+earning points and one a tenth of a point away.
+
+**Why this is an assumption rather than a finding.** It has not been measured.
+The right first step is to report, for every scoring dimension, the
+distribution of per-country newest-row ages - the query is cheap and it turns
+this from a worry into a number. Only then is it worth deciding whether each
+dimension needs its own cutoff or whether the watchdog should derive laggards
+per country instead of carrying one by hand.

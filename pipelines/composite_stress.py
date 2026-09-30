@@ -628,6 +628,7 @@ def compute_composite_stress(db: Session) -> dict:
         monetary_score = 0
         m2_growth_pct = None
         m2_year = None
+        m2_stale = False
 
         if m2_metric:
             m2_row = db.query(TimeSeries).filter(
@@ -638,12 +639,36 @@ def compute_composite_stress(db: Session) -> dict:
             if m2_row:
                 m2_growth_pct = float(m2_row.value)
                 m2_year = m2_row.date.year
-                if m2_growth_pct > 50:
-                    monetary_score = 35
-                elif m2_growth_pct > 30:
-                    monetary_score = 20
-                elif m2_growth_pct > 15:
-                    monetary_score = 10
+
+                # F-0092. This used to score whatever the newest row was,
+                # however old. Countries drop out of World Bank reporting and
+                # never come back: Canada's newest broad money figure is
+                # **2008**, Switzerland's 2016, Saudi Arabia's 2017, Russia's
+                # 2020. Canada's is 14.9% - a tenth of a point under the 15%
+                # first rung, which is the only reason an eighteen-year-old
+                # number was not earning points.
+                #
+                # Russia's was: 16.7% from 2020, worth 10 points, presented
+                # beside Turkey's 2025 figure with nothing marking the
+                # difference. The source-level watchdog cannot see this - the
+                # SOURCE is current, because 2025 data exists for the countries
+                # that still report. The staleness is per country, which is the
+                # `laggard` idea the watchdog already applies to
+                # reserves_ex_gold, one level down.
+                #
+                # Money supply growth from 2008 says nothing about debasement
+                # in 2026. The figure is still reported, because "Canada last
+                # reported in 2008" is a fact worth seeing, but it cannot earn
+                # points.
+                m2_stale = m2_year < datetime.utcnow().year - MAX_M2_DATA_AGE_YEARS
+
+                if not m2_stale:
+                    if m2_growth_pct > 50:
+                        monetary_score = 35
+                    elif m2_growth_pct > 30:
+                        monetary_score = 20
+                    elif m2_growth_pct > 15:
+                        monetary_score = 10
 
         # ── DIMENSION 4: Sovereign Spread ──────────────────────────────────
         # D-0066: still MEASURED, no longer SCORED. The spread itself is
@@ -709,7 +734,11 @@ def compute_composite_stress(db: Session) -> dict:
         if selling_gold:
             signals.append(f"Gold selling: {gold_mom:+.1f}% QoQ" if gold_mom else "Gold declining")
         if m2_growth_pct and m2_growth_pct > 15:
-            signals.append(f"M2 growth: {m2_growth_pct:.0f}% YoY ({m2_year})")
+            # Named as not scored when it is not scored. A signal that reads
+            # identically whether or not it contributed is how a reader adds up
+            # the narrative and gets a different number from the score.
+            suffix = " - too old to score" if m2_stale else ""
+            signals.append(f"M2 growth: {m2_growth_pct:.0f}% YoY ({m2_year}){suffix}")
         if spread_bps and spread_bps > 50:
             signals.append(f"Spread: +{spread_bps:.0f}bps vs US")
         if spread_widening and spread_widening > 30:
@@ -756,6 +785,7 @@ def compute_composite_stress(db: Session) -> dict:
             # Monetary
             "m2_growth_pct": round(m2_growth_pct, 1) if m2_growth_pct is not None else None,
             "m2_year": m2_year,
+            "m2_stale": m2_stale,
             "monetary_score": round(monetary_score, 1),
             # Spread
             "spread_bps": spread_bps,
@@ -892,6 +922,12 @@ def get_treseg_signal(db: Session, iso: str, no_tic: bool) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # ORDER-03 D3 — persist, so the endpoint is a read
 # ─────────────────────────────────────────────────────────────────────────────
+
+# F-0092. Dimension 3 will not score a country whose newest broad money
+# figure is older than this. The World Bank publishes year Y around the middle
+# of Y+1, so in 2026 the newest available year is 2025 and a cutoff of 3 admits
+# 2023, 2024 and 2025 - one full missed release of slack, and no more.
+MAX_M2_DATA_AGE_YEARS = 3
 
 PIPELINE_NAME = "Composite_Snapshot"
 
