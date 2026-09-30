@@ -1828,3 +1828,56 @@ written down in the test rather than silently carried.
 **On screen**, the confidence strip now shows the coverage end and reads
 "61d since period end" rather than "91d old". Showing a period label beside an
 age measured from the period's end is how a reader concludes the two disagree.
+
+### D-0078 - The surface states which dimensions can speak about each country
+
+**A-0019 option 1.** `F-0097` removed the false-exit path, and the honest
+consequence is that dimension 1 - 50 of 165 points, the largest in the model -
+reaches only the twenty countries SLT Table 5 names. The other 28 get nothing
+from it, **not because they look calm but because their position is unknown**.
+
+A composite that ranks 48 sovereigns while its largest dimension reaches 20 of
+them is weighted in a way no reader would infer from the number alone. Germany
+scores 8.0 out of a possible 115 rather than 165, and nothing on screen said so.
+
+**Chosen over re-weighting, on purpose.** Option 4 - scoring each country out of
+the dimensions that can actually speak about it - is more principled and changes
+every number in the model, which needs a decision rather than an
+implementation. Option 1 changes **no number** and tells the reader what the
+number covers. `ui/src/lib/coverage.test.js` asserts the module cannot alter a
+row, so the disclosure cannot quietly become option 4.
+
+**It generalises a pattern that already existed for one dimension.**
+`StressContribution` explained a rejected CDS quote rather than showing a blank,
+and the COMPOSITE table already carried a `◦` marker for a country with no CDS.
+Both were right, and both covered one dimension of three that can go silent.
+Explaining Treasury while leaving broad money at a bare zero would have been the
+half-honest version, so all three reasons live in one module and there is one
+marker instead of one per dimension.
+
+| dimension | max | goes silent when |
+|---|---|---|
+| Treasury | 50 | the country is not among Table 5's twenty (`F-0097`) |
+| Monetary / M2 | 35 | its newest broad money figure is over 3 years old (`F-0092`) |
+| Sovereign CDS | 20 | no quote, a stale one, or not a running spread (`F-0074`) |
+
+**On the COMPOSITE table**, a muted badge beside the score counts the silent
+dimensions and names them on hover, with the points they would have been worth:
+*"50 of 165 points cannot be scored for this country"*. Muted deliberately - an
+unavailable dimension is a limit on what the score means, not a finding about
+the country, and colouring it like a risk signal would invert the point.
+
+**On the country panel**, the breakdown gains a NOT SCORED FOR THIS COUNTRY
+block listing each silent dimension, its maximum, and why. The existing
+"no single dimension is contributing points" line was also misleading where the
+reason was coverage rather than calm, so it now distinguishes the two.
+
+**The reason text names the figure.** *"it last reported $103.1bn in
+2025-12 ... Scored as nothing, not as zero"*. `F-0097` was a fabrication
+precisely because it asserted a number nobody had observed; the fix has to
+assert only what was observed, and say when that was.
+
+**What this does not fix.** Two countries with the same score may still have
+been measured on different amounts of evidence, and the score itself does not
+encode that. `A-0019` options 2-4 remain open; this closes option 1 only, and
+the register says so rather than marking the assumption resolved.

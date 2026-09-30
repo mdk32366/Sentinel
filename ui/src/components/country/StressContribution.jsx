@@ -1,24 +1,8 @@
 import { useApiResource } from "../../hooks/useApiResource";
 import { scoreBreakdown } from "../../lib/dimensions";
+import { cdsCoverageNote, unavailableDimensions, unreachablePoints } from "../../lib/coverage";
 
 const TIER_COLORS = { CRISIS: "#FF4444", STRESSED: "#E07B5A", ELEVATED: "#E8C547", WATCH: "#5A6878" };
-
-/** How a rejected CDS quote is explained, rather than shown as a blank. */
-const CDS_COVERAGE_NOTE = {
-  "not on the board": "No CDS quoted for this sovereign.",
-  "no coverage": "No CDS quoted for this sovereign.",
-  "not quoted as a running spread":
-    "CDS exists but is not quoted as a running spread — a defaulted or " +
-    "points-upfront credit. Excluded from the score rather than read as a number.",
-};
-
-function coverageNote(coverage) {
-  if (!coverage || coverage === "quoted") return null;
-  if (coverage.startsWith("stale")) {
-    return `The last CDS quote is ${coverage.replace(/^stale \(|\)$/g, "")} — too old to price today. Excluded from the score.`;
-  }
-  return CDS_COVERAGE_NOTE[coverage] ?? `CDS excluded: ${coverage}.`;
-}
 
 /**
  * What this country's composite stress score is actually made of.
@@ -46,7 +30,11 @@ export function StressContribution({ iso }) {
   const parts = scoreBreakdown(row);
   const tier = (row.tier || "").toUpperCase();
   const tierColor = TIER_COLORS[tier] ?? "#5A6878";
-  const note = coverageNote(row.cds_coverage);
+  const note = cdsCoverageNote(row.cds_coverage);
+  // A-0019. Dimensions that cannot speak about this country at all. Shown
+  // because a score of 8.0 built from two of five dimensions means something
+  // different from 8.0 built from five, and nothing on screen said which.
+  const unavailable = unavailableDimensions(row);
 
   return (
     <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderLeft: `3px solid ${tierColor}`, borderRadius: 2, padding: "16px 20px", marginTop: 16 }}>
@@ -89,11 +77,27 @@ export function StressContribution({ iso }) {
         </>
       ) : (
         <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878" }}>
-          Ranked, but no single dimension is contributing points.
+          {unavailable.length > 0
+            ? "Ranked, but every dimension that could speak about this country scored zero."
+            : "Ranked, but no single dimension is contributing points."}
         </div>
       )}
 
-      {note && (
+      {unavailable.length > 0 && (
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #1A2530" }}>
+          <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", letterSpacing: "0.08em", marginBottom: 6 }}>
+            {`NOT SCORED FOR THIS COUNTRY · ${unreachablePoints(row)} OF 165 POINTS UNREACHABLE`}
+          </div>
+          {unavailable.map((d) => (
+            <div key={d.key} style={{ fontFamily: "monospace", fontSize: 10, color: "#8A6A5A", lineHeight: 1.6, marginBottom: 4 }}>
+              <span style={{ color: "#5A6878" }}>{d.label} (max {d.max}) — </span>{d.reason}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* A CDS note that unavailableDimensions did not already carry. */}
+      {note && !unavailable.some((d) => d.key === "cds_score") && (
         <div style={{ fontFamily: "monospace", fontSize: 10, color: "#8A6A5A", lineHeight: 1.6, marginTop: 12, paddingTop: 10, borderTop: "1px solid #1A2530" }}>
           {note}
         </div>
