@@ -582,9 +582,10 @@ each turned out to have a real country scoring on real stale data. Not one of
 those was found by the watchdog, because the watchdog reports per source and
 the failure is per country.
 
-### A-0018 - Angola has no gold data, and the IMF report is drafted but unsent
+### A-0018 - CLOSED - Angola has no gold data, and the IMF is not being told
 
-**Status: half closed.**
+**Status: closed. Upstream reporting stood down 2026-09-30 at the
+maintainer's direction.** The draft stays in the repository; it is not sent.
 
 **Done.** `docs/imf-irfcl-gold-data-quality.md` holds the report for
 `datahelp@imf.org` - the contact in the IRFCL dataset metadata - with the exact
@@ -592,8 +593,17 @@ dataflow, indicator, sector, retrieval URL and the observation-level evidence
 for both anomalies, including Brazil's mid-series rescale at 2026-M03 and the
 70 affected Angolan observations.
 
-**Not done: sending it.** An outbound message on the maintainer's behalf is
-theirs to send. The draft is ready to copy.
+**Not done, and now not going to be: sending it.** Stood down 2026-09-30.
+The draft stays at `docs/imf-irfcl-gold-data-quality.md` in case the position
+changes, but nothing in this repository is waiting on a reply and no follow-up
+is scheduled.
+
+**What that costs.** The defect is upstream, so it does not get fixed by us and
+it does not get fixed by them. Every IRFCL refresh will re-deliver the same bad
+values, our importer will reject them again, and Angola will keep having no
+gold data rather than wrong gold data. That is a stable, honest state - it is
+just permanent rather than interim, which is the only thing that changed
+today.
 
 **Already observable, so nobody has to re-derive it.** The rejection count and
 the first few rejected values go to `UpdateLog.error_message` on every
@@ -606,9 +616,12 @@ correctly scaled, so it carries 172.4 tonnes from the good part of its own
 series. Angola has **no** gold data rather than wrong gold data, and is not in
 the composite's scored set, so the cost today is nil.
 
-**What to check next time.** Whether the rejection list has grown, and in
-particular whether any country in the scored set has joined it. The same defect
-arriving in Turkey or Poland would remove a country the model relies on.
+**What to check next time, and it matters more now.** Whether the rejection
+list has grown, and in particular whether any country in the **scored set** has
+joined it. The same defect arriving in Turkey or Poland would remove a country
+the model relies on. With no report filed there is no upstream fix coming and no
+correspondence to notice it by, so the PIPELINE LOG on ADMIN is the only place
+this can surface. `Gold_Reserves_IMF` reporting `partial` is that signal.
 
 ### A-0019 - CLOSED by D-0081, D-0083 and D-0089 - dimension 1 could only speak about twenty countries
 
