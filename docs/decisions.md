@@ -2029,3 +2029,68 @@ midpoint. The private side read $5.47T while the payload said 5.475.
 `Math.round(-547.5)` is `-547`. Every figure here is positive, so nothing on
 screen was affected - but a helper whose comment and behaviour disagree is how
 the next caller gets surprised, so the sign is handled explicitly.
+
+### D-0081 - Treasury holdings for every reporting country, not the largest twenty
+
+**A-0019 option 3.** `F-0097` established that SLT Table 5 names only the
+**twenty largest** holders and folds the rest into "All Other", so dimension 1 -
+50 points, the largest in the model - could speak about twenty countries and no
+more. `D-0078` disclosed the gap and `D-0079`/`D-0080` measured the aggregates.
+This removes the limit.
+
+**Table 3 is the same data, unabridged.** Same directory, same release, same
+month, long format instead of wide:
+
+```
+Country  Country Code  Date     Holdings  Net U.S. Sales  Valuation Change
+Austria  10189         2026-07     6,048             384              -23
+```
+
+**76 countries, monthly back to 2020-01** - 6,004 observations against Table 5's
+260.
+
+**I had recorded this as "unknown effort" and "lower frequency", and both were
+wrong.** The register entry asserted a route I had not checked. It is the same
+monthly release, and the effort was one afternoon. Recorded because an
+unverified claim in the register is a claim someone will plan against.
+
+**Validated against a source we already hold.** Japan, the United Kingdom,
+Belgium, Canada and France reproduce Table 5 **to the decimal**, and
+`validate_against_table5` refuses the import if they ever stop. Two independent
+readings of one release is the strongest check available here, stronger than the
+plausibility ceiling, because it compares against a number rather than a range.
+
+**Units are MILLIONS here and billions in Table 5.** Converted once, at parse,
+with the ceiling expressed in the converted unit. A thousandfold error is the
+`F-0093` shape and a test pins it.
+
+**Sixteen reporters suppress their total and publish their long-term figure** -
+`n.a.` in `for_treas_pos`, a real number in `for_lt_treas_pos`. Poland, Egypt,
+Hungary, Romania, Serbia, Ukraine and Lebanon among them, several of them
+scored. Dropping those rows loses the countries; **substituting long-term for
+total is worse**, because long-term excludes bills (~9% of official holdings)
+and quietly labelling one measure as another is exactly what made `F-0097` a
+fabrication. Both are stored, under separate metrics, and the scorer decides.
+
+**Selling can now be told from repricing.** Table 3 separates `Net U.S. Sales`
+from `Valuation Change`: Germany's July was -$9.6bn of holdings, of which
+**-$7.2bn was actual selling** and -$0.51bn was price. Dimension 1 reads the
+change in holdings and cannot distinguish the two - it scores a bond-market
+selloff as a sovereign reducing its position.
+
+**Nothing is rescored today.** Both columns are stored and neither enters the
+formula, because scoring on net sales rather than holdings change alters every
+number in the model. That is a decision, not an implementation: `A-0021`.
+
+**Written to the shared `TIC_UST_HOLDINGS` metric**, which dimension 1 already
+reads, so the 56 additional countries score without a second code path. A
+parallel metric would have left the score reading twenty countries while the
+rest sat beside it unread, which is `F-0090`'s shape. The module refuses to
+*create* that metric - `treasury_holdings.py` owns its name and description, and
+creating it from here would be a second opinion about what it is.
+
+**The F-0091 guard fired during this work**, as designed: adding `TIC_Table3` to
+`SCHEDULED_PIPELINES` broke the test asserting every scheduled pipeline is
+monitored, because no watchdog source declared it. Table 3 arrives in the same
+release as Table 5, so its freshness is the `tic` source's and it is declared
+there.

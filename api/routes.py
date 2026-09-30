@@ -430,6 +430,22 @@ def get_data_age(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/fetch/tic-table3")
+def trigger_tic_table3_fetch(db: Session = Depends(get_db)):
+    """Per-country Treasury holdings for all 76 reporters (D-0081).
+
+    SLT Table 5 names only the twenty largest. This refuses to write unless it
+    first reproduces Table 5 for those twenty.
+    """
+    from pipelines.tic_table3 import run_tic_table3_fetch
+
+    try:
+        return run_tic_table3_fetch(db)
+    except Exception as e:
+        logger.error(f"TIC Table 3 fetch failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/fetch/gold-reserves-imf")
 def trigger_imf_gold_fetch(db: Session = Depends(get_db)):
     """Fetch monthly gold holdings from IMF IRFCL (D-0076).

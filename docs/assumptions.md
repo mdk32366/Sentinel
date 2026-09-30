@@ -584,47 +584,34 @@ arriving in Turkey or Poland would remove a country the model relies on.
 
 ### A-0019 - Dimension 1 can only speak about twenty countries
 
-**Options 1 and 2 are done (`D-0078`, `D-0079`). Options 3 and 4 remain open.**
+**Options 1, 2 and 3 are done (`D-0078`, `D-0079`, `D-0081`). Option 4 remains
+open and is now much less necessary.**
 
-`F-0097` removed the false-exit path, so dimension 1 - 50 points, the largest -
-scores only the twenty countries SLT Table 5 names. The other 28 get nothing
-from it, because their position is genuinely unknown.
+`F-0097` removed the false-exit path, leaving dimension 1 - 50 points, the
+largest - able to score only the twenty countries SLT Table 5 names.
 
-**Now disclosed (`D-0078`).** Every surface showing a score marks the dimensions
-that cannot speak about that country, with the points forgone and why. Germany
-reads 8.0 with a badge saying 50 of 165 points were unreachable. 16 of 23 ranked
-countries carry a badge. No number changed.
+**Disclosed (`D-0078`).** Every score marks the dimensions that cannot speak
+about that country, with the points forgone and why. No number changed.
 
-**Now measured in aggregate (`D-0079`).** Table 5's "All Other" row is captured
-and reported once: $1,842.4bn, 19.92% of all foreign holdings, three consecutive
-monthly declines. It says something about the non-reporters collectively and
-nothing about any one of them, and that constraint is enforced by test rather
-than left to discipline.
+**Measured in aggregate (`D-0079`, `D-0080`).** Table 5's "All Other" row and its
+"Of Which: Foreign Official" row are captured and reported once each, describing
+groups and never a member of one.
 
-**What is still true and not addressed.** A reader who sorts by score still sees
-two numbers built from different amounts of evidence. Disclosure and an aggregate
-both inform; neither makes the scores comparable.
+**Resolved (`D-0081`).** SLT Table 3 carries the same measure for **76
+countries** rather than twenty, monthly back to 2020-01, validated to the
+decimal against Table 5. Dimension 1 is no longer limited to the largest
+holders, and most coverage badges clear on their own.
 
-**Remaining options.**
+**What remains.**
 
-3. **Find a country-level source for the non-reporters.** TIC's B-series and the
-   SLT country tables carry more countries at lower frequency. Unknown effort;
-   would need the validation `D-0076` got. This is the only option that would
-   actually make dimension 1 comparable across countries.
-4. **Re-weight per country.** Score each country out of the dimensions that can
-   speak about it. The principled answer, and it changes every number in the
-   model - a decision, not an implementation. `D-0078` was chosen over it
-   deliberately, and the coverage module is tested to be incapable of altering a
-   score so it cannot happen by accident.
-
-**"Of Which: Foreign Official" is now captured (`D-0080`).** It separates
-central-bank selling from private selling: official holdings fell 2.92% over
-twelve months and their share of all foreign holdings fell 1.86pp, while private
-holdings rose 4.82%. Its calibration limit is `A-0020`.
-
-**What must not happen** is a default that fills the gap with a guess. That is
-precisely what `F-0097` was: 30 points for "we have no data", dressed as a
-finding about de-dollarization.
+- Sixteen reporters publish only a long-term figure, so those countries have a
+  *different* measure available rather than the same one. Stored separately, not
+  substituted. Whether dimension 1 should score them on it is open.
+- Qatar, Pakistan and Czechia appear in neither table.
+- Option 4, per-country re-weighting, is still the principled answer to scores
+  built from different amounts of evidence - but with 76 countries covered
+  instead of 20 it now addresses a much smaller residue. Not worth the
+  disruption until `A-0021` is settled.
 
 ### A-0020 - The Foreign Official trend is calibrated on one year
 
@@ -653,3 +640,31 @@ current reading is remarkable or routine.
 **Until then** the figure is reported with its calibration stated in the payload
 (`calibration_months`), and the strip describes what was observed - "fallen in 9
 of the last 12 months" - rather than asserting that it is unusual.
+
+### A-0021 - Dimension 1 scores holdings change, which includes price
+
+`D-0081` stores `Net U.S. Sales` and `Valuation Change` per country. Dimension 1
+does not read either: it computes month-on-month change in **holdings**, which
+moves with transactions *and* with price.
+
+**The consequence.** A bond-market selloff reduces every foreign holder's
+position without anyone selling anything, and dimension 1 scores it as
+de-dollarization. Germany's July 2026 is the clean example: holdings -$9.6bn, of
+which -$7.2bn was selling and -$0.51bn was valuation. The remainder is
+short-term roll-off. Scored on holdings change, the price component is
+indistinguishable from the decision.
+
+**Why it is not simply fixed.** Scoring on net sales instead would change every
+country's dimension 1 score, every composite total and probably several tiers -
+the same class of change as `A-0019` option 4, and a decision rather than an
+implementation.
+
+**What makes it tractable now.** The data is stored and the arithmetic is
+checkable: `holdings_change ~ net_sales + valuation_change + short-term
+roll-off`. A before-and-after comparison across all 76 countries would show
+exactly how much of the current score is price rather than posture, which turns
+this from an argument into a measurement - the `A-0017` approach.
+
+**What must not happen** is switching the input quietly. The scores are
+published; changing what they measure without saying so is the failure `D-0078`
+exists to prevent.
