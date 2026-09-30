@@ -1,17 +1,13 @@
 # IMF IRFCL — gold volume scale anomalies (Angola, Brazil)
 
-`A-0018`. Drafted for **datahelp@imf.org**, the contact given in the IRFCL
-dataset metadata.
+`A-0018`. Drafted for sending to **datahelp@imf.org**, the contact given in the
+IRFCL dataset metadata.
 
-**NOT SENT, AND NOT TO BE SENT.** Reporting was stood down on 2026-09-30 at the
-maintainer's direction. This file is kept as a record of what was found and as a
-ready draft should that change — it is not an outstanding action, and nothing
-in the application is waiting on a reply.
+**Authorized to send 2026-09-30. Not yet sent.** Update this line the moment it
+goes out, with the date - a draft that has been authorized reads exactly like a
+draft that has been sent, and the difference is the whole point of the file.
 
-The evidence below stands on its own and is worth keeping for that reason: it is
-the only written account of why 76 IRFCL observations are rejected on every run.
-
-If it is ever sent, copy the section below as the body.
+Copy the section below as the body.
 
 ---
 
