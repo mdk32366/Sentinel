@@ -617,13 +617,39 @@ both inform; neither makes the scores comparable.
    deliberately, and the coverage module is tested to be incapable of altering a
    score so it cannot happen by accident.
 
-**Adjacent and cheap: "Of Which: Foreign Official".** Table 5 publishes it and
-`D-0079` deliberately does not capture it, being a subset of Grand Total rather
-than a peer of All Other. It is the one aggregate that separates central-bank
-selling from private selling, which is closer to this application's thesis than
-anything else on the table. Worth doing on its own terms rather than as part of
-option 2.
+**"Of Which: Foreign Official" is now captured (`D-0080`).** It separates
+central-bank selling from private selling: official holdings fell 2.92% over
+twelve months and their share of all foreign holdings fell 1.86pp, while private
+holdings rose 4.82%. Its calibration limit is `A-0020`.
 
 **What must not happen** is a default that fills the gap with a guess. That is
 precisely what `F-0097` was: 30 points for "we have no data", dressed as a
 finding about de-dollarization.
+
+### A-0020 - The Foreign Official trend is calibrated on one year
+
+`D-0080` reports foreign official holdings as a **sustained** decline: the share
+of all foreign holdings fell in 9 of the last 12 months, -1.86pp cumulatively,
+while private holdings rose 4.82%.
+
+**The rule is honest about magnitude and untested over time.** No magnitude
+threshold is used, because the observed 3-month moves form a continuum with no
+gap (0.5pp fires on 7 of 10 windows, 1.25pp on none). The persistence rule -
+8 of 12 falls plus a 1.0pp cumulative move - is robust to a single noisy month,
+and is calibrated on **one thirteen-month window**, which is all SLT Table 5
+carries.
+
+**The open question.** Is 9-of-12 falls ordinary behaviour for this series, or
+is it the de-dollarization it currently appears to be? One year cannot say. A
+series that has always drifted down at this rate would trip this rule every
+month forever, which would make it decoration (`D-0024`) rather than a signal.
+
+**What would answer it.** Deeper history exists: the TIC SLT tables and the
+B-series carry foreign official holdings well before the thirteen months Table 5
+shows. Loading a decade would let the rule be re-derived against a real
+distribution rather than a single window - and would also say whether the
+current reading is remarkable or routine.
+
+**Until then** the figure is reported with its calibration stated in the payload
+(`calibration_months`), and the strip describes what was observed - "fallen in 9
+of the last 12 months" - rather than asserting that it is unusual.

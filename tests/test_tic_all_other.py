@@ -38,6 +38,8 @@ TABLE5 = "\r\n".join([
     "All Other\t1842.4\t1850.3\t1859.6",
     "Grand Total\t9248.1\t9298.5\t9368.5",
     "Of Which: Foreign Official\t3773.1\t3778.1\t3845.9",
+    "Of Which: Foreign Official Treasury Bills\t354.4\t360.6\t396.2",
+    "Of Which: Foreign Official T-Bonds & Notes\t3418.8\t3417.5\t3449.7",
     "",
 ])
 
@@ -52,9 +54,15 @@ def series(*pairs):
 
 
 class TestTheAggregateRowsAreCaptured(unittest.TestCase):
-    def test_all_other_and_grand_total_are_parsed(self):
+    def test_every_declared_aggregate_is_parsed(self):
+        # D-0080 added the three Foreign Official rows. This case asserted
+        # exactly two codes and is retargeted rather than relaxed: it now pins
+        # the declaration, so adding a row to TIC_AGGREGATES without it parsing
+        # still fails.
         out = parse_tic_aggregates(TABLE5)
-        self.assertEqual(sorted(out), ["TIC_ALL_OTHER", "TIC_GRAND_TOTAL"])
+        self.assertEqual(
+            sorted(out), sorted(m["code"] for m in TIC_AGGREGATES.values())
+        )
 
     def test_the_values_land_on_the_right_months(self):
         # Newest-first columns, same hazard as the country rows. An off-by-one
@@ -65,14 +73,54 @@ class TestTheAggregateRowsAreCaptured(unittest.TestCase):
         self.assertEqual(ao["Jun 2026"], 1850.3)
         self.assertEqual(ao["May 2026"], 1859.6)
 
-    def test_the_of_which_row_is_still_excluded(self):
-        # "Of Which: Foreign Official" is a SUBSET of Grand Total, not a peer of
-        # All Other. At 3,773.1 it once outranked Japan (F-0088), and admitting
-        # it here would double-count.
+    def test_foreign_official_is_captured_but_is_never_additive(self):
+        # D-0080 captures it; D-0079 deliberately did not. The invariant that
+        # mattered was never "exclude it" — it was "never add it to the others".
+        # Foreign Official spans EVERY holder, named and unnamed, so it overlaps
+        # All Other rather than complementing it, and summing the two
+        # double-counts every unnamed official holder.
         out = parse_tic_aggregates(TABLE5)
-        self.assertNotIn("TIC_FOREIGN_OFFICIAL", out)
-        for by_date in out.values():
-            self.assertNotIn(3773.1, by_date.values())
+        self.assertIn("TIC_FOREIGN_OFFICIAL", out)
+
+        gt = out["TIC_GRAND_TOTAL"]["Jul 2026"]
+        ao = out["TIC_ALL_OTHER"]["Jul 2026"]
+        fo = out["TIC_FOREIGN_OFFICIAL"]["Jul 2026"]
+
+        # Each is a subset of the total on its own.
+        self.assertLess(ao, gt)
+        self.assertLess(fo, gt)
+
+        # And they are NOT a partition of it. A first draft of this case
+        # asserted `ao + fo > gt` as "arithmetic proof of overlap"; that is
+        # false — 1842.4 + 3773.1 = 5615.5, well under 9248.1 — because the
+        # named private holders are large. Overlap is real but not provable
+        # from three numbers.
+        #
+        # What IS provable, and is the mistake a reader would actually make, is
+        # that these two do not add up to the total. Anyone treating them as
+        # official-plus-everyone-else has mis-modelled the table.
+        self.assertNotAlmostEqual(ao + fo, gt, delta=1.0)
+
+    def test_the_official_components_reconcile_to_the_headline(self):
+        # Table 5 publishes bills and bonds separately and they must sum to the
+        # headline. A free integrity check on every run rather than a trusted
+        # parse — if the layout changes, this is what says so.
+        out = parse_tic_aggregates(TABLE5)
+        for month in ("Jul 2026", "Jun 2026", "May 2026"):
+            head = out["TIC_FOREIGN_OFFICIAL"][month]
+            parts = (out["TIC_FOREIGN_OFFICIAL_BILLS"][month]
+                     + out["TIC_FOREIGN_OFFICIAL_BONDS"][month])
+            self.assertAlmostEqual(head, parts, delta=0.5, msg=month)
+
+    def test_the_three_official_rows_are_matched_exactly_not_by_prefix(self):
+        # All three labels begin "Of Which: Foreign Official". A prefix match
+        # would map the headline and both components to whichever code was
+        # tried first, and the reconciliation check above would then compare a
+        # figure with itself and always pass.
+        out = parse_tic_aggregates(TABLE5)
+        self.assertEqual(out["TIC_FOREIGN_OFFICIAL"]["Jul 2026"], 3773.1)
+        self.assertEqual(out["TIC_FOREIGN_OFFICIAL_BILLS"]["Jul 2026"], 354.4)
+        self.assertEqual(out["TIC_FOREIGN_OFFICIAL_BONDS"]["Jul 2026"], 3418.8)
 
     def test_the_country_parse_is_unchanged(self):
         # parse_tic_mfh's contract is "countries". An aggregate leaking into it

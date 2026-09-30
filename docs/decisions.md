@@ -1946,3 +1946,86 @@ specifically"*.
 already matches both aggregates, and they arrive in the same file as the country
 rows so their age is identical. The `A-0017` diagnostic joins on `country_id`
 and so correctly excludes them from a per-country distribution.
+
+### D-0080 - Foreign Official is captured: what central banks are doing
+
+Table 5 publishes **"Of Which: Foreign Official"** - US Treasuries held by
+central banks and sovereign funds, across every holder, named and unnamed.
+`D-0079` deliberately left it out as out of scope; this takes it, because it is
+the one cut of the table that separates **official** selling from private
+selling, which is the question this application exists to ask.
+
+**What it says today.**
+
+| | 2025-07 | 2026-07 |
+|---|---|---|
+| Official holdings | $3,886.5bn | **$3,773.1bn** (-2.92%) |
+| Official share of all foreign holdings | 42.66% | **40.80%** (-1.86pp) |
+| Private (Grand Total minus official) | $5,223.0bn | **$5,475.0bn** (+4.82%) |
+| Bills as a share of official | 10.55% | 9.39% (-1.16pp) |
+
+**Official holdings fell in 9 of the last 12 months while private holdings
+rose.** That is the clearest statement of this application's thesis available
+anywhere in its data, and it was sitting in a row the parser was skipping.
+
+**The private side is derived, not stored** - Grand Total minus official - so
+there is no third figure to keep in step with two others.
+
+**A threshold derived here, not inherited.** `D-0079` set
+`SHARE_MOVE_PCT_POINTS = 0.5` for All Other. Against this series that fires on
+**7 of 10 three-month windows**: Foreign Official is far more volatile in share
+terms. Carrying a number from where it was derived to where it was not is
+exactly `F-0089` and `F-0091`, so it was measured again.
+
+It was then **not used at all**, because no magnitude works. The observed
+3-month moves run -1.21 to +0.55 with no gap between ordinary and notable:
+0.75pp fires on 4 of 10 windows, 1.0pp on 2, 1.25pp on none. Rather than pick a
+number from a continuum and call it a threshold, the rule is **persistence** -
+the share fell in at least 8 of the last 12 monthly steps AND moved at least
+1.0pp cumulatively. One noisy month cannot produce that, and both halves are
+computable from the history that exists.
+
+**The calibration limit is stated, not buried.** This is one thirteen-month
+window, which is all Table 5 carries; `FO_CALIBRATION_MONTHS = 13` records it in
+the code. The open question is whether 9-of-12 falls is ordinary for this series
+or is the de-dollarization it currently appears to be, and only a second year
+answers it. Written down rather than marked PROVISIONAL and forgotten, which is
+what happened to the gold tolerance for months before `D-0076`.
+
+**The components are captured as an integrity check.** Table 5 decomposes the
+headline into Treasury Bills and T-Bonds & Notes, and they must sum to it. They
+reconcile to within 0.1 across all thirteen months, and `components_reconcile`
+is computed on every run - if the source layout changes, the strip says the
+figures are unverified in failure-red, louder than the signal itself, because
+every number on it depends on the parse.
+
+The bills share is also a signal in its own right: the duration posture of
+official holders. It fell from 10.55% to 9.39%, which is lengthening, not the
+shortening a defensive rotation would show.
+
+**Exact-label matched, not prefix matched.** All three rows begin "Of Which:
+Foreign Official". A prefix match would map the headline and both components to
+whichever code was tried first - and the reconciliation check would then compare
+a figure with itself and pass forever. A test pins each of the three to its own
+value.
+
+**Not additive with All Other, and a test says so.** Foreign Official spans
+every holder; All Other spans the unnamed ones. They overlap. A first draft of
+that test asserted `all_other + official > grand_total` as "arithmetic proof of
+overlap" - which is **false**: 1,842.4 + 3,773.1 = 5,615.5, well under 9,248.1,
+because the named private holders are large. Overlap is real but not provable
+from three numbers. What is provable, and is the mistake a reader would actually
+make, is that the two are **not a partition** of the total.
+
+**System-level, like All Other**, rendered once above the table and never on a
+row, under the same constraint and the same reasoning: a group's move attributed
+to a named sovereign is `F-0097`.
+
+**A display bug found on the way.** `(5475.0 / 1000).toFixed(2)` is `"5.47"`,
+not `"5.48"` - 5.475 has no exact binary representation and lands just below the
+midpoint. The private side read $5.47T while the payload said 5.475.
+`trillions()` scales to an integer before rounding. Its first version claimed
+"half away from zero" and used `Math.round`, which is half-**up**:
+`Math.round(-547.5)` is `-547`. Every figure here is positive, so nothing on
+screen was affected - but a helper whose comment and behaviour disagree is how
+the next caller gets surprised, so the sign is handled explicitly.

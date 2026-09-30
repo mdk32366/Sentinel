@@ -902,6 +902,10 @@ def compute_composite_stress(db: Session) -> dict:
             # about one - that would be F-0097 again, a number nobody observed
             # asserted about a named sovereign.
             "all_other": all_other_signal(db),
+            # D-0080. The other cut of the same total: what CENTRAL BANKS are
+            # doing, across every holder rather than only the unnamed ones.
+            # System-level for the same reason - it describes a group.
+            "foreign_official": foreign_official_signal(db),
         },
         "as_of": tic_latest.strftime("%Y-%m") if tic_latest else None,
     }
@@ -1001,7 +1005,9 @@ MAX_M2_DATA_AGE_YEARS = 3
 
 # F-0097. One classifier, shared with gold_fetcher.py, because F-0047 is the
 # standing example of two implementations of one idea drifting apart.
-from pipelines.tic_aggregate import all_other_signal  # noqa: E402
+from pipelines.tic_aggregate import (  # noqa: E402
+    all_other_signal, foreign_official_signal,
+)
 from pipelines.tic_state import (  # noqa: E402
     BELOW_THRESHOLD, EXITED, NO_DATA,
     classify_tic_state, describe, last_reported_holding,
