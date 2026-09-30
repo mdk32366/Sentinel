@@ -584,29 +584,36 @@ arriving in Turkey or Poland would remove a country the model relies on.
 
 ### A-0019 - Dimension 1 can only speak about twenty countries
 
-`F-0097` removed the false-exit path, and the honest consequence is that
-dimension 1 - 50 points, the largest in the model - now scores only the twenty
-countries SLT Table 5 names. The other 28 scored countries get nothing from it,
-because their position is genuinely unknown.
+**Option 1 is done (`D-0078`). Options 2-4 remain open.**
 
-**This is correct and it is also a gap.** A composite that ranks 48 sovereigns
-while its largest dimension can speak about 20 of them is weighted in a way no
-reader would infer from the score alone.
+`F-0097` removed the false-exit path, and the consequence is that dimension 1 -
+50 points, the largest in the model - now scores only the twenty countries SLT
+Table 5 names. The other 28 scored countries get nothing from it, because their
+position is genuinely unknown.
 
-**Options, none of them obviously right.**
+**What is now disclosed.** Every surface showing a score marks the dimensions
+that cannot speak about that country, with the points they would have been worth
+and why. Germany reads 8.0 with a badge saying 50 of 165 points were unreachable.
+No number changed.
 
-1. **Say so on the surface.** Cheapest and most honest: mark the 28 as "not
-   covered by dimension 1" wherever the score appears, so a reader knows the
-   score means different things for different countries. Changes no number.
+**What is still true and not addressed.** Two countries with the same score may
+have been measured on different amounts of evidence, and the score does not
+encode that. A reader who looks at the badge learns it; a reader who sorts by
+score does not.
+
+**Remaining options.**
+
 2. **Use "All Other" as an aggregate signal.** Table 5 publishes the All Other
-   total. A sharp move in it says something happened among the non-reporters
-   without saying who. Weak, but real, and free.
+   total. A sharp move says something happened among the non-reporters without
+   saying who. Weak, but real, and free.
 3. **Find a country-level source for the non-reporters.** TIC's B-series and the
    SLT country tables carry more countries at lower frequency. Unknown effort;
-   would need the same validation `D-0076` got.
+   would need the validation `D-0076` got.
 4. **Re-weight per country.** Score each country out of the dimensions that can
-   actually speak about it. Principled, and it changes every number in the
-   model, so it needs a decision rather than an implementation.
+   speak about it. The principled answer, and it changes every number in the
+   model - a decision, not an implementation. `D-0078` was chosen over this
+   deliberately, and the coverage module is tested to be incapable of altering a
+   score so that this cannot happen by accident.
 
 **What must not happen** is a default that fills the gap with a guess. That is
 precisely what `F-0097` was: 30 points for "we have no data", dressed as a

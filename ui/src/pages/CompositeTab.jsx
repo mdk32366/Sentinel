@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { coverageBadge } from "../lib/coverage";
 import { useApiResource } from "../hooks/useApiResource";
 import { MAX_RAW_SCORE, STRESS_DIMENSIONS, STRESS_MULTIPLIERS, cdsBandText } from "../lib/dimensions";
 import { DataAsOf } from "../components/DataAsOf";
@@ -155,7 +156,7 @@ export function CompositeTab({ onCountrySelect }) {
                     <ColHeader label="CDS 5Y" tip={`Latest 5-year sovereign CDS spread in basis points \u2014 the market price of default protection (dimension 7). ${cdsBandText()}; +5 pts if widening >20% over 3M. A dash means no usable quote: either the sovereign is not on the board, or the quote was refused as stale or as not a running spread. The dimension then contributes 0 and is NOT counted as calm.`} align="right" style={compactHead} />
                     <ColHeader label="Mult" tip="Score multiplier applied to the raw total. 1.5× activates when a country sells both Treasuries and gold (cross-asset stress). 2.0× activates when selling gold into a rising spot price (divergence = forced seller signal)." align="right" style={compactHead} />
                     <ColHeader label="Non-$" tip="Non-dollar reserve trend (TRESEG series). STA = stable; REB = rebuilding (>5% YoY growth, de-dollarization into alternative system); DEP = depleting (>5% YoY decline, possible distress). Only analytically significant for EXITED countries." align="right" style={compactHead} />
-                    <ColHeader label="Score" tip="Final composite score after multipliers. WATCH <25 · ELEVATED 25–50 · STRESSED 50–75 · CRISIS ≥75. Raw maximum is 165 across five dimensions; multipliers can take the result to the 150 cap." align="right" style={compactHead} />
+                    <ColHeader label="Score" tip="Final composite score after multipliers. WATCH <25 · ELEVATED 25–50 · STRESSED 50–75 · CRISIS ≥75. Raw maximum is 165 across five dimensions; multipliers can take the result to the 150 cap. A marker beside the score counts the dimensions that cannot be scored for that country at all — hover it for which and why. The Treasury dimension, worth 50 of the 165, reaches only the twenty countries SLT Table 5 names (A-0019), so two countries with the same score may have been measured on different amounts of evidence." align="right" style={compactHead} />
                     <ColHeader label="Activity" tip="Human-readable summary of the specific signals contributing to this country's score. Each dot-separated entry corresponds to a threshold being crossed in one of the seven scoring dimensions." align="left" style={{ ...compactHead, ...activitySticky, zIndex: 3 }} />
                   </tr>
                 </thead>
@@ -224,10 +225,21 @@ export function CompositeTab({ onCountrySelect }) {
                               <div style={{ width:`${Math.min(100,c.composite_score)}%`, background:tc, height:"100%", borderRadius:2 }} />
                             </div>
                             <span style={{ fontFamily:"monospace", fontSize:11, color:tc, minWidth:28, textAlign:"right", fontWeight:700 }}>{c.composite_score?.toFixed(0)??0}</span>
-                            {c.cds_5y==null && (
-                              <span title="Score computed without CDS input — no sovereign CDS coverage for this country"
-                                style={{ fontSize:9, color:"#5A6878", cursor:"help", marginLeft:1 }}>◦</span>
-                            )}
+                            {/* A-0019. Was a CDS-only marker. One badge now for
+                                every dimension that cannot speak about this
+                                country — dimension 1 reaches only the twenty
+                                countries TIC names (F-0097), and a score built
+                                from two dimensions means something different
+                                from the same score built from five. Muted on
+                                purpose: this is a limit on what the number
+                                means, not a finding about the country. */}
+                            {(() => {
+                              const badge = coverageBadge(c);
+                              return badge && (
+                                <span title={badge.title}
+                                  style={{ fontSize:9, color:"#5A6878", cursor:"help", marginLeft:2 }}>{badge.text}</span>
+                              );
+                            })()}
                           </div>
                         </td>
                         <td style={{ padding:"7px 10px", fontFamily:"monospace", fontSize:11, color:"#5A6878", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word", wordBreak:"break-word", lineHeight:1.45, ...activitySticky }}
