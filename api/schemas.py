@@ -264,6 +264,13 @@ class CompositeCountry(BaseModel):
     # undeclared fields silently (F-0079), and a stripped tic_state would leave
     # the UI unable to tell a real liquidation from a country that simply fell
     # below the major-holder reporting threshold.
+    # D-0083 / A-0021. Declared because response_model is a filter, not a
+    # validator (F-0079): an undeclared field is stripped in silence, and the
+    # whole point of these is that a reader sees them beside the score.
+    tic_net_1m_bn: Optional[float] = None
+    tic_valuation_1m_bn: Optional[float] = None
+    tic_net_3m_bn: Optional[float] = None
+    tic_flow_months: Optional[int] = None
     tic_state: str = "reported"
     tic_last_reported_bn: Optional[float] = None
     tic_last_reported_date: Optional[str] = None

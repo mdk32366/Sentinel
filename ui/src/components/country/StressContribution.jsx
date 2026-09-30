@@ -1,6 +1,7 @@
 import { useApiResource } from "../../hooks/useApiResource";
 import { scoreBreakdown } from "../../lib/dimensions";
 import { cdsCoverageNote, unavailableDimensions, unreachablePoints } from "../../lib/coverage";
+import { TreasuryFlow } from "./TreasuryFlow";
 
 const TIER_COLORS = { CRISIS: "#FF4444", STRESSED: "#E07B5A", ELEVATED: "#E8C547", WATCH: "#5A6878" };
 
@@ -82,6 +83,11 @@ export function StressContribution({ iso }) {
             : "Ranked, but no single dimension is contributing points."}
         </div>
       )}
+
+      {/* D-0083 / A-0021 option 1. Dimension 1 scores the holdings change, which
+          includes price. Japan's July: holdings -$12.7bn, transactions +$0.9bn.
+          Shown, not scored. */}
+      <TreasuryFlow row={row} />
 
       {unavailable.length > 0 && (
         <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px solid #1A2530" }}>

@@ -31,12 +31,33 @@ SCORER = ROOT / "pipelines" / "composite_stress.py"
 
 
 def scorer_payload_keys():
-    """The keys of the dict the scorer appends per country."""
+    """The keys of the dict the scorer appends per country.
+
+    Follows a `**helper(...)` spread into the helper's own return dict.
+    `D-0083` added four fields that way, and this guard reported them as
+    declared-but-never-produced — the guard being right about what it could see
+    and wrong about the payload.
+
+    Resolved by teaching it to follow the spread rather than by exempting the
+    fields. An exemption list would let the next spread hide a field silently,
+    and the point of this pair of tests is that the model and the scorer cannot
+    drift apart.
+    """
     source = SCORER.read_text(encoding="utf-8")
     start = source.index("        results.append({")
     end = source.index("\n        })", start)
     block = source[start:end]
-    return {m.group(1) for m in re.finditer(r'^\s*"([a-z0-9_]+)":', block, re.M)}
+
+    keys = {m.group(1) for m in re.finditer(r'^\s*"([a-z0-9_]+)":', block, re.M)}
+
+    for helper in re.findall(r"\*\*([a-z_][a-z0-9_]*)\(", block):
+        hstart = source.index(f"def {helper}(")
+        # Bounded by the next top-level def.
+        hend = source.find("\ndef ", hstart + 1)
+        body = source[hstart: hend if hend != -1 else len(source)]
+        keys |= {m.group(1) for m in re.finditer(r'^\s*"([a-z0-9_]+)":', body, re.M)}
+
+    return keys
 
 
 class TheModelDeclaresEverythingTheScorerProduces(unittest.TestCase):

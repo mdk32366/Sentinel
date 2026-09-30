@@ -823,6 +823,7 @@ def compute_composite_stress(db: Session) -> dict:
             "m2_growth_pct": round(m2_growth_pct, 1) if m2_growth_pct is not None else None,
             "m2_year": m2_year,
             "m2_stale": m2_stale,
+            **treasury_flows(db, country.id, tic_latest),
             "tic_state": tic_state,
             "tic_last_reported_bn": round(tic_last_bn, 1) if tic_last_bn is not None else None,
             "tic_last_reported_date": tic_last_date.date().isoformat() if tic_last_date else None,
@@ -926,6 +927,52 @@ TRESEG_MAP = {
     "USA": "TRESEGUSM052N",
     "IDN": "TRESEGIDM052N",
 }
+
+
+def treasury_flows(db: Session, country_id: int, tic_latest) -> dict:
+    """Where a country's change in Treasury holdings came from.
+
+    `D-0083` / `A-0021`. Dimension 1 scores the change in HOLDINGS, which moves
+    with transactions and with price. Japan's July 2026: holdings -$12.7bn, net
+    transactions **+$0.9bn**, long-term valuation -$12.1bn. A net buyer, scored
+    as a seller.
+
+    Read-only; it scores nothing. `A-0021` records why switching the input is
+    not a one-line change: across 3,192 country-months the position change and
+    the published flows disagree by more than 10% of the move **65% of the
+    time**, and France's July 2026 carries a -$28.9bn residual that neither
+    transactions nor valuation explain.
+    """
+    net_metric = db.query(Metric).filter_by(code="TIC_UST_NET_SALES").first()
+    val_metric = db.query(Metric).filter_by(code="TIC_UST_LT_VALUATION").first()
+    if not net_metric or not tic_latest:
+        return {}
+
+    since = tic_latest - timedelta(days=95)
+
+    def window(metric):
+        if metric is None:
+            return []
+        return db.query(TimeSeries).filter(
+            TimeSeries.metric_id == metric.id,
+            TimeSeries.country_id == country_id,
+            TimeSeries.date >= since,
+        ).order_by(TimeSeries.date.asc()).all()
+
+    nets = window(net_metric)
+    if not nets:
+        return {}
+    vals = window(val_metric)
+
+    latest_net = float(nets[-1].value) if nets[-1].date == tic_latest else None
+    latest_val = next((float(v.value) for v in vals if v.date == tic_latest), None)
+
+    return {
+        "tic_net_1m_bn": round(latest_net, 1) if latest_net is not None else None,
+        "tic_valuation_1m_bn": round(latest_val, 1) if latest_val is not None else None,
+        "tic_net_3m_bn": round(sum(float(n.value) for n in nets[-3:]), 1),
+        "tic_flow_months": len(nets[-3:]),
+    }
 
 
 def get_treseg_signal(db: Session, iso: str, no_tic: bool) -> dict:
