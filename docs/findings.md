@@ -3117,3 +3117,68 @@ on an unsorted list.
 **The lesson.** A label that is true because of the current source is a comment,
 not a guarantee. This one had been correct for as long as the data happened to
 arrive quarterly, and the thing that would have broken it was an improvement.
+
+### F-0095 - Two sector series per country, one unique index, and a test that pinned the wrong contract
+
+**Production failed on the first run of `D-0076`:**
+
+```
+duplicate key value violates unique constraint "ix_metric_country_date"
+DETAIL: Key (metric_id, country_id, date)=(36, 4, 2015-02-01) already exists.
+```
+
+IRFCL carries more than one series per country, differing only in `SECTOR`.
+Germany has `S1X` and `S1XS1311`; eight countries also carry `S1311`. The
+parser read all of them, correctly, and the writer then tried to insert two
+rows for the same country-month. `ix_metric_country_date` is unique on
+`(metric_id, country_id, date)`, and the pre-flush existence check cannot see a
+sibling in the same uncommitted batch, so neither row knew about the other.
+
+**A test asserted the broken behaviour.** I had written
+`test_both_sector_series_are_read_rather_than_one_overwriting_the_other`,
+asserting `len(obs) == 2`. It was guarding a real hazard - while exploring the
+feed I keyed a dict by country and kept whichever series came last, which
+reported Brazil at 172,446 tonnes and hid the correct 172.4 sitting in the same
+response - but it encoded that hazard's *opposite* as the contract. **It passed
+while the pipeline could not write a single row.** The unique index is the fact;
+"both series survive" was never compatible with it.
+
+**Then the fix cried wolf, twice.** Ranked sector preference plus a
+disagreement report gave **868 conflicts** against the live feed. Every one was
+two different concepts correctly disagreeing - `S1311` is central government's
+*own* gold, usually zero because a country's gold sits at its central bank, so
+Belgium reads `S1XS1311=227.4t` and `S1311=0.0t` and both are right. Excluding
+`S1311` left **140**, now `GBR: S1XS1311=310.3t vs S1X=0.0t` - and `S1X` equals
+`S1XS1311` for Germany while reading zero for the UK, so it is not a fallback
+either.
+
+Both versions would have marked every run `partial` forever. That is exactly
+the shape of `F-0089` and `F-0091`, arriving in a guard written the same day I
+fixed those - a warning that always fires is a warning nobody can read. So the
+guard went and the rule got simpler: take the one sector that means official
+reserve assets and ignore the decompositions.
+
+`S1XS1311` is present for all 84 countries and is the series that reproduces
+every published figure - USA 8,133.5t, Germany 3,349.1, Italy 2,451.8, France
+2,437.0, UK 310.3. There is no fallback, and a country carrying only a
+decomposition yields nothing rather than a zero holding.
+
+**Sample size.** 2,459 duplicate observations of 13,051 (19%), across 13
+countries; one row was enough to fail the whole transaction.
+
+**Fixed.** Only `RESERVE_ASSET_SECTOR` is admitted, the collapse to one row per
+country-month is still performed and any residual duplicate is reported rather
+than assumed impossible, and the retargeted cases assert the unique-index
+contract: no country-month twice, the choice independent of document order,
+`S1X` explicitly not used as a fallback, and **no warning on the normal feed
+shape**.
+
+Live after the fix: 10,592 unique observations, 83 countries, 0 duplicates, 76
+rejected - all of them the genuine Angola and Brazil scale defects.
+
+**Two lessons, and the second is the sharper one.** A test can pin the opposite
+of what a database constraint requires and still be green, because it never
+touched the database. And a guard written in the same hour as three cry-wolf
+findings can still be a cry-wolf guard: I only caught it by running it against
+the live feed and reading the count, which is the step that tells a plausible
+rule from a working one.
