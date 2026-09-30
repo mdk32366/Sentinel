@@ -564,7 +564,15 @@ def compute_composite_stress(db: Session) -> dict:
         tic_consec = 0
         tic_score = 0
         selling_tic = False
-        no_tic_holdings = len(tic_hist) == 0
+
+        # F-0097. `tic_hist` above is windowed and answers "is there current
+        # data". This answers "what did they last actually report", at any age.
+        # The two are different questions and conflating them is the defect.
+        tic_last_bn, tic_last_date = last_reported_holding(
+            db, tic_metric.id, country.id
+        )
+        tic_state = classify_tic_state(bool(tic_hist), tic_last_bn)
+        no_tic_holdings = tic_state == EXITED
 
         if len(tic_hist) >= 2:
             tic_prev = float(tic_hist[-2].value)
@@ -584,6 +592,12 @@ def compute_composite_stress(db: Session) -> dict:
             # Assign a strong tic_score based on gold holdings as confirmation.
             # We don't know MoM since they've already exited, so we score on posture.
             tic_score = 0  # Will be set after gold is known
+            tic_mom = None
+            tic_consec = 0
+        else:
+            # F-0097. below_threshold or no_data. Unknown is not zero and it is
+            # not calm either: this dimension simply cannot speak, and it says
+            # so rather than awarding points in either direction.
             tic_mom = None
             tic_consec = 0
 
@@ -741,6 +755,13 @@ def compute_composite_stress(db: Session) -> dict:
         signals = []
         if no_tic_holdings and gold_tonnes and gold_tonnes >= 50:
             signals.append(f"🚨 EXITED: Zero US Treasuries · {gold_tonnes:.0f}t gold")
+        elif tic_state == BELOW_THRESHOLD:
+            # F-0097. This used to read "EXITED: Zero US Treasuries" for
+            # Germany, holding $103.1bn. Naming the last reported figure and its
+            # date is the whole difference between a fact and a fabrication.
+            signals.append(describe(tic_state, tic_last_bn, tic_last_date))
+        elif tic_state == NO_DATA:
+            signals.append(describe(tic_state, tic_last_bn, tic_last_date))
         if exited_cross:
             signals.append("⚠ EXITED + gold selling — maximum de-dollarization stress")
         if selling_tic and tic_consec >= 3:
@@ -802,6 +823,9 @@ def compute_composite_stress(db: Session) -> dict:
             "m2_growth_pct": round(m2_growth_pct, 1) if m2_growth_pct is not None else None,
             "m2_year": m2_year,
             "m2_stale": m2_stale,
+            "tic_state": tic_state,
+            "tic_last_reported_bn": round(tic_last_bn, 1) if tic_last_bn is not None else None,
+            "tic_last_reported_date": tic_last_date.date().isoformat() if tic_last_date else None,
             "monetary_score": round(monetary_score, 1),
             # Spread
             "spread_bps": spread_bps,
@@ -966,6 +990,13 @@ def _last_per_quarter(rows):
 # of Y+1, so in 2026 the newest available year is 2025 and a cutoff of 3 admits
 # 2023, 2024 and 2025 - one full missed release of slack, and no more.
 MAX_M2_DATA_AGE_YEARS = 3
+
+# F-0097. One classifier, shared with gold_fetcher.py, because F-0047 is the
+# standing example of two implementations of one idea drifting apart.
+from pipelines.tic_state import (  # noqa: E402
+    BELOW_THRESHOLD, EXITED, NO_DATA,
+    classify_tic_state, describe, last_reported_holding,
+)
 
 PIPELINE_NAME = "Composite_Snapshot"
 

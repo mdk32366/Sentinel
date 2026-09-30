@@ -1,4 +1,5 @@
 import { useApiResource } from "../hooks/useApiResource";
+import { MANUAL_TRIGGERS, SCHEDULED_JOBS } from "../lib/adminActions";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { ColHeader } from "../components/ColHeader";
 
@@ -30,20 +31,33 @@ export function AdminTab() {
     setTimeout(refresh, LOG_SETTLE_MS);
   };
 
+  // F-0098. This list used to be four items held locally: it described TIC as
+  // "45 countries" (Table 5 names twenty), filed Gold Reserves under "Manual
+  // (CSV import)" with instructions to re-download from gold.org months after
+  // D-0076 automated it, and omitted seven scheduled jobs and six triggers.
+  // Moved to lib/adminActions.js so tests/test_admin_surface.py can assert from
+  // the Python side that every POST route and every registered job id appears.
   const PIPELINES = [
     {
-      group: "Automatic (runs on schedule)",
-      items: [
-        { name: "FRED Data", endpoint: "/fetch/fred", method: "POST", desc: "Fetch 24 FRED metrics (yields, oil, dollar, CPI, M2, sovereign yields). Runs daily at 2am.", schedule: "Daily 2:00am UTC" },
-        { name: "TIC Holdings", endpoint: "/fetch/treasury-holdings", method: "POST", desc: "Fetch Treasury holdings from ticdata.treasury.gov. 45 countries, monthly.", schedule: "15th of month, 3:00am UTC" },
-        { name: "Stress Score", endpoint: "/stress-score", method: "GET", desc: "Recalculate 4-factor macro stress index (yield curve, concentration, volatility, gold accumulation).", schedule: "Daily 4:30am UTC" },
-      ]
+      group: `Scheduled (${SCHEDULED_JOBS.length} jobs, all automatic)`,
+      items: SCHEDULED_JOBS.map((j) => ({
+        name: j.name,
+        desc: j.desc,
+        schedule: `${j.schedule} · ${j.pipeline}`,
+        // A scheduled job is run by name through its own trigger below rather
+        // than from here, so these carry no button.
+        endpoint: null,
+      })),
     },
     {
-      group: "Manual (CSV import)",
-      items: [
-        { name: "Gold Reserves", endpoint: "/fetch/gold-reserves", method: "POST", desc: "Import WGC gold reserves CSV from data/gold_reserves.csv. Re-download quarterly from gold.org.", schedule: "Manual — re-download CSV quarterly" },
-      ]
+      group: `Manual triggers (${MANUAL_TRIGGERS.length})`,
+      items: MANUAL_TRIGGERS.map((t) => ({
+        name: t.name,
+        desc: t.desc,
+        schedule: `${t.method} /api${t.endpoint}`,
+        endpoint: t.endpoint,
+        method: t.method,
+      })),
     },
   ];
 
@@ -83,7 +97,7 @@ export function AdminTab() {
                       <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 4 }}>{p.desc}</div>
                       <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>⏱ {p.schedule}</div>
                     </div>
-                    <button
+                    {p.endpoint && <button
                       onClick={() => runPipeline(p.name, p.endpoint, p.method ?? "POST")}
                       disabled={busy}
                       style={{
@@ -96,7 +110,7 @@ export function AdminTab() {
                         whiteSpace: "nowrap",
                       }}>
                       {busy ? "running..." : "▶ Run Now"}
-                    </button>
+                    </button>}
                   </div>
                   {res && (
                     <div style={{ marginTop: 12, background: res.ok ? "#0D2010" : "#200D0D", border: `1px solid ${res.ok ? "#2A4A30" : "#4A2A2A"}`, borderRadius: 2, padding: "10px 14px" }}>

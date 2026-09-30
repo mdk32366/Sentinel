@@ -260,6 +260,13 @@ class CompositeCountry(BaseModel):
     # (F-0079): an undeclared field is stripped silently, which is how the
     # entire CDS dimension once vanished between the scorer and the screen.
     m2_stale: bool = False
+    # F-0097. Declared for the same reason as m2_stale: response_model strips
+    # undeclared fields silently (F-0079), and a stripped tic_state would leave
+    # the UI unable to tell a real liquidation from a country that simply fell
+    # below the major-holder reporting threshold.
+    tic_state: str = "reported"
+    tic_last_reported_bn: Optional[float] = None
+    tic_last_reported_date: Optional[str] = None
     monetary_score: int
     spread_bps: Optional[float] = None
     spread_widening_bps: Optional[float] = None
