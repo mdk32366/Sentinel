@@ -2,6 +2,7 @@ import { useState } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import { useApiResource } from "../hooks/useApiResource";
 import { ColHeader } from "../components/ColHeader";
+import { DataConfidence } from "../components/DataConfidence";
 import { CountryDetail } from "../components/CountryDetail";
 import { LoadFailure } from "../components/LoadFailure";
 
@@ -20,6 +21,7 @@ export function GoldReservesTab({ onCountrySelect, latestAll = {} }) {
 
   return (
     <div>
+      <DataConfidence sourceKeys={["gold_reserves", "gold_price"]} />
       {/* Summary */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[

@@ -4,6 +4,7 @@ import { tierColor, tierLabel } from "../lib/format";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
 import { DataAsOf } from "../components/DataAsOf";
+import { DataConfidence } from "../components/DataConfidence";
 import { describeCrossAsset } from "../lib/crossAssetNarrative";
 import { LoadFailure } from "../components/LoadFailure";
 
@@ -30,6 +31,7 @@ export function CrossAssetTab() {
 
   return (
     <div>
+      <DataConfidence sourceKeys={["tic", "gold_reserves", "gold_price", "reserves_ex_gold"]} />
       {!spotPrice && (
         <div style={{ background: "#1A2530", border: "1px solid #2A3D50", borderLeft: "3px solid #3A4D5C", borderRadius: 2, padding: "10px 16px", marginBottom: 16, fontFamily: "monospace", fontSize: 12, color: "#5A6878" }}>
           ℹ Spot gold price not loaded — divergence multiplier inactive. Load gold price data to enable 2× signal.
@@ -157,7 +159,6 @@ export function CrossAssetTab() {
       <DataAsOf
         asOf={data.as_of}
         source="US Treasury TIC · World Gold Council"
-        note="the TIC source has not published since then; the Treasury side of every signal here is that old"
       />
     </div>
   );

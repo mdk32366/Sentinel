@@ -473,3 +473,38 @@ configured. It is now **46%** (22 of 48).
 The additive-with-absolute-thresholds asymmetry also shrank with `D-0066`:
 the ceiling is now 165 for a CDS-covered country and 145 for one without,
 rather than 185 and 165.
+
+### A-0015 - The composite's three largest dimensions run on stale inputs
+
+`D-0074` put the watchdog's verdict on every tab, so this is now stated on
+the screen rather than buried in a log. It is not yet fixed.
+
+| Source | Age | Tolerance | Dimension | Points | Why it is stale |
+|---|---|---|---|---|---|
+| `tic` | 303d | 55 | 1 - Treasury holdings | 50 | Current release not located. `mfhhis01.txt` is maintained but is the *history* file and ends Dec 2025; `mfhhis02`-`12` are 404; the landing page is JS-driven with no links in its HTML. |
+| `money_supply` | 637d | 420 | 3 - Monetary | 35 | MANUAL JSON. No fetcher; nobody has updated the file since. |
+| `gold_reserves` | 272d | 200 | 2 - Gold | 40 | MANUAL CSV, World Gold Council quarterly. Same shape of problem. |
+| `reserves_ex_gold` laggard | 333d | - | 6 | - | `TRESEG_CODES.RUS` alone; FRED has not updated that series. |
+
+**Risk.** 125 of 165 points. A score presented as current is computed from
+inputs up to 21 months old, and the two MANUAL sources have no mechanism
+that would ever make them fresher - they are stale by construction, not by
+outage.
+
+**The pattern worth naming.** Two of the three are MANUAL. A source with no
+fetcher does not degrade gracefully; it stops dead the day the person stops.
+The watchdog was right about all three the whole time and nothing was
+reading it - the same failure as `D-0074`, one layer down.
+
+**Options, in order of value.**
+
+1. `money_supply` - the OECD and FRED broad-money series are fetchable.
+   Highest value: 35 points and a manual step removed permanently.
+2. `gold_reserves` - WGC publishes quarterly and the reserves table is
+   fetchable. 40 points, same shape of fix.
+3. `tic` - largest at 50 points and the only one genuinely blocked. Next
+   untried route is loading the JS-driven landing page in a real browser to
+   read the rendered links.
+4. `TRESEG_CODES.RUS` - likely unfixable; FRED appears to have stopped the
+   series. If so the honest move is to mark it discontinued rather than
+   carry it as a laggard forever.

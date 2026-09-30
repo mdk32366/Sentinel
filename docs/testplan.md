@@ -286,3 +286,37 @@ Step 12 guard refuses it. Proving that would require production credentials in
 a test environment, which is the thing the guard exists to survive. The offline
 cases establish that identity is read from the database rather than inferred
 from an address, which is the property that makes the tunnel case safe.
+
+### T-0074 - The data-confidence strip, and the threshold it must not own
+
+`ui/src/components/DataConfidence.dom.test.jsx`, 11 cases.
+
+**What is proved.** That the strip reports *this tab's* declared sources and
+not the others, so a green tab is a genuine statement about that tab; that
+it reports the **worst** status rather than an average, because three green
+and one critical is a critical panel; that a laggard buried inside an
+otherwise-current source (`TRESEG_CODES.RUS` at 333d inside a 60d
+`reserves_ex_gold`) is surfaced rather than averaged away; and that before
+the report arrives it renders **nothing** rather than green - an empty strip
+is honest, a premature green one is not.
+
+**The case that matters most** is the tolerance one. It stubs the report
+with `max_age_days: 37` - a value nobody would hardcode - and asserts the
+strip displays 37. A component that carried its own number would pass every
+other case in the file and fail this one. `freshness.test.js` does the same
+with 37 against 90. That is `F-0087` held shut behaviourally rather than by
+asserting a constant equals a constant, which is what the case it replaced
+did, accurately, about the wrong contract.
+
+**Two bugs the gate caught in this work, both in my own test code.**
+`constants.test.js` failed because my fixture spelled `TRESEGRUM052N` by
+hand - the guard against a second copy of a FRED code was right to fire on a
+fixture, since a hardcoded copy in a test is still a copy that will not be
+updated with the others. And a `DataAsOf` case compared a hex literal
+against jsdom's computed `rgb()` form. Neither was in shipped code; both
+would have rotted.
+
+**Not tested: whether the strip is legible.** Contrast, placement and
+whether a collapsed strip actually draws the eye are not things jsdom can
+answer, and `F-0086` is the standing reminder that a styling claim no test
+can check is a claim.

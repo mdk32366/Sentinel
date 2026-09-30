@@ -3,6 +3,7 @@ import { useApiResource } from "../hooks/useApiResource";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { CDSCoverageBanner } from "../components/CDSCoverageBanner";
 import { ColHeader } from "../components/ColHeader";
+import { DataConfidence } from "../components/DataConfidence";
 
 const FETCH_KEY = "cds";
 
@@ -54,7 +55,9 @@ export function CDSTab({ onCountrySelect }) {
   if (emptyCoverage && emptyTable) {
     return (
       <div>
-        <div style={{ marginBottom: 20 }}>
+        <DataConfidence sourceKeys={["cds"]} />
+
+      <div style={{ marginBottom: 20 }}>
           <div style={{ fontFamily: "monospace", fontSize: 22, color: "#C8A96E", fontWeight: 700 }}>
             Sovereign CDS Monitor
           </div>

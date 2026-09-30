@@ -128,7 +128,12 @@ CHECKS = [
         "patterns": ["%\\_CDS\\_%"],
         "max_age_days": 4,
         "pipelines": ["CDS_MultiTenor"],
-        "note": "Blocked by Investing.com 403 from datacenter IPs pending proxy.",
+        # D-0074: the old note said "Blocked by Investing.com 403 from
+        # datacenter IPs pending proxy". That source was replaced by the
+        # World Government Bonds board and CDS has been current for months;
+        # the note described an outage that had already been fixed. A note
+        # nobody revisits becomes the thing it is warning about.
+        "note": "World Government Bonds 5Y board. 5Y only - the source publishes no 10Y, so term structure stays blank (D-0062).",
     },
     {
         "key": "sovereign_yields",

@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
 import { MAX_RAW_SCORE, STRESS_DIMENSIONS, STRESS_MULTIPLIERS, cdsBandText } from "../lib/dimensions";
 import { DataAsOf } from "../components/DataAsOf";
+import { DataConfidence } from "../components/DataConfidence";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
 import { LoadFailure } from "../components/LoadFailure";
@@ -42,6 +43,14 @@ export function CompositeTab({ onCountrySelect }) {
       {(summary?.crisis??0) > 0 && (
         <AlertBanner message={`⚡ ${summary.crisis} CRISIS-tier countr${summary.crisis===1?"y":"ies"} — all stress dimensions firing.`} color="#FF4444" />
       )}
+
+      {/* D-0074: the composite is the sum of five dimensions drawn from
+          six sources of very different vintage. A single "as of" at the
+          foot of the table cannot say that. */}
+      <DataConfidence
+        sourceKeys={["tic", "gold_reserves", "money_supply", "oil", "cds", "sovereign_yields"]}
+        label="Score inputs"
+      />
 
       {/* Score methodology */}
       <div style={{ background:"#0A1520", border:"1px solid #1A2530", borderRadius:2, padding:"14px 20px", marginBottom:20, display:"flex", gap:28, flexWrap:"wrap" }}>
@@ -231,7 +240,6 @@ export function CompositeTab({ onCountrySelect }) {
         <DataAsOf
           asOf={data.as_of}
           source="US Treasury TIC · World Gold Council · FRED"
-          note="the TIC source has not published since then; Treasury scores are computed from it"
           style={{ marginTop: 0 }}
         />
       </div>

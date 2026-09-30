@@ -13,41 +13,43 @@ import { DataAsOf } from "./DataAsOf";
 
 afterEach(cleanup);
 
+/**
+ * A local calendar date N days ago.
+ *
+ * NOT toISOString().slice(0,10): that is the UTC date, and west of UTC in
+ * the evening it is already tomorrow - so a "3 days ago" fixture became a
+ * 2-day age and the test failed by the clock rather than by the code. The
+ * app treats these as calendar dates (F-0071), and so must the fixture.
+ */
+function daysAgo(n) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  const pad = (v) => String(v).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+
 describe("DataAsOf", () => {
   it("carries the age beside the date", () => {
-    render(<DataAsOf asOf="2025-12" source="US Treasury TIC" note="the source has not published since then" />);
+    render(<DataAsOf asOf="2025-12" source="US Treasury TIC" />);
     expect(screen.getByText(/Data as of/)).toBeTruthy();
     expect(screen.getByText(/days old/)).toBeTruthy();
   });
 
-  it("says what being stale MEANS, not just that it is", () => {
-    // The component knows the age; only the tab knows the consequence.
-    render(<DataAsOf asOf="2025-12" note="Treasury scores are computed from it" />);
-    expect(screen.getByText(/Treasury scores are computed from it/)).toBeTruthy();
+  it("shows the age of a recent date too", () => {
+    render(<DataAsOf asOf={daysAgo(3)} />);
+    expect(screen.getByText(/\(3 days old\)/)).toBeTruthy();
   });
 
-  it("stays quiet about an ordinary lag", () => {
-    // TIC is normally one to two months behind. Flagging that would train
-    // the reader to ignore the flag.
-    const recent = new Date();
-    recent.setDate(recent.getDate() - 40);
-    const asOf = recent.toISOString().slice(0, 7);
-
-    render(<DataAsOf asOf={asOf} note="the source has not published since then" />);
-    expect(screen.queryByText(/has not published/)).toBeNull();
-  });
-
-  it("shows an age even when it is not stale", () => {
-    const recent = new Date();
-    recent.setDate(recent.getDate() - 3);
-    render(<DataAsOf asOf={recent.toISOString().slice(0, 10)} />);
-    expect(screen.getByText(/\(3d\)/)).toBeTruthy();
+  it("says '1 day old', not '1 days old'", () => {
+    render(<DataAsOf asOf={daysAgo(1)} />);
+    expect(screen.getByText(/\(1 day old\)/)).toBeTruthy();
   });
 
   it("renders a dash and no age when there is no date", () => {
-    const { container } = render(<DataAsOf asOf={null} note="whatever" />);
+    const { container } = render(<DataAsOf asOf={null} />);
     expect(container.textContent).toMatch(/—/);
-    expect(container.textContent).not.toMatch(/days old|whatever/);
+    expect(container.textContent).not.toMatch(/days old/);
   });
 
   it("names the source when given one", () => {
@@ -55,12 +57,24 @@ describe("DataAsOf", () => {
     expect(screen.getByText(/World Gold Council/)).toBeTruthy();
   });
 
-  it("does not attach a note to a date that is fine", () => {
-    const recent = new Date();
-    recent.setDate(recent.getDate() - 5);
-    const { container } = render(
-      <DataAsOf asOf={recent.toISOString().slice(0, 10)} note="the source has stopped" />,
-    );
-    expect(container.textContent).not.toMatch(/the source has stopped/);
+  it("passes no judgement on an age it was given no tolerance for", () => {
+    // F-0087. This replaces three cases that asserted this component
+    // attached a caller-supplied `note` to a date it had decided was stale.
+    // The decision was made against a 100-day threshold copied from the
+    // pipeline that REFUSES the TIC file, while the watchdog calls TIC
+    // stale at 55 — so on a 60-day-old date this footer would have read
+    // "fine" directly beneath a DataConfidence strip reading "not current".
+    //
+    // The ruling moved to DataConfidence, which reads the watchdog's own
+    // per-source tolerance. This states the age in neutral ink.
+    const { container } = render(<DataAsOf asOf="2025-12" />);
+    expect(container.textContent).toMatch(/days old/);
+    expect(container.innerHTML).not.toMatch(/rgb\(224, 123, 90\)/);
+  });
+
+  it("still colours it when a caller hands it that source's tolerance", () => {
+    // The capability is intact — it is the invented default that is gone.
+    const { container } = render(<DataAsOf asOf="2025-12" toleranceDays={55} />);
+    expect(container.innerHTML).toMatch(/rgb\(224, 123, 90\)/);
   });
 });
