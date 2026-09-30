@@ -74,7 +74,7 @@ export function DataConfidence({ sourceKeys = [], label = "Data confidence" }) {
                 key={s.key}
                 as="div"
                 title={s.label}
-                tip={`${s.note ?? ""} Tolerance for this source is ${s.max_age_days} days, set from its own release cadence. Latest observation ${s.latest_date ?? "none"}.`}
+                tip={`${s.note ?? ""} Tolerance for this source is ${s.max_age_days} days, set from its own release cadence. Latest observation is dated ${s.latest_date ?? "none"} and covers a ${s.period ?? "day"} ending ${s.coverage_end ?? "—"}; the age is measured from that end, not from the label (D-0077).`}
                 placement="below"
                 align="left"
                 style={{ display: "flex", alignItems: "baseline", gap: 8, cursor: "help" }}>
@@ -82,11 +82,18 @@ export function DataConfidence({ sourceKeys = [], label = "Data confidence" }) {
                 <span style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", minWidth: 190 }}>
                   {s.label}
                 </span>
+                {/* D-0077: the stored date labels the period; coverage_end is
+                    when the period it describes actually ended, and it is what
+                    the age is measured from. Showing the label beside an age
+                    derived from the end is how a reader concludes the two
+                    disagree (F-0087). */}
                 <span style={{ fontFamily: "monospace", fontSize: 11, color: st.color }}>
-                  {s.latest_date ?? "—"}
+                  {s.coverage_end ?? s.latest_date ?? "—"}
                 </span>
                 <span style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878" }}>
-                  {s.age_days != null ? `${s.age_days}d old, tolerance ${s.max_age_days}d` : ""}
+                  {s.age_days != null
+                    ? `${s.age_days}d since period end, tolerance ${s.max_age_days}d`
+                    : ""}
                 </span>
                 {/* A laggard is one metric inside an otherwise current
                     source. Reported because an "ok" source containing a

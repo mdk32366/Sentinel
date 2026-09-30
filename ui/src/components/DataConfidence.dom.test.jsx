@@ -17,8 +17,11 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 
 /** The real shape, with the real production values as of 2026-09-29. */
 const SOURCES = [
+  // D-0077: the server now sends the period and its coverage end. The stored
+  // date labels the period; the age is measured from when that period ended.
   { key: "tic", label: "TIC Treasury holdings", status: "critical",
-    latest_date: "2025-12-01", age_days: 303, max_age_days: 55,
+    latest_date: "2025-12-01", coverage_end: "2025-12-31", period: "month",
+    age_days: 273, max_age_days: 85,
     note: "Release date drifts within the month." },
   { key: "money_supply", label: "Broad money growth", status: "stale",
     latest_date: "2025-01-01", age_days: 637, max_age_days: 420,
@@ -88,8 +91,12 @@ describe("DataConfidence", () => {
     fireEvent.click(screen.getByText(/detail/));
 
     expect(screen.getByText("TIC Treasury holdings")).toBeTruthy();
-    expect(screen.getByText("2025-12-01")).toBeTruthy();
-    expect(screen.getByText(/303d old, tolerance 55d/)).toBeTruthy();
+    // The COVERAGE END, not the period label. Showing "2025-12-01" beside an
+    // age measured from 2025-12-31 is how a reader concludes the two disagree,
+    // which is F-0087 one layer up.
+    expect(screen.getByText("2025-12-31")).toBeTruthy();
+    expect(screen.queryByText("2025-12-01")).toBeNull();
+    expect(screen.getByText(/273d since period end, tolerance 85d/)).toBeTruthy();
   });
 
   it("surfaces a laggard hidden inside an otherwise current source", async () => {

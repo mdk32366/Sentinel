@@ -508,29 +508,21 @@ satisfy makes the alarm state the normal state.
 honest move is to mark it discontinued rather than carry it as a laggard
 forever.
 
-### A-0016 - Annual and monthly series are dated to the start of their period
+### A-0016 - CLOSED by D-0077 - period-start dating
 
-`money_supply` rows are dated 1 January of the data year; TIC rows to the
-first of the data month. Both describe a period that *ends* later - TIC's own
-file says "Holdings at end of time period" - so both ages overstate staleness
-by a period, and both tolerances are inflated to compensate:
+Annual and monthly rows are dated to the START of the period they describe,
+which overstated every age by up to a full period and forced the wide
+tolerances in `F-0089` and `F-0091`.
 
-| Series | Dated | Healthy age range | Range if dated to period end |
-|---|---|---|---|
-| TIC holdings | 1st of month | 77-106d | 47-76d |
-| Broad money | 1 Jan of year | 558-923d | 194-559d |
+**Closed by `D-0077`**, though not the way this entry proposed. It called for a
+migration of the stored dates; that was not done, because rewriting three whole
+series is irreversible and a half-applied version would record one holding under
+two conventions. The age is derived from the period end at read time instead -
+same arithmetic, nothing to undo, and it corrects the displayed date as well.
 
-Dating to period end would be more accurate and would make both guards
-meaningfully sharper - the broad money one especially, where 960 days is wide
-enough to be nearly decorative.
-
-**Not done** because every existing row uses the start-of-period convention,
-so it is a migration of two whole series rather than a pipeline edit, and a
-half-applied one would duplicate history under two conventions. Deleting the
-superseded rows is a destructive operation and needs explicit authorisation.
-
-Recorded so the inflated tolerances in `F-0089` and `F-0091` are understood as
-a consequence of this convention rather than as generosity.
+Result: TIC 91d -> 61d (tolerance 110 -> 85), gold 60d -> 30d (95 -> 65), broad
+money 637d -> 273d (960 -> 600). The destructive migration remains available if
+the stored dates themselves ever matter.
 
 ### A-0017 - Per-country data age is unchecked everywhere except dimension 3
 
@@ -562,31 +554,33 @@ this from a worry into a number. Only then is it worth deciding whether each
 dimension needs its own cutoff or whether the watchdog should derive laggards
 per country instead of carrying one by hand.
 
-### A-0018 - Angola has no gold data, and two countries' IRFCL series are unusable
+### A-0018 - Angola has no gold data, and the IMF report is drafted but unsent
 
-`F-0093` rejects 76 values across exactly two countries. The consequences
-differ and only one is closed.
+**Status: half closed.**
 
-**Brazil is fine.** Its pre-2026-M03 observations are correctly scaled, so it
-carries 172.4 tonnes from the good part of its own series and only the six
-rescaled months are dropped.
+**Done.** `docs/imf-irfcl-gold-data-quality.md` holds the report for
+`datahelp@imf.org` - the contact in the IRFCL dataset metadata - with the exact
+dataflow, indicator, sector, retrieval URL and the observation-level evidence
+for both anomalies, including Brazil's mid-series rescale at 2026-M03 and the
+70 affected Angolan observations.
 
-**Angola has nothing.** All 70 of its recent observations are a thousandfold
-out, it is absent from the World Gold Council set, and so it now has **no gold
-reserves data at all** rather than wrong data. That is the right default and it
-is still a gap: dimension 2 cannot score Angola.
+**Not done: sending it.** An outbound message on the maintainer's behalf is
+theirs to send. The draft is ready to copy.
 
-**Worth reporting upstream.** Both look like unit errors in the national
-submission rather than anything the IMF derived - `DERIVATION_TYPE="O"` marks
-them as originally reported. `datahelp@imf.org` is the contact in the dataset
-metadata.
+**Already observable, so nobody has to re-derive it.** The rejection count and
+the first few rejected values go to `UpdateLog.error_message` on every
+`Gold_Reserves_IMF` run, and the run reports `partial` rather than `success`
+while any value is rejected. Both appear in the PIPELINE LOG on ADMIN.
 
-**What to check when it is next looked at.** Whether the rejection list has
-grown, and in particular whether any country in the composite's scored set
-joins it. Angola is not scored, so today the cost is nil; the same defect in
-Turkey or Poland would remove a country the model relies on. The count is in
-the `UpdateLog` note for `Gold_Reserves_IMF` on every run, so this is
-observable rather than needing a person to re-derive it.
+**Current effect.** 76 of 13,127 values rejected (0.6%), in two countries:
+Angola 70, Brazil 6. Brazil is fine - its pre-2026-M03 observations are
+correctly scaled, so it carries 172.4 tonnes from the good part of its own
+series. Angola has **no** gold data rather than wrong gold data, and is not in
+the composite's scored set, so the cost today is nil.
+
+**What to check next time.** Whether the rejection list has grown, and in
+particular whether any country in the scored set has joined it. The same defect
+arriving in Turkey or Poland would remove a country the model relies on.
 
 ### A-0019 - Dimension 1 can only speak about twenty countries
 

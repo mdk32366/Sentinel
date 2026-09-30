@@ -156,8 +156,18 @@ class TestThresholdsAHealthySourceCanSatisfy(unittest.TestCase):
     numbers: every threshold agrees about a year-old file.
     """
 
-    BEST_CASE_AGE = 77    # the day a release lands
-    WORST_CASE_AGE = 106  # the day before the next one
+    # D-0077 retargeted these. They were measured from the row's LABEL - the
+    # first of the data month - which is what the stored date is. The watchdog
+    # now measures from the end of the period the row describes, so the same
+    # publication cycle is a month shorter: the 2026-09-16 release published
+    # data covering to 2026-07-31, 47 days earlier, not 2026-07-01, 77 days
+    # earlier. Both describe one observation; only one of them is the age of the
+    # data.
+    #
+    # Not a weakening. The bound still pins the cycle, against the same release
+    # calendar, measured from the end of the period instead of its name.
+    BEST_CASE_AGE = 47    # the day a release lands
+    WORST_CASE_AGE = 76   # the day before the next one
 
     def _tic(self):
         tic = next((s for s in CHECKS if s["key"] == "tic"), None)
@@ -173,14 +183,23 @@ class TestThresholdsAHealthySourceCanSatisfy(unittest.TestCase):
         self.assertGreaterEqual(self._tic()["max_age_days"], self.WORST_CASE_AGE)
 
     def test_the_watchdog_still_catches_a_missed_release(self):
-        # One skipped month puts the newest row at ~136 days. A tolerance
-        # loose enough to pass that would be decoration (D-0024).
-        self.assertLess(self._tic()["max_age_days"], self.WORST_CASE_AGE + 30)
+        # One skipped month puts the newest observation at ~106 days from its
+        # coverage end. A tolerance loose enough to pass that would be
+        # decoration (D-0024).
+        self.assertLess(self._tic()["max_age_days"], self.WORST_CASE_AGE + 31)
 
     def test_the_pipeline_does_not_refuse_a_current_file(self):
         # At 100 this sat inside the healthy range: the last fortnight of
         # every cycle would have been refused as frozen.
-        self.assertGreater(MAX_SOURCE_AGE_DAYS, self.WORST_CASE_AGE)
+        #
+        # This one keeps the LABEL basis on purpose. MAX_SOURCE_AGE_DAYS is
+        # applied in treasury_holdings.py against the parsed row date, which is
+        # the first of the data month - it never sees a coverage end. Two
+        # thresholds measured against two different things is exactly what
+        # F-0087 was about, so the difference is stated rather than silently
+        # carried: 106 is the label-based worst case and remains the right bound
+        # for this constant.
+        self.assertGreater(MAX_SOURCE_AGE_DAYS, 106)
 
     def test_the_pipeline_still_refuses_a_frozen_one(self):
         # Two missed releases is ~166 days. The December-2025 freeze that
