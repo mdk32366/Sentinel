@@ -15,6 +15,7 @@ from pipelines.treasury_direct import run_treasury_direct_fetch
 from pipelines.freshness_watchdog import run_freshness_check
 from pipelines.gold_price_fetcher import run_gold_price_fetch
 from pipelines.composite_stress import persist_composite_snapshot
+from pipelines.money_supply_fetcher import run_money_supply_fetch
 
 logger = logging.getLogger(__name__)
 # ORDER-01 B5. Set once on the scheduler rather than repeated on every
@@ -35,6 +36,30 @@ JOB_DEFAULTS = {
 }
 
 scheduler = BackgroundScheduler(job_defaults=JOB_DEFAULTS)
+
+# Every `UpdateLog.pipeline_name` this module is responsible for keeping fresh.
+#
+# F-0091. `Broad_Money_Growth` was absent from this module entirely: nine
+# pipelines had `add_job` entries and it did not, so composite dimension 3 -
+# 35 of 165 points - only ever moved when a person ran it by hand. Nothing
+# could have noticed. The watchdog's "declared but not yet run" report does not
+# catch it either, because the pipeline HAD run once; it simply never ran again,
+# and "ran in the distant past" and "is scheduled" are different facts.
+#
+# Declared here rather than inferred from the job ids because a job id is a
+# scheduler handle ("money_supply") and a pipeline name is what lands in
+# UpdateLog ("Broad_Money_Growth"); no rule maps one to the other. Kept honest
+# by a test asserting every source the watchdog monitors appears here.
+SCHEDULED_PIPELINES = {
+    "FRED",
+    "TIC_Holdings",
+    "Gold_Reserves",
+    "Gold_Reserve_Changes",
+    "Gold_Spot_Price",
+    "CDS_MultiTenor",
+    "TreasuryDirect",
+    "Broad_Money_Growth",
+}
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
 cds_hour = int(os.getenv("CDS_FETCH_HOUR", "3"))
@@ -133,6 +158,40 @@ def scheduled_treasury_direct_fetch():
             logger.warning(f"Treasury Direct anomalies: {result['anomalies']}")
     except Exception as e:
         logger.error(f"Scheduled Treasury Direct fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
+def scheduled_money_supply_fetch():
+    """Broad money growth from the World Bank (F-0091).
+
+    There was no job for this at all. The pipeline existed, fed composite
+    dimension 3 - 35 of 165 points - and ran only when somebody called it by
+    hand after running a `curl` by hand. `money_supply` sat 637 days stale and
+    the watchdog reported it every night to nobody.
+
+    Monthly rather than annual even though the series is annual: the World
+    Bank revises and backfills between releases, and a monthly check is two
+    HTTP requests a year of waste against the alternative of guessing which
+    month the release lands in. Runs on the 14th at 05:30 UTC, after the
+    watchdog at 05:00, so a failure is visible in the next night's report
+    rather than a month later.
+    """
+    db = None
+    try:
+        db = get_session()
+        result = run_money_supply_fetch(db)
+        logger.info(
+            f"Broad money: {result['status']} via {result['origin']} - "
+            f"{result['inserted']} inserted, {result['updated']} updated, "
+            f"newest year {result.get('newest_year')}, "
+            f"source lastupdated {result.get('source_last_updated')}"
+        )
+        if result.get("rejected"):
+            logger.warning(f"Broad money implausible values: {result['rejected']}")
+    except Exception as e:
+        logger.error(f"Scheduled money supply fetch failed: {e}", exc_info=True)
     finally:
         if db is not None:
             db.close()
@@ -278,6 +337,14 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled gold price daily at 02:30 UTC")
+
+    scheduler.add_job(
+        scheduled_money_supply_fetch,
+        CronTrigger(day=14, hour=5, minute=30),
+        id="money_supply", name="Broad Money Growth (World Bank)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled broad money growth monthly on day 14 at 05:30 UTC")
 
     scheduler.add_job(
         scheduled_freshness_check,
