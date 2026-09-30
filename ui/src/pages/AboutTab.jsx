@@ -61,13 +61,18 @@ export function AboutTab() {
       </div>
 
       {/* Manual Update Checklist */}
-      <div style={{ background: "#0A1520", border: "1px solid #E8C54744", borderLeft: "3px solid #E8C547", borderRadius: 2, padding: "16px 20px", marginBottom: 32 }}>
-        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginBottom: 12, letterSpacing: "0.1em" }}>⚠ MONTHLY MANUAL UPDATE CHECKLIST</div>
+      <div style={{ background: "#0A1520", border: "1px solid #5DB87A33", borderLeft: "3px solid #5DB87A", borderRadius: 2, padding: "16px 20px", marginBottom: 32 }}>
+        <div style={{ fontFamily: "monospace", fontSize: 12, color: "#5DB87A", marginBottom: 12, letterSpacing: "0.1em" }}>✓ NOTHING REQUIRES A MANUAL DOWNLOAD</div>
+        {/* F-0100. This was a MONTHLY MANUAL UPDATE CHECKLIST whose first item
+            told the operator to download a WGC CSV and commit it to the repo —
+            months after D-0076 automated gold from the IMF. F-0096 rewrote the
+            source catalogue above and missed this block entirely, which is why
+            the ABOUT tests now read the whole file rather than one export. */}
         {[
-          { task: "Download WGC gold reserves CSV (quarterly)", url: "https://www.gold.org/goldhub/data/gold-reserves-by-country", action: "Save as data/gold_reserves.csv in repo → commit → deploy OR run POST /api/fetch/gold-reserves" },
-          { task: "Verify TIC auto-refresh ran (15th of month)", url: null, action: "Check GET /api/pipeline-status — last_treasury_update should be recent" },
-          { task: "Verify FRED auto-refresh ran (daily)", url: null, action: "Check GET /api/pipeline-status — last_fred_update should be within 24 hrs" },
-          { task: "Verify stress score recalculated", url: null, action: "GET /api/stress-score — timestamp should be today" },
+          { task: "Every source is fetched on a schedule", url: null, action: "Eleven jobs, listed with their cron on the ADMIN tab. Nothing is hand-fed." },
+          { task: "Check the confidence strip on any tab", url: null, action: "It reports the watchdog's per-source verdict against each source's own release cadence (D-0074)." },
+          { task: "After any manual fetch, refresh the score", url: null, action: "POST /api/snapshot/composite — the composite serves a stored snapshot, so new data does not reach it until the 04:45 job or an explicit refresh (F-0090)." },
+          { task: "Per-country data age", url: null, action: "GET /api/diagnostics/data-age — the distribution of how old each country's data is, per source (A-0017)." },
         ].map((item, i) => (
           <div key={i} style={{ display: "flex", gap: 12, marginBottom: 10, alignItems: "flex-start" }}>
             <span style={{ fontFamily: "monospace", fontSize: 12, color: "#E8C547", marginTop: 1 }}>□</span>

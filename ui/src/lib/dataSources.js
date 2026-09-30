@@ -102,7 +102,10 @@ export const SIGNALS = [
     name: "Sovereign Stress Score",
     tier: 1,
     color: "#E8C547",
-    formula: "MoM decline magnitude (0–40pts) + consecutive declining months (0–30pts) + acceleration (0–20pts)",
+    // F-0100. This described a formula that has never existed in this codebase:
+      // 40/30/20 with an "acceleration" term the scorer has no concept of. The
+      // real dimension 1 was 30/20 and is now the D-0084 rule below.
+      formula: "Treasury (0–50): worst of a 3-month fall in the total position or a bill-book drawdown, size-weighted, + 4 pts per consecutive declining month (max 20). Gold (0–40), Monetary (0–35), Petrodollar (0–20), CDS (0–20). Raw maximum 165.",
     threshold: "Alert: score ≥ 25 OR 3+ consecutive declining months",
     interpretation: "A country reducing treasury holdings. Could be strategic repositioning or liquidity need. Watch for persistence.",
   },
