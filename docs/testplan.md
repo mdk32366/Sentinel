@@ -387,11 +387,20 @@ something was rejected, which would pass if both were thrown away.
 **Aggregates.** `G163` read as 10,807 tonnes, which would have outranked the
 USA. `EZB` and `WBG` sit in the same `COUNTRY` dimension as real countries.
 
-**The two-sectors-per-country case exists because of my own bug**, not the
-feed's: while exploring I keyed a dict by country and kept whichever series
-came last, which reported Brazil at 172,446 and hid the correct 172.4 in the
-same response. Germany really does carry two series differing only in `SECTOR`,
-so the exploratory mistake and a genuine data shape looked identical.
+**The sector cases were retargeted after production rejected the first run**
+(`F-0095`). They originally asserted that *both* of a country's sector series
+came out, guarding against an exploratory bug of mine - keying a dict by country
+and keeping whichever came last, which reported Brazil at 172,446 and hid the
+correct 172.4 in the same response. That assertion was the opposite of what
+`ix_metric_country_date` requires, and it stayed green while the pipeline could
+not write a row, because no case in this file touches a database.
+
+They now pin the constraint instead: no country-month appears twice, the choice
+does not depend on document order, `S1X` is explicitly not used as a fallback,
+and - the case that would have saved two wasted attempts - **no warning fires on
+the normal feed shape**. Ranked fallbacks with a disagreement report produced
+868 warnings against the live feed, then 140, every one of them two different
+concepts correctly disagreeing.
 
 **The resampling cases guard the fix from itself.** Quarterly pass-through is
 asserted **unchanged**, because a resampler that altered the WGC series would

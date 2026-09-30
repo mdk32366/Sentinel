@@ -67,8 +67,37 @@ NOT_COUNTRIES = {"G163", "EZB", "WBG"}
 
 GOLD_METRIC_CODE = "GOLD_RESERVES"
 
+# F-0095. A country can carry more than one series differing only in SECTOR -
+# Germany has S1X and S1XS1311 with identical values. Both must be READ (losing
+# one is how Brazil's bad series hid its good one) and then collapsed to one
+# observation per country-month, because `ix_metric_country_date` is unique on
+# (metric, country, date) and two rows for one month is a constraint violation,
+# not a second data point.
+#
+# The one sector that means official reserve assets. All 84 countries in the
+# feed carry it, and it is the series that reproduces every published figure:
+# USA 8,133.5t, Germany 3,349.1, Italy 2,451.8, France 2,437.0, UK 310.3.
+#
+# `F-0095`. The other two sectors are different concepts, not second opinions,
+# and neither is a usable fallback:
+#
+#   S1311  central government's OWN gold. Usually zero, because a country's
+#          gold sits at its central bank - Belgium reads S1XS1311=227.4t and
+#          S1311=0.0t and both are correct.
+#   S1X    zero for the United Kingdom, equal to S1XS1311 for Germany. Whatever
+#          it decomposes, it is not reliably the same measure.
+#
+# I tried both as ranked fallbacks with a disagreement report first. Against the
+# live feed that produced 868 "conflicts", then 140 after excluding S1311 -
+# every one of them two different concepts correctly disagreeing, and every run
+# marked `partial` forever. That is the cry-wolf shape of F-0089 and F-0091
+# appearing in a brand-new guard, so the guard went and the rule got simpler:
+# take the series that means what we need and ignore the decompositions.
+RESERVE_ASSET_SECTOR = "S1XS1311"
+
 _SERIES_SPLIT = re.compile(r"<Series ")
 _COUNTRY_RE = re.compile(r'COUNTRY="([^"]+)"')
+_SECTOR_RE = re.compile(r'SECTOR="([^"]+)"')
 _OBS_RE = re.compile(r'<Obs TIME_PERIOD="([^"]+)" OBS_VALUE="([^"]+)"')
 # "2026-M08" -> year 2026, month 8
 _PERIOD_RE = re.compile(r"^(\d{4})-M(\d{2})$")
@@ -92,14 +121,17 @@ def fetch_imf_gold(start_period: str = "2015-01", timeout: int = 90) -> str:
     return r.text
 
 
-def parse_imf_gold(xml: str) -> tuple[list[dict], list[str]]:
-    """`(observations, rejected)`.
+def parse_imf_gold(xml: str) -> tuple[list[dict], list[str], list[str]]:
+    """`(observations, rejected, conflicts)`.
 
-    Each observation is `{iso, date, tonnes, ounces}` with `date` on the FIRST
-    of the data month, matching the convention the WGC importer uses for
-    quarters (`A-0016` covers why that convention is what it is).
+    Each observation is `{iso, date, tonnes, ounces, sector}` with `date` on the
+    FIRST of the data month, matching the convention the WGC importer uses for
+    quarters (`A-0016` covers why that convention is what it is), and **at most
+    one observation per country-month** - see `SECTOR_PREFERENCE`.
     """
-    out, rejected = [], []
+    # (iso, date) -> {sector: observation}
+    candidates: dict[tuple, dict] = {}
+    rejected: list[str] = []
 
     for block in _SERIES_SPLIT.split(xml)[1:]:
         head = block.split(">", 1)[0]
@@ -109,6 +141,10 @@ def parse_imf_gold(xml: str) -> tuple[list[dict], list[str]]:
         iso = m.group(1)
         if iso in NOT_COUNTRIES:
             continue
+        sm = _SECTOR_RE.search(head)
+        if (sm.group(1) if sm else "") != RESERVE_ASSET_SECTOR:
+            continue
+        sector = RESERVE_ASSET_SECTOR
 
         for period, raw in _OBS_RE.findall(block):
             pm = _PERIOD_RE.match(period)
@@ -124,14 +160,29 @@ def parse_imf_gold(xml: str) -> tuple[list[dict], list[str]]:
                 rejected.append(f"{iso}/{period}={tonnes:,.1f}t")
                 continue
 
-            out.append({
+            date = datetime(int(pm.group(1)), int(pm.group(2)), 1)
+            candidates.setdefault((iso, date), {})[sector] = {
                 "iso": iso,
-                "date": datetime(int(pm.group(1)), int(pm.group(2)), 1),
+                "date": date,
                 "tonnes": round(tonnes, 2),
                 "ounces": ounces,
-            })
+                "sector": sector,
+            }
 
-    return out, rejected
+    # One series per country-month by construction now, but collapsed anyway
+    # and asserted: `ix_metric_country_date` is unique on (metric, country,
+    # date), and a second row for one month is a constraint violation that the
+    # pre-flush existence check cannot see. Production returned
+    # `duplicate key ... (36, 4, 2015-02-01) already exists` when this function
+    # returned both sector series (`F-0095`).
+    out, duplicates = [], []
+    for (iso, date), by_sector in candidates.items():
+        if len(by_sector) > 1:
+            duplicates.append(f"{iso}/{date:%Y-%m}: {sorted(by_sector)}")
+        out.append(by_sector[sorted(by_sector)[0]])
+
+    out.sort(key=lambda o: (o["iso"], o["date"]))
+    return out, rejected, duplicates
 
 
 def run_imf_gold_fetch(db: Session, start_period: str = "2015-01") -> dict:
@@ -141,7 +192,7 @@ def run_imf_gold_fetch(db: Session, start_period: str = "2015-01") -> dict:
 
     try:
         xml = fetch_imf_gold(start_period)
-        observations, rejected = parse_imf_gold(xml)
+        observations, rejected, duplicates = parse_imf_gold(xml)
 
         if not observations:
             raise ValueError("IMF response parsed to zero usable observations")
@@ -193,14 +244,21 @@ def run_imf_gold_fetch(db: Session, start_period: str = "2015-01") -> dict:
 
         db.commit()
 
-        status = "partial" if rejected else "success"
-        note = f"{len(rejected)} implausible: {', '.join(rejected[:6])}" if rejected else None
+        status = "partial" if (rejected or duplicates) else "success"
+        notes = []
+        if rejected:
+            notes.append(f"{len(rejected)} implausible: {', '.join(rejected[:5])}")
+        if duplicates:
+            notes.append(f"{len(duplicates)} duplicate keys: {', '.join(duplicates[:3])}")
+        note = "; ".join(notes) or None
         logger.info(
             "IMF gold: %s - %d inserted, %d updated, %d skipped, %d countries, "
             "newest %s, %d rejected",
             status, inserted, updated, skipped, len(seen),
             newest.date() if newest else None, len(rejected),
         )
+        if duplicates:
+            logger.warning("IMF gold duplicate country-months: %s", duplicates[:5])
 
         db.add(UpdateLog(
             pipeline_name=PIPELINE_NAME,
@@ -221,6 +279,7 @@ def run_imf_gold_fetch(db: Session, start_period: str = "2015-01") -> dict:
             "countries": len(seen),
             "newest_date": newest.date().isoformat() if newest else None,
             "rejected": rejected,
+            "duplicates": duplicates,
         }
 
     except Exception as exc:

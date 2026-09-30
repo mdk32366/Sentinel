@@ -1763,6 +1763,13 @@ both cases the false alarm concealed the real defect.
 Scheduled monthly on the 25th at 05:15 UTC, after the 05:00 watchdog.
 `POST /api/fetch/gold-reserves-imf` triggers it.
 
+**Validated is not the same as working.** The *values* were cross-checked
+against production before this was wired in, and that check was sound. The
+*write path* still failed on its first real run, because the feed carries
+several series per country and `ix_metric_country_date` admits one row per
+country-month (`F-0095`). Validating a source says nothing about the code that
+stores it.
+
 **What this did not fix.** Angola's entire IRFCL series is a thousandfold out
 and is rejected, so Angola has no gold data rather than wrong gold data. It is
 not in the WGC set either. `A-0018`.

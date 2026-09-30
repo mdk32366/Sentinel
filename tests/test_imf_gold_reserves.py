@@ -26,6 +26,7 @@ from pipelines import scheduler as sched
 from pipelines.composite_stress import GOLD_WINDOW_DAYS, _last_per_quarter
 from pipelines.freshness_watchdog import CHECKS
 from pipelines.imf_gold_reserves import (
+    RESERVE_ASSET_SECTOR,
     IMF_GOLD_INDICATOR,
     IMF_GOLD_URL,
     MAX_PLAUSIBLE_TONNES,
@@ -68,12 +69,12 @@ class TestTheConversion(unittest.TestCase):
     def test_the_us_holding_comes_out_at_the_published_figure(self):
         # 8,133.5 tonnes is the universally quoted US official gold reserve.
         # If the conversion is wrong this is the case that says so.
-        obs, _ = parse_imf_gold(sdmx(series("USA", ("2026-M07", USA_OZ))))
+        obs, _, _ = parse_imf_gold(sdmx(series("USA", ("2026-M07", USA_OZ))))
         self.assertEqual(len(obs), 1)
         self.assertAlmostEqual(obs[0]["tonnes"], 8133.5, places=1)
 
     def test_germany_too(self):
-        obs, _ = parse_imf_gold(sdmx(series("DEU", ("2026-M08", DEU_OZ))))
+        obs, _, _ = parse_imf_gold(sdmx(series("DEU", ("2026-M08", DEU_OZ))))
         self.assertAlmostEqual(obs[0]["tonnes"], 3349.1, places=1)
 
 
@@ -81,11 +82,11 @@ class TestThePeriodConvention(unittest.TestCase):
     def test_a_monthly_period_lands_on_the_first_of_that_month(self):
         # Matches the WGC importer, which dates a quarter to its first day.
         # A-0016 records why that convention is what it is and what it costs.
-        obs, _ = parse_imf_gold(sdmx(series("USA", ("2026-M07", USA_OZ))))
+        obs, _, _ = parse_imf_gold(sdmx(series("USA", ("2026-M07", USA_OZ))))
         self.assertEqual(obs[0]["date"], datetime(2026, 7, 1))
 
     def test_a_malformed_period_is_dropped_not_guessed(self):
-        obs, _ = parse_imf_gold(sdmx(series("USA", ("2026-Q3", USA_OZ))))
+        obs, _, _ = parse_imf_gold(sdmx(series("USA", ("2026-Q3", USA_OZ))))
         self.assertEqual(obs, [])
 
 
@@ -97,7 +98,7 @@ class TestThePlausibilityCeiling(unittest.TestCase):
         # 5544278722.99 from 2026-M03 - rescaled by exactly 1000 mid-series.
         # Read naively the later value is 172,446 tonnes: roughly five times
         # all the gold every central bank on earth holds.
-        obs, rejected = parse_imf_gold(sdmx(series(
+        obs, rejected, _ = parse_imf_gold(sdmx(series(
             "BRA", ("2026-M01", BRA_GOOD_OZ), ("2026-M03", BRA_BAD_OZ),
         )))
         self.assertEqual(len(obs), 1, "the 172,446-tonne reading was accepted")
@@ -116,12 +117,12 @@ class TestThePlausibilityCeiling(unittest.TestCase):
         self.assertLess(MAX_PLAUSIBLE_TONNES, 36000)
 
     def test_a_negative_holding_is_rejected(self):
-        _, rejected = parse_imf_gold(sdmx(series("USA", ("2026-M07", "-500000"))))
+        _, rejected, _ = parse_imf_gold(sdmx(series("USA", ("2026-M07", "-500000"))))
         self.assertEqual(len(rejected), 1)
 
     def test_a_rejection_names_the_country_and_period(self):
         # A count alone cannot be acted on, and these need chasing upstream.
-        _, rejected = parse_imf_gold(sdmx(series("AGO", ("2026-M07", "592900000"))))
+        _, rejected, _ = parse_imf_gold(sdmx(series("AGO", ("2026-M07", "592900000"))))
         self.assertTrue(rejected)
         self.assertIn("AGO", rejected[0])
         self.assertIn("2026-M07", rejected[0])
@@ -132,7 +133,7 @@ class TestAggregatesAreNotCountries(unittest.TestCase):
         # IRFCL puts these in the same COUNTRY dimension as real countries.
         # G163 read as 10,807 tonnes, which would have outranked the USA.
         for code in ("G163", "EZB", "WBG"):
-            obs, _ = parse_imf_gold(sdmx(series(code, ("2026-M08", "347000000"))))
+            obs, _, _ = parse_imf_gold(sdmx(series(code, ("2026-M08", "347000000"))))
             self.assertEqual(obs, [], f"{code} parsed as a country")
 
     def test_real_countries_are_not_caught_by_that_rule(self):
@@ -140,19 +141,87 @@ class TestAggregatesAreNotCountries(unittest.TestCase):
             self.assertNotIn(iso, NOT_COUNTRIES)
 
 
-class TestMultipleSectorsPerCountry(unittest.TestCase):
-    def test_both_sector_series_are_read_rather_than_one_overwriting_the_other(self):
-        # Some countries carry two series differing only in SECTOR (Germany has
-        # S1X and S1XS1311, with identical values). While exploring this feed I
-        # keyed a dict by country and silently kept whichever came last, which
-        # is how Brazil's bad series hid its good one.
-        obs, _ = parse_imf_gold(sdmx(
+class TestOnlyTheReserveAssetSectorIsTaken(unittest.TestCase):
+    """F-0095. One series per country-month, and the right one.
+
+    This class originally asserted that BOTH sector series came out, to guard
+    against losing one - while exploring the feed I keyed a dict by country and
+    kept whichever came last, which reported Brazil at 172,446 tonnes and hid
+    the correct 172.4 in the same response.
+
+    It pinned the wrong contract, and it passed while the pipeline was broken.
+    `ix_metric_country_date` is unique on (metric, country, date), so two
+    observations for one country-month is a constraint violation, not a second
+    data point - and the pre-flush existence check cannot see a sibling in the
+    same uncommitted batch. Production's first run returned
+    `duplicate key value violates unique constraint "ix_metric_country_date"
+    ... (36, 4, 2015-02-01) already exists`.
+    """
+
+    def test_only_the_reserve_asset_sector_survives(self):
+        obs, _, _ = parse_imf_gold(sdmx(
             series("DEU", ("2026-M08", DEU_OZ), sector="S1X"),
-            series("DEU", ("2026-M08", DEU_OZ), sector="S1XS1311"),
+            series("DEU", ("2026-M08", DEU_OZ), sector=RESERVE_ASSET_SECTOR),
         ))
-        self.assertEqual(len(obs), 2)
-        for o in obs:
-            self.assertAlmostEqual(o["tonnes"], 3349.1, places=1)
+        self.assertEqual(len(obs), 1, "two rows for one country-month")
+        self.assertEqual(obs[0]["sector"], RESERVE_ASSET_SECTOR)
+        self.assertAlmostEqual(obs[0]["tonnes"], 3349.1, places=1)
+
+    def test_no_country_month_appears_twice(self):
+        obs, _, _ = parse_imf_gold(sdmx(
+            series("DEU", ("2026-M07", DEU_OZ), ("2026-M08", DEU_OZ), sector="S1X"),
+            series("DEU", ("2026-M07", DEU_OZ), ("2026-M08", DEU_OZ)),
+            series("USA", ("2026-M07", USA_OZ)),
+        ))
+        keys = [(o["iso"], o["date"]) for o in obs]
+        self.assertEqual(len(keys), len(set(keys)), f"duplicate keys: {keys}")
+
+    def test_the_choice_does_not_depend_on_document_order(self):
+        for order in (("S1X", RESERVE_ASSET_SECTOR),
+                      (RESERVE_ASSET_SECTOR, "S1X")):
+            obs, _, _ = parse_imf_gold(sdmx(*[
+                series("DEU", ("2026-M08", DEU_OZ if sec == RESERVE_ASSET_SECTOR else "0"),
+                       sector=sec)
+                for sec in order
+            ]))
+            self.assertEqual(len(obs), 1)
+            self.assertAlmostEqual(obs[0]["tonnes"], 3349.1, places=1)
+
+    def test_central_government_gold_is_not_reserve_assets(self):
+        # S1311 is central government's OWN holding. Usually zero, because a
+        # country's gold sits at its central bank: Belgium reads
+        # S1XS1311=227.4t and S1311=0.0t and both are correct.
+        obs, _, _ = parse_imf_gold(sdmx(
+            series("BEL", ("2026-M08", "7310000")),
+            series("BEL", ("2026-M08", "0"), sector="S1311"),
+        ))
+        self.assertEqual(len(obs), 1)
+        self.assertGreater(obs[0]["tonnes"], 200)
+
+    def test_s1x_is_not_used_as_a_fallback(self):
+        # It reads 0 for the United Kingdom and equals S1XS1311 for Germany, so
+        # whatever it decomposes it is not reliably the same measure. A country
+        # carrying only S1X yields nothing rather than a zero holding - and no
+        # country in the feed is in that state.
+        obs, _, _ = parse_imf_gold(sdmx(
+            series("GBR", ("2026-M08", "0"), sector="S1X"),
+        ))
+        self.assertEqual(obs, [])
+
+    def test_no_warning_fires_on_the_normal_shape(self):
+        # Ranked fallbacks with a disagreement report produced 868 "conflicts"
+        # against the live feed, then 140 after excluding S1311 - every one two
+        # different concepts correctly disagreeing, and every run marked
+        # `partial` forever. That is F-0089's cry-wolf shape in a brand-new
+        # guard, so the guard went and the rule got simpler.
+        _, rejected, duplicates = parse_imf_gold(sdmx(
+            series("DEU", ("2026-M08", DEU_OZ), sector="S1X"),
+            series("DEU", ("2026-M08", DEU_OZ)),
+            series("DEU", ("2026-M08", "0"), sector="S1311"),
+            series("USA", ("2026-M07", USA_OZ)),
+        ))
+        self.assertEqual(rejected, [])
+        self.assertEqual(duplicates, [], "the normal feed shape raised a warning")
 
 
 class TestTheUrl(unittest.TestCase):
