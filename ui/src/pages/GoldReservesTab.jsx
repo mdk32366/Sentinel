@@ -2,6 +2,7 @@ import { useState } from "react";
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from "recharts";
 import { useApiResource } from "../hooks/useApiResource";
 import { ColHeader } from "../components/ColHeader";
+import { MovementCell } from "../components/MovementCell";
 import { DataConfidence } from "../components/DataConfidence";
 import { CountryDetail } from "../components/CountryDetail";
 import { LoadFailure } from "../components/LoadFailure";
@@ -85,6 +86,8 @@ export function GoldReservesTab({ onCountrySelect, latestAll = {} }) {
                 <ColHeader label="As Of" tip="Month of the most recent reading for this country. D-0076 moved the source from a quarterly World Gold Council download to the IMF's MONTHLY IRFCL return, so this is now a month rather than a quarter. Countries file at different times, so dates vary; the World Gold Council series is retained as backfill for the ~28 countries that do not file the monthly template." align="right" />
                 <ColHeader label="Tonnes" tip="Gold holdings in metric tonnes. 1 metric tonne = 32,150 troy ounces. The US holds ~8,133t — the largest national gold reserve in the world. Russia and China have been the most consistent accumulators since 2014." align="right" />
                 <ColHeader label="% of Total" tip="This country's share of all reported central bank gold holdings worldwide. A rising share indicates active accumulation relative to peers." align="right" />
+                <ColHeader label="Movement" tip="Change in tonnage since the previous reading, and what kind of movement it is. Gold is held in TONNES — a pure quantity — so unlike Treasuries there is no price component to separate out: a change here is always a decision. The kind is therefore direction and persistence, which is what dimension 2 scores at 4 points per consecutive declining quarter (D-0087)." align="right" />
+                <ColHeader label="3mo" tip="Change in tonnage over three readings, with the percentage. Dimension 2 scores the quarter-on-quarter decline plus how many quarters it has persisted; the series is resampled to one reading per calendar quarter because D-0076 made the source monthly (F-0094)." align="right" />
                 <ColHeader label="Share" tip="Visual bar representing proportional gold holdings. Top 3 holders shown in gold, top 10 in amber, remainder in slate." align="right" />
               </tr>
             </thead>
@@ -105,6 +108,26 @@ export function GoldReservesTab({ onCountrySelect, latestAll = {} }) {
                     <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 11, color: "#3A4D5C", textAlign: "right" }}>{c.as_of_date ?? "—"}</td>
                     <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 13, color: "#C8A96E", textAlign: "right" }}>{c.metric_tonnes.toLocaleString(undefined, { maximumFractionDigits: 1 })}</td>
                     <td style={{ padding: "8px 16px", fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", textAlign: "right" }}>{c.percent_of_total.toFixed(1)}%</td>
+                    {/* D-0087. Tonnes are a pure quantity, so the movement IS
+                        the decision — there is no price component to strip out
+                        as there is for Treasuries. */}
+                    <td style={{ padding: "8px 16px", textAlign: "right" }}>
+                      <MovementCell
+                        change={c.change_1m_tonnes}
+                        unit="t"
+                        movement={c.movement}
+                        note={c.movement_note}
+                      />
+                    </td>
+                    <td style={{ padding: "8px 16px", textAlign: "right" }}>
+                      <MovementCell
+                        change={c.change_3m_tonnes}
+                        unit="t"
+                        pct={c.change_3m_pct}
+                        movement={c.movement}
+                        note={c.consecutive_declines ? `${c.consecutive_declines} consecutive declining readings.` : undefined}
+                      />
+                    </td>
                     <td style={{ padding: "8px 16px" }}>
                       <div style={{ background: "#0F1923", borderRadius: 2, height: 5, overflow: "hidden" }}>
                         <div style={{ width: `${Math.min(100, c.percent_of_total * 4)}%`, background: i < 3 ? "#C8A96E" : i < 10 ? "#E8C547" : "#2A3D50", height: "100%", borderRadius: 2 }} />

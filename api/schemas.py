@@ -111,6 +111,16 @@ class HoldingItem(BaseModel):
     # labelled as such rather than compared with a total (F-0097's lesson: one
     # measure quietly presented as another).
     long_term_only: bool = False
+    # D-0087. The movement and what kind it was. A change in holdings is not
+    # self-explanatory: Japan's July was -$12.7bn of position and +$0.9bn of
+    # transactions, so it bought while its position fell.
+    change_1m_bn: Optional[float] = None
+    change_1m_pct: Optional[float] = None
+    net_1m_bn: Optional[float] = None
+    valuation_1m_bn: Optional[float] = None
+    net_3m_bn: Optional[float] = None
+    movement: Optional[str] = None
+    movement_note: Optional[str] = None
 
 
 class HoldingsResponse(BaseModel):
@@ -133,6 +143,16 @@ class GoldReserveItem(BaseModel):
     as_of_date: str
     metric_tonnes: float
     percent_of_total: float
+    # D-0087. Gold is held in TONNES, a pure quantity, so unlike Treasuries
+    # there is no price component to separate out - a change here is always a
+    # decision. The "kind" of movement is therefore direction and persistence,
+    # which is what dimension 2 actually scores.
+    change_1m_tonnes: Optional[float] = None
+    change_3m_tonnes: Optional[float] = None
+    change_3m_pct: Optional[float] = None
+    consecutive_declines: Optional[int] = None
+    movement: Optional[str] = None
+    movement_note: Optional[str] = None
 
 
 class GoldReservesResponse(BaseModel):

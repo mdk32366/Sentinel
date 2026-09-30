@@ -6,6 +6,7 @@ import { DataAsOf } from "../components/DataAsOf";
 import { DataConfidence } from "../components/DataConfidence";
 import { LoadFailure } from "../components/LoadFailure";
 import { freshness } from "../lib/freshness";
+import { MovementCell } from "../components/MovementCell";
 import { trillions } from "../lib/format";
 
 export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
@@ -143,6 +144,8 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
                 <ColHeader label="Country" tip="Foreign sovereign entity holding US Treasuries, per the monthly TIC (Treasury International Capital) report published by the US Treasury." align="left" />
                 {col("Holdings ($B)", "holdings", "Total US Treasury securities held, in billions of USD. Includes T-bills, notes, and bonds. Source: latest TIC monthly snapshot.")}
                 {col("% of Total", "pct", "This country's share of all foreign-held US Treasuries. High concentration in a single holder (e.g. >15%) represents systemic risk — a large sell-off by one country can move the market.")}
+                <ColHeader label="Movement" tip="Change in the country's reported position since the previous month, and WHAT KIND of movement it was. 'sold' and 'bought' are net transactions; 'repriced' means the position moved mainly on bond prices rather than on any decision — Japan's July position fell $12.7bn while it BOUGHT $0.9bn, and dimension 1 does not score that as selling (A-0021, D-0087). The label comes from the same rule the scorer applies, so the word here and the score agree." align="right" />
+                <ColHeader label="Tx 3mo" tip="Net transactions over three months, in billions, with price stripped out — what the country actually bought or sold. Japan's was −$88.6bn over the quarter to July 2026, almost all of it Treasury bills, which a monthly percentage cannot show (F-0099)." align="right" />
                 <ColHeader label="Share" tip="Visual bar showing this country's proportional share of total foreign holdings. Top 3 holders highlighted in gold." align="right" />
               </tr>
             </thead>
@@ -169,6 +172,22 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
                     </td>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#8A9BAC", textAlign: "right" }}>${c.holdings_billions_usd.toFixed(1)}B</td>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#C8A96E", textAlign: "right" }}>{c.percent_of_total.toFixed(1)}%</td>
+                    {/* D-0087. The movement and what kind it was. Japan's
+                        position fell $12.7bn last month while it BOUGHT
+                        $0.9bn; a change column alone says the opposite of
+                        what happened. */}
+                    <td style={{ padding: "10px 16px", textAlign: "right" }}>
+                      <MovementCell
+                        change={c.change_1m_bn}
+                        pct={c.change_1m_pct}
+                        movement={c.movement}
+                        note={c.movement_note}
+                      />
+                    </td>
+                    <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 12, textAlign: "right", color: (c.net_3m_bn ?? 0) < 0 ? "#E07B5A" : (c.net_3m_bn ?? 0) > 0 ? "#5DB87A" : "#5A6878" }}
+                        title="Net transactions over three months — what the country actually bought or sold, with price stripped out.">
+                      {c.net_3m_bn == null ? "—" : `${c.net_3m_bn > 0 ? "+" : c.net_3m_bn < 0 ? "−" : ""}$${Math.abs(c.net_3m_bn).toFixed(1)}B`}
+                    </td>
                     <td style={{ padding: "10px 16px" }}>
                       <div style={{ background: "#0F1923", borderRadius: 2, height: 5, overflow: "hidden" }}>
                         <div style={{ width: `${Math.min(100, c.percent_of_total * 3)}%`, background: i < 3 ? "#C8A96E" : "#2A3D50", height: "100%", borderRadius: 2 }} />

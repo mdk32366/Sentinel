@@ -92,7 +92,13 @@ class TestHoldingsResponse(unittest.TestCase):
         self.body = inspect.getsource(route.endpoint)
 
     def test_the_response_declares_what_the_endpoint_returns(self):
-        returned = dict_keys_in(self.body, "return {")
+        # Anchored at four-space indent: the endpoint's OWN return, not a
+        # nested helper's. D-0087 added a `movement_for()` inside this endpoint
+        # whose return dict is a ROW, and matching every `return {` attributed
+        # its keys to the response model and failed on fields HoldingItem
+        # declares correctly. A guard that cannot tell a nested return from the
+        # outer one reports the wrong model.
+        returned = dict_keys_in(self.body, "\n    return {")
         declared = set(schemas.HoldingsResponse.model_fields)
         missing = sorted(returned - declared)
         self.assertEqual(missing, [], f"stripped from /api/holdings: {missing}")
