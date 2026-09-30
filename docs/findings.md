@@ -2889,3 +2889,78 @@ disagreeing with its columns, `F-0087` a footer disagreeing with the strip
 above it, and this is a score disagreeing with its own inputs. Each was two
 correct components with no obligation to agree. Freshness is only meaningful
 if everything derived from the data moves when the data moves.
+
+### F-0091 - Broad money growth had no fetch, no schedule, and an unreachable tolerance
+
+`money_supply` sat 637 days stale feeding composite dimension 3 - 35 of 165
+points. `A-0015` recorded it as "MANUAL JSON, nobody has updated the file".
+That was wrong in an instructive way: **the file was current**. It carried the
+World Bank's `lastupdated: 2026-07-13`, identical to the live API, and had been
+refreshed three days earlier.
+
+Three separate defects, and the loudest one hid the other two.
+
+**1. Nothing fetched.** The pipeline read `data/money_supply.json` and raised
+`FileNotFoundError` with a `curl` command in the message. The data arrived when
+a person remembered.
+
+**2. Nothing scheduled it.** There was no `add_job` entry for this pipeline at
+all. Nine pipelines had one; this one did not. So even with a fetcher it would
+never have run.
+
+Nothing in the system could see this. `tests/test_scheduler_jobs.py` pins the
+set of registered jobs, but it pins **what exists** - a job that was never
+there is not a job that went missing. And the watchdog's "declared but not yet
+run" report does not catch it either, because `Broad_Money_Growth` *had* run,
+once, by hand. **"Ran at some point" and "is scheduled" are different facts,
+and only the second one keeps data fresh.**
+
+**3. The tolerance was unreachable** - the second instance of `F-0089`'s
+arithmetic error, in the place `A-0015` predicted it would be.
+
+This is an annual series and each row is dated to **1 January of its data
+year**. The World Bank publishes year Y around the middle of Y+1: the
+2026-07-13 release carried 2025, so a row dated `2025-01-01` was **558 days
+old the day it became available**, and stays newest until roughly 923 days.
+The tolerance was 420.
+
+So the watchdog reported `money_supply` stale every single night for reasons
+that had nothing to do with anyone failing to do anything - **and the real
+failure looked exactly the same**. A permanent amber light is indistinguishable
+from a real one. That is how defect 2 survived: it was already accounted for.
+
+**Sample size.** One pipeline, three defects, 35 composite points, and one of
+the three invisible to two existing guards.
+
+**Fixed.**
+
+- `fetch_money_supply()` calls the World Bank API. The committed JSON remains
+  as an offline fallback and as the seed for a fresh database, but a run served
+  from it reports `origin: "cache"` and status `partial` - a fallback that
+  reported plain `success` would be `F-0088` with a different source.
+- A `money_supply` cron job, monthly on the 14th at 05:30 UTC, after the 05:00
+  watchdog so a failure surfaces the next night rather than the next month.
+- `POST /api/fetch/money-supply`, since there was no route either.
+- Tolerance 420 -> **960**, derived from the release calendar.
+- `SourceRegressionError`: the run fails if the API offers a year that did not
+  reach the database. For a series dated to 1 January a data-age check cannot
+  be sharp, so this is the guard that actually bites - it asks a question
+  answerable in days rather than years.
+- A plausibility range. Argentina 2024 was 123% and that must be admitted;
+  an index *level* arriving where a percentage belongs must not (`F-0075`).
+- `scheduler.SCHEDULED_PIPELINES` declares which `UpdateLog` pipeline names
+  this module keeps fresh, and a test asserts it matches the watchdog's source
+  list in **both** directions. A job id is a scheduler handle
+  (`"money_supply"`) and a pipeline name is what lands in `UpdateLog`
+  (`"Broad_Money_Growth"`); no rule maps one to the other, which is exactly why
+  a grep could not have found this and a declaration can.
+
+Live: 1,380 records from the API, newest year 2025, 20 countries reporting -
+Argentina 44.9%, Turkey 37.9%, Egypt 20.6%, both of the first two in the >30%
+band worth 20 points.
+
+**The lesson.** A guard set to a threshold the source can never satisfy does
+not merely fail to help - it actively conceals the failure it was built to
+find, by making the alarm state the normal state. Two of today's sources had
+one; `A-0015` now says to assume the third does too, and to re-derive every
+tolerance from the source's real calendar rather than from a sentence about it.

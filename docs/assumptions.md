@@ -476,37 +476,64 @@ rather than 185 and 165.
 
 ### A-0015 - The composite's remaining stale inputs
 
-**TIC is fixed** - see `F-0088`. It was the largest item at 50 points and
-303 days; it is now 91 days and inside a corrected tolerance. What is left:
+**TIC is fixed** (`F-0088`): 303d -> 91d, 50 points.
+**Broad money is fixed** (`F-0091`): now fetched and scheduled, 35 points -
+though see below, because its *number* barely moved and that is the point.
 
-| Source | Age | Tolerance | Dimension | Points | Why it is stale |
+| Source | Age | Tolerance | Dimension | Points | State |
 |---|---|---|---|---|---|
-| `money_supply` | 637d | 420 | 3 - Monetary | 35 | MANUAL JSON. No fetcher; nobody has updated the file since. |
-| `gold_reserves` | 272d | 200 | 2 - Gold | 40 | MANUAL CSV, World Gold Council quarterly. Same shape of problem. |
-| `reserves_ex_gold` laggard | 333d | - | 6 | - | `TRESEG_CODES.RUS` alone; FRED has not updated that series. |
+| `gold_reserves` | 272d | 200 | 2 - Gold | 40 | **MANUAL CSV, no fetcher.** Open. |
+| `money_supply` | 637d | 960 | 3 - Monetary | 35 | Fetched and scheduled. Still 637 days old, and that is correct. |
+| `reserves_ex_gold` laggard | 333d | - | 6 | - | `TRESEG_CODES.RUS`; FRED appears to have stopped the series. |
 
-**Risk.** 75 of 165 points, down from 125. Both remaining sources are MANUAL
-files with no fetcher, so they are stale **by construction rather than by
-outage** - they stop dead the day a person stops, and no amount of uptime
-fixes them.
+**Why `money_supply` is still 637 days old after being fixed.** Because 637
+days *is* current for it. The newest broad-money figure the World Bank has
+published for any country is 2025, rows are dated to 1 January of the data
+year, and the release lands ~18 months later. There is no fresher number to
+get. What was broken was the plumbing and the threshold, not the vintage - and
+the tolerance now says so honestly instead of showing amber forever.
 
-**The pattern worth naming.** All three original items looked like different
-problems and were one problem: nobody was reading the freshness verdict. The
-watchdog had been right about every one of them the whole time.
+**What is genuinely left: `gold_reserves`.** 40 points, MANUAL CSV, World Gold
+Council quarterly. The same three questions apply and should be answered in
+this order, because `F-0091` showed the third one masks the first two:
 
-**A second pattern, from `F-0089`.** Two of the thresholds guarding these
-sources were themselves wrong, and were unfalsifiable while the sources were
-badly stale, because every threshold agrees about a year-old file. Assume the
-same of `money_supply` at 420 and `gold_reserves` at 200: **both numbers are
-currently untested by anything but a frozen source**, and should be re-derived
-from each source's real release calendar as part of fixing it - not after.
+1. Is its 200-day tolerance reachable? WGC publishes quarterly with a lag, so
+   a row dated to quarter-start could be ~200 days old on arrival. **Assume
+   this tolerance is wrong until derived from the real calendar.**
+2. Is it scheduled? `Gold_Reserves` and `Gold_Reserve_Changes` are in
+   `scheduler.SCHEDULED_PIPELINES`, so yes - unlike broad money.
+3. Does it fetch, or does it read a committed file? Read the pipeline before
+   assuming, exactly as `A-0015` wrongly assumed broad money's file was stale.
 
-**Options, in order of value.**
+**The pattern, now three for three.** Every stale source today turned out to
+be several defects wearing one symptom, and in two cases an unreachable
+threshold was what let the real defect hide. A tolerance the source can never
+satisfy makes the alarm state the normal state.
 
-1. `money_supply` - the OECD and FRED broad-money series are fetchable.
-   Highest value: 35 points and a manual step removed permanently.
-2. `gold_reserves` - WGC publishes quarterly and the reserves table is
-   fetchable. 40 points, same shape of fix.
-3. `TRESEG_CODES.RUS` - likely unfixable; FRED appears to have stopped the
-   series. If so the honest move is to mark it discontinued rather than carry
-   it as a laggard forever.
+**`TRESEG_CODES.RUS`** - likely unfixable; if FRED has stopped the series the
+honest move is to mark it discontinued rather than carry it as a laggard
+forever.
+
+### A-0016 - Annual and monthly series are dated to the start of their period
+
+`money_supply` rows are dated 1 January of the data year; TIC rows to the
+first of the data month. Both describe a period that *ends* later - TIC's own
+file says "Holdings at end of time period" - so both ages overstate staleness
+by a period, and both tolerances are inflated to compensate:
+
+| Series | Dated | Healthy age range | Range if dated to period end |
+|---|---|---|---|
+| TIC holdings | 1st of month | 77-106d | 47-76d |
+| Broad money | 1 Jan of year | 558-923d | 194-559d |
+
+Dating to period end would be more accurate and would make both guards
+meaningfully sharper - the broad money one especially, where 960 days is wide
+enough to be nearly decorative.
+
+**Not done** because every existing row uses the start-of-period convention,
+so it is a migration of two whole series rather than a pipeline edit, and a
+half-applied one would duplicate history under two conventions. Deleting the
+superseded rows is a destructive operation and needs explicit authorisation.
+
+Recorded so the inflated tolerances in `F-0089` and `F-0091` are understood as
+a consequence of this convention rather than as generosity.

@@ -29,6 +29,13 @@ EXPECTED_CRON_JOBS = {
     "freshness_check",
     "gold_price",
     "composite_snapshot",
+    # F-0091. Added when the job was: broad money growth had no entry here
+    # because it had no entry in the scheduler, and this set pins what exists
+    # rather than what ought to. It catches a job that DISAPPEARS, not one that
+    # was never there - which is why the pipeline-name coverage check lives in
+    # tests/test_money_supply_fetcher.py against the watchdog's own list of
+    # sources, the only place that says what is supposed to stay fresh.
+    "money_supply",
 }
 EXPECTED_ONE_SHOTS = {"startup_fetches", "startup_cds_fetch"}
 
@@ -76,6 +83,15 @@ class TestJobRegistration(SchedulerHarness):
     def test_freshness_runs_daily_at_05_utc(self):
         trigger = str(self._register()["freshness_check"].trigger)
         self.assertIn("hour='5'", trigger)
+
+    def test_money_supply_runs_monthly_after_the_watchdog(self):
+        """F-0091. Monthly on the 14th, at 05:30 - after the 05:00 watchdog, so
+        a failed fetch shows up in the next night's report rather than a month
+        later."""
+        trigger = str(self._register()["money_supply"].trigger)
+        self.assertIn("day='14'", trigger)
+        self.assertIn("hour='5'", trigger)
+        self.assertIn("minute='30'", trigger)
 
     def test_no_unexpected_job_appeared(self):
         jobs = self._register()

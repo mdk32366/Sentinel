@@ -175,9 +175,35 @@ CHECKS = [
         "key": "money_supply",
         "label": "Broad money growth",
         "patterns": ["BROAD_MONEY_GROWTH"],
-        "max_age_days": 420,     # annual World Bank series
+        # F-0091, and the second instance of F-0089's arithmetic error that
+        # A-0015 predicted would be here.
+        #
+        # This is an ANNUAL series and each row is dated to 1 JANUARY of its
+        # data year. The World Bank publishes year Y around the middle of Y+1:
+        # the 2026-07-13 release carried 2025, so a row dated 2025-01-01 was
+        # 558 days old the day it became available, and stays newest until the
+        # next annual release at roughly 923 days.
+        #
+        # 420 was therefore unreachable, exactly as TIC's 55 was. It reported
+        # `money_supply` stale every night for reasons that had nothing to do
+        # with anybody failing to update anything - and the real failure, that
+        # NOTHING FETCHED OR SCHEDULED IT AT ALL, looked identical to the false
+        # alarm. A guard that cries wolf is how a real wolf goes unnoticed.
+        #
+        # 960 covers a full annual cycle plus drift. That is a weak guard and
+        # saying so is the point: for a series dated to 1 January, a data-age
+        # check cannot be sharp. The check that actually bites is
+        # `SourceRegressionError` in the fetcher, which asks whether the newest
+        # year the API offers made it into the database - answerable in days
+        # rather than years. See A-0016 for the year-end dating that would make
+        # this number meaningful.
+        "max_age_days": 960,
         "pipelines": ["Broad_Money_Growth"],
-        "note": "MANUAL JSON. Feeds composite dimension 3.",
+        "note": (
+            "World Bank FM.LBL.BMNY.ZG, annual, dated to 1 January of the "
+            "data year and published ~18 months later, so 558-923 days old is "
+            "healthy. Feeds composite dimension 3."
+        ),
     },
 ]
 

@@ -409,6 +409,23 @@ def trigger_treasury_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/fetch/money-supply")
+def trigger_money_supply_fetch(db: Session = Depends(get_db)):
+    """Fetch broad money growth from the World Bank (F-0091).
+
+    There was no route and no scheduled job for this, so the only way to move
+    composite dimension 3 was to run a `curl` by hand into `data/` and call the
+    pipeline from a shell.
+    """
+    from pipelines.money_supply_fetcher import run_money_supply_fetch
+
+    try:
+        return run_money_supply_fetch(db)
+    except Exception as e:
+        logger.error(f"Money supply fetch failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/snapshot/composite")
 def trigger_composite_snapshot(db: Session = Depends(get_db)):
     """Recompute the composite and store it, as the nightly job does.
