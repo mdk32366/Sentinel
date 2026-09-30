@@ -278,26 +278,82 @@ def get_all_holdings(
         query = query.filter(TimeSeries.date == date)
     
     results = query.order_by(TimeSeries.value.desc()).all()
-    
+
     if not results:
         raise HTTPException(status_code=404, detail="No holdings data found")
-    
-    total = sum(float(r[3]) for r in results)
-    
-    return {
-        "date": results[0][2].isoformat() if results else None,
-        "total_billions_usd": round(float(total), 2),
-        "holdings": [
-            {
-                "country_code": r[0],
-                "country_name": r[1],
-                "holdings_billions_usd": round(float(r[3]), 2),
-                "percent_of_total": round((float(r[3]) / total) * 100, 1),
-            }
-            for r in results
-        ]
-    }
 
+    as_of = results[0][2]
+    listed_total = sum(float(r[3]) for r in results)
+
+    # D-0085. The published total for ALL foreign holdings, not the sum of the
+    # rows below. Table 5 names twenty countries and folds the rest into "All
+    # Other"; Table 3 carries 76, which is 94% of the published total but not
+    # 100%. Summing the rows and calling it "Total Foreign Holdings" understated
+    # the real figure by $537.8bn.
+    grand_total = None
+    gt_metric = db.query(Metric).filter_by(code="TIC_GRAND_TOTAL").first()
+    if gt_metric is not None:
+        gt_row = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == gt_metric.id,
+            TimeSeries.country_id.is_(None),
+            TimeSeries.date == as_of,
+        ).first()
+        grand_total = float(gt_row.value) if gt_row else None
+
+    # Percentages against the published total where we have it. "Japan holds
+    # 11.9% of all foreign-held Treasuries" is a fact about the world; 12.7% of
+    # the rows we happen to list is a fact about our query.
+    denominator = grand_total or listed_total
+
+    # D-0085. Sixteen reporters suppress their total and publish only a
+    # long-term figure. Omitting them leaves Poland, Egypt, Hungary, Romania,
+    # Serbia, Ukraine, Lebanon and Greece off the list entirely, which reads as
+    # "not a holder" - the F-0097 error in a new place. Included and labelled,
+    # never silently mixed with a total.
+    lt_only = []
+    lt_metric = db.query(Metric).filter_by(code="TIC_UST_LT_HOLDINGS").first()
+    if lt_metric is not None and not country_iso:
+        have = {r[0] for r in results}
+        lt_rows = db.query(Country.iso_code, Country.name, TimeSeries.value).join(
+            TimeSeries, TimeSeries.country_id == Country.id
+        ).filter(
+            TimeSeries.metric_id == lt_metric.id,
+            TimeSeries.date == as_of,
+        ).all()
+        lt_only = [r for r in lt_rows if r[0] not in have]
+
+    holdings = [
+        {
+            "country_code": r[0],
+            "country_name": r[1],
+            "holdings_billions_usd": round(float(r[3]), 2),
+            "percent_of_total": round((float(r[3]) / denominator) * 100, 1),
+            "long_term_only": False,
+        }
+        for r in results
+    ] + [
+        {
+            "country_code": r[0],
+            "country_name": r[1],
+            "holdings_billions_usd": round(float(r[2]), 2),
+            "percent_of_total": round((float(r[2]) / denominator) * 100, 1),
+            "long_term_only": True,
+        }
+        for r in lt_only
+    ]
+    holdings.sort(key=lambda h: -h["holdings_billions_usd"])
+
+    return {
+        "date": as_of.isoformat(),
+        "total_billions_usd": round(listed_total, 2),
+        "grand_total_billions_usd": round(grand_total, 2) if grand_total else None,
+        "coverage_pct": (
+            round(listed_total / grand_total * 100, 1) if grand_total else None
+        ),
+        "country_count": len(results),
+        "long_term_only_count": len(lt_only),
+        "holdings": holdings,
+    }
 
 
 @router.get("/holdings/cross-asset-stress", response_model=CrossAssetStressResponse)

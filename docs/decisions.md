@@ -2251,3 +2251,50 @@ exists to catch.
 dollars actually transacted beside the percentage the score reads. It is gold
 when the two contradict each other, which is the case a reader most needs to
 see and the one the ranking cannot show on its own.
+
+### D-0085 - HOLDINGS changed under its own feet, and had to be told
+
+**Asked directly whether the HOLDINGS surface needed to change after the
+morning's work.** It did, and nobody had touched it: `D-0081` imported SLT
+Table 3 into the same `TIC_UST_HOLDINGS` metric the tab reads, so the surface
+went from **20 countries to 60** with every percentage recomputed, silently.
+
+Three defects followed, and all three are one mistake in different places: **a
+number presented as something it is not.**
+
+**1. "Total Foreign Holdings" was the sum of the rows.** $8,710.3bn, against a
+published Grand Total of **$9,248.1bn** - understated by $537.8bn. Before today
+the list was twenty countries and the same tile read $7,405.5bn, so the label
+has been wrong for as long as it has existed; widening the list only changed the
+size of the error. `D-0079` captured the published total, so the honest figure
+was already in the database.
+
+**2. Percentages divided by that sum.** Japan read **12.7%**, which is its share
+of the rows we happen to list. Its share of all foreign-held Treasuries is
+**11.9%**. The first is a fact about our query; the second is a fact about the
+world, and only one of them is what a reader takes from a column headed "% of
+total".
+
+**3. Sixteen reporters were absent entirely.** Poland, Egypt, Hungary, Romania,
+Serbia, Ukraine, Lebanon, Greece and eight others publish `n.a.` for their total
+and a real long-term figure (`D-0081`). We hold those figures. The tab showed
+nothing, and a 60-country list with Poland missing reads as *Poland is not a
+holder* - which is `F-0097` in a new place, absence read as zero.
+
+**Fixed.** The tile shows the published total with the coverage beneath it
+("94.2% shown below"). Percentages divide by the published total where it
+exists and fall back to the listed sum where it does not, because
+`TIC_GRAND_TOTAL` comes from a different pipeline and may be absent on a fresh
+database. The long-term-only countries are listed and **labelled `LT only`**,
+never silently mixed: they are excluded from the concentration figure, because
+a long-term holding summed with totals is a percentage of two different things.
+`country_count` was returning `null` and now returns a number.
+
+**The general lesson, and it is the day's sharpest.** A surface can break
+without being edited. The tab's code was correct on Monday and wrong by
+lunchtime because the data underneath it changed shape - three times, from
+`F-0088`, `D-0081` and `D-0082`. Nothing in the gate could catch that: the
+frontend tests stub `fetch` and the backend tests never rendered the tile.
+`tests/test_holdings_surface.py` now asserts the properties that were violated
+rather than the rendering, which is the only kind of check that survives the
+data changing again.

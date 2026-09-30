@@ -6,6 +6,7 @@ import { DataAsOf } from "../components/DataAsOf";
 import { DataConfidence } from "../components/DataConfidence";
 import { LoadFailure } from "../components/LoadFailure";
 import { freshness } from "../lib/freshness";
+import { trillions } from "../lib/format";
 
 export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
   const { data: holdings, error, loading } = useApiResource(`/holdings`);
@@ -25,10 +26,21 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
     return 0;
   });
 
-  const total = holdings.total_billions_usd;
+  // D-0085. `total_billions_usd` is the sum of the countries listed. The
+  // published figure for ALL foreign holdings is the Grand Total row of SLT
+  // Table 5 (D-0079), which is larger: Table 3 carries 76 countries, about 94%
+  // of it. Labelling the sum "Total Foreign Holdings" understated the real
+  // figure by $537.8bn once Table 3 widened the list from 20 countries to 60.
+  const listedTotal = holdings.total_billions_usd;
+  const grandTotal = holdings.grand_total_billions_usd ?? listedTotal;
+  const coverage = holdings.coverage_pct;
+  const ltOnlyCount = holdings.long_term_only_count ?? 0;
   const asOf = holdings.date ? new Date(holdings.date).toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—";
   const ticAge = freshness(holdings.date);
-  const top3pct = rows.slice(0, 3).reduce((s, r) => s + r.percent_of_total, 0);
+  // Concentration among countries with a comparable figure. A long-term-only
+  // country is a different measure and cannot be summed with totals.
+  const comparable = rows.filter((r) => !r.long_term_only);
+  const top3pct = comparable.slice(0, 3).reduce((s, r) => s + r.percent_of_total, 0);
 
   const col = (label, key, tip) => (
     <ColHeader label={label} tip={tip} sortKey={key} activeSort={sort} onSort={setSort} align="right" />
@@ -41,9 +53,19 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
 
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
-          { label: "Total Foreign Holdings", val: `$${(total / 1000).toFixed(2)}T` },
-          { label: "Countries Reporting", val: rows.length },
-          { label: "Top Holder", val: rows[0]?.country_code ?? "—" },
+          {
+            label: "Total Foreign Holdings",
+            val: `$${trillions(grandTotal)}T`,
+            // The published total, with how much of it the list below accounts
+            // for. D-0085: the tile used to show the sum of the rows.
+            sub: coverage != null ? `${coverage.toFixed(1)}% shown below` : null,
+          },
+          {
+            label: "Countries Listed",
+            val: comparable.length,
+            sub: ltOnlyCount > 0 ? `+${ltOnlyCount} long-term only` : null,
+          },
+          { label: "Top Holder", val: comparable[0]?.country_code ?? "—" },
           { label: "Top 3 Concentration", val: `${top3pct.toFixed(1)}%`, alert: top3pct > 40 },
           {
             label: "Data As Of",
@@ -136,6 +158,13 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0" }}>
                       <span style={{ color: "#3A4D5C", fontSize: 10, marginRight: 8 }}>{i + 1}</span>
                       {c.country_name}
+                      {c.long_term_only && (
+                        <span
+                          title="Long-term holdings only. This reporter publishes 'n.a.' for its total position, so bills are not included and this figure is NOT comparable with the totals above it (D-0085)."
+                          style={{ marginLeft: 6, fontSize: 9, color: "#5A6878", cursor: "help" }}>
+                          LT only
+                        </span>
+                      )}
                       <span style={{ marginLeft: 8, fontSize: 10, color: "#3A4D5C" }}>{c.country_code}</span>
                     </td>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#8A9BAC", textAlign: "right" }}>${c.holdings_billions_usd.toFixed(1)}B</td>
