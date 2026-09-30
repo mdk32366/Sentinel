@@ -38,7 +38,7 @@ export function CountryStatCards({ latestTic, ticMom, latestGold, ticHistory, co
       val: latestTic ? `$${latestTic.holdings.toFixed(1)}B` : exited ? "EXITED" : "—",
       color: latestTic ? "#C8A96E" : exited ? "#FF4444" : "#3A4D5C",
       sub: exited ? "Zero US Treasuries held" : null,
-      tip: "Total US Treasury securities this sovereign holds, in billions, from the latest TIC monthly snapshot. EXITED means a reported position of exactly zero — a completed liquidation, not missing data. This feeds dimension 1, the largest in the composite score at up to 50 points.",
+      tip: "Total US Treasury securities this sovereign holds, in billions, from the latest TIC monthly snapshot. EXITED means a reported position of zero — a completed liquidation, not missing data. A country absent from SLT Table 5's twenty named holders is shown as not reported, not as zero: it sits inside the table's 'All Other' row and its position is unknown (F-0097). This feeds dimension 1, the largest in the composite score at up to 50 points.",
     },
     {
       label: "MoM Change",

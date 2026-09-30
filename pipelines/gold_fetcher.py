@@ -30,6 +30,10 @@ from database.models import Metric, TimeSeries, Country, UpdateLog
 from pipelines.composite_stress import get_treseg_signal
 from pipelines.paths import DATA_DIR
 
+from pipelines.tic_state import (
+    EXITED, classify_tic_state, last_reported_holding,
+)
+
 logger = logging.getLogger(__name__)
 
 CSV_PATH = DATA_DIR / "gold_reserves.csv"
@@ -291,8 +295,19 @@ def compute_cross_asset_stress(db: Session) -> list:
 
         # ── EXITED TIER: zero TIC holdings + significant gold ─────────────────
         # Completed liquidation is the most severe de-dollarization signal.
-        # Requires: no TIC history AND gold reserves > 50t
-        no_tic = len(tic_hist) == 0
+        # Requires: a last reported holding of ~ZERO, and gold reserves > 50t.
+        #
+        # F-0097. This was `len(tic_hist) == 0` against a 185-day window, which
+        # made "absent from SLT Table 5's 20 named holders" mean "holds zero".
+        # Table 5 folds every other holder into one "All Other" row, so 32 of 49
+        # countries were scored here for a completed liquidation and not one had
+        # ever reported zero - Germany $103.1bn, Mexico $85.4bn, Italy $62.1bn.
+        # Shared with composite_stress.py rather than fixed twice.
+        _last_bn, _last_date = last_reported_holding(
+            db, tic_metric.id, country.id
+        )
+        _tic_state = classify_tic_state(bool(tic_hist), _last_bn)
+        no_tic = _tic_state == EXITED
         if no_tic:
             if gold_tonnes < 50:
                 continue  # Skip — small gold holder, not analytically significant
@@ -330,6 +345,8 @@ def compute_cross_asset_stress(db: Session) -> list:
                 "tic_mom_pct": None,
                 "tic_consecutive_months": 0,
                 "no_tic_holdings": True,
+                "tic_state": _tic_state,
+                "tic_last_reported_bn": round(_last_bn, 1) if _last_bn is not None else None,
                 "gold_tonnes": round(gold_tonnes, 1),
                 "gold_mom_pct": round(gold_mom, 2) if gold_mom is not None else None,
                 "gold_consecutive_months": gold_consec,
@@ -404,6 +421,8 @@ def compute_cross_asset_stress(db: Session) -> list:
             "tic_mom_pct": round(tic_mom, 2),
             "tic_consecutive_months": tic_consec,
             "no_tic_holdings": False,
+            "tic_state": _tic_state,
+            "tic_last_reported_bn": round(_last_bn, 1) if _last_bn is not None else None,
             "gold_tonnes": round(gold_tonnes, 1),
             "gold_mom_pct": round(gold_mom, 2) if gold_mom is not None else None,
             "gold_consecutive_months": gold_consec,

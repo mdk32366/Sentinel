@@ -92,8 +92,8 @@ export function CrossAssetTab() {
                 <thead>
                   <tr>
                     <ColHeader label="Country" tip="Sovereign entity being analyzed for cross-asset stress. Countries appear here only when they show simultaneous selling pressure across multiple asset classes." align="left" />
-                    <ColHeader label="Signal" tip="Stress classification: DIVERGENCE (2×) = selling gold while spot price rises — forced seller; CROSS-ASSET (1.5×) = selling both T-bills and gold; EXITED = zero US Treasuries held; T-ONLY = reducing Treasury holdings only; Au ONLY = reducing gold reserves only." align="left" />
-                    <ColHeader label="T-Bills MoM" tip="Month-over-month % change in US Treasury holdings. Negative = selling. 'EXITED' means zero holdings — position fully liquidated before TIC reporting window." align="right" />
+                    <ColHeader label="Signal" tip="Stress classification: DIVERGENCE (2×) = selling gold while spot price rises — forced seller; CROSS-ASSET (1.5×) = selling both T-bills and gold; EXITED = last reported holding was zero (a completed liquidation, not merely absent from the table); T-ONLY = reducing Treasury holdings only; Au ONLY = reducing gold reserves only." align="left" />
+                    <ColHeader label="T-Bills MoM" tip="Month-over-month % change in US Treasury holdings. Negative = selling. EXITED means the country's last reported holding was zero — a completed liquidation. 'n/r' means not reported in the current release: SLT Table 5 names only twenty major holders and folds the rest into a single 'All Other' row, so the position is unknown rather than zero (F-0097)." align="right" />
                     <ColHeader label="Consec ↓" tip="Consecutive months of declining Treasury holdings. Persistence distinguishes structural de-dollarization from tactical rebalancing. 3+ months = significant signal." align="right" />
                     <ColHeader label="Gold t" tip="Central bank gold reserves in metric tonnes, from the IMF's monthly IRFCL return. Large holdings alongside zero Treasuries indicate deliberate reserve restructuring." align="right" />
                     <ColHeader label="Gold MoM" tip="Quarter-over-quarter % change in gold reserves. Negative = selling gold. When a country sells gold AND Treasuries simultaneously, cross-asset multiplier (1.5×) activates." align="right" />
@@ -120,7 +120,9 @@ export function CrossAssetTab() {
                         <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_mom_pct??0)<0?"#E07B5A":"#5DB87A" }}>
                           {c.no_tic_holdings
                             ? <span style={{ color:"#FF8C00", fontSize:10 }}>EXITED ⚠</span>
-                            : c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(2)}%`:"—"}
+                            : c.tic_state==="below_threshold"
+                              ? <span style={{ color:"#5A6878", fontSize:10 }} title={`Below TIC reporting threshold — last reported $${c.tic_last_reported_bn}bn`}>n/r</span>
+                              : c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(2)}%`:"—"}
                         </td>
                         <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:(c.tic_consecutive_months??0)>=3?"#E07B5A":"#8A9BAC" }}>{(c.tic_consecutive_months??0)>0?`${c.tic_consecutive_months}mo`:"—"}</td>
                         <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:12, textAlign:"right", color:"#8A9BAC" }}>{c.gold_tonnes!=null?`${c.gold_tonnes.toLocaleString()}t`:"—"}</td>

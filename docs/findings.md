@@ -3240,3 +3240,131 @@ did not fail for the wrong reason, which is what a well-written guard buys.
 faster, because nothing runs it. Every one of these claims was true when
 written. Three of them were falsified **today**, by me, in the same session -
 which is the argument for the test rather than for more care.
+
+### F-0097 - "Not in the major-holders table" was scored as "holds zero"
+
+**The largest defect found today**, and the `A-0017` diagnostic found it - the
+first thing that diagnostic was used for.
+
+SLT Table 5 is the **MAJOR** Foreign Holders table. It names exactly twenty
+countries and folds every other holder into a single **"All Other"** row.
+Falling off that list means dropping below the reporting threshold; it does not
+mean going to zero.
+
+`no_tic_holdings` was `len(tic_hist) == 0` against a 185-day window, and the
+result was read as a completed Treasury liquidation worth **30-50 points of
+dimension 1** - the largest dimension in the model - awarded on the size of the
+country's gold reserves as "confirmation".
+
+**Measured against production: 32 of 49 scored countries were on that path,
+worth 1,050 TIC points, and not one of them had ever reported zero.**
+
+| | last reported | points awarded |
+|---|---|---|
+| Germany | **$103.1bn** (Dec 2025) | 50 of 50 |
+| Mexico | $85.4bn | 30 |
+| Thailand | $82.8bn | 30 |
+| Spain | $73.6bn | 30 |
+| Australia | $72.3bn | 30 |
+| Netherlands | $70.0bn | 40 |
+| Italy | $62.1bn | 50 |
+| Poland | $60.5bn | 40 |
+| Russia | $13.2bn (Dec 2018) | 50 |
+
+and **fifteen more had no TIC row at all** - Kazakhstan, Qatar, Pakistan,
+Hungary, Czechia, Iraq, Lebanon, Libya, Algeria, Jordan, Cambodia, Romania,
+Serbia, Uzbekistan, Belarus - each given 30 points for a liquidation never
+recorded anywhere. There was no observation of any kind to reason from.
+
+The signal read **"EXITED: Zero US Treasuries"** and the COMPOSITE table showed
+**"ZERO"**. Both were false statements of fact about 32 sovereigns, on the tab
+whose purpose is to rank sovereign stress.
+
+Even Russia - the one country where the label seemed defensible - last reported
+**$13.2bn**, not zero. It reduced heavily and then fell out of the table.
+
+**I made this worse.** `F-0088` moved `tic_latest` from 2025-12 to 2026-07,
+pushing every country whose newest row was December 2025 out of the 185-day
+window and onto the false-exit path. Before that fix those countries had rows
+inside the window and were scored on their trend. **Fixing the source
+aggravated a latent defect in the thing reading it** - the same shape as
+`F-0094`, except `F-0094` was caught before shipping and this was not.
+
+**Two implementations, both wrong the same way.** `composite_stress.py` for
+dimension 1, and `gold_fetcher.py` for the CROSS-ASSET surface, where the same
+premise drove scores of 50-90 plus multipliers. `F-0047` is the standing
+example of two copies of one idea drifting apart; here they had not drifted,
+they were identically wrong.
+
+**Sample size.** 32 of 49 countries (65%), 1,050 points, 2 call sites, 0
+genuine exits.
+
+**Fixed.** `pipelines/tic_state.py` holds one classifier, imported by both, with
+**four** states where there were two:
+
+| state | meaning | earns the posture score |
+|---|---|---|
+| `reported` | current data exists | via the trend, as before |
+| `exited` | last reported holding under $1bn | **yes** - and today that is nobody |
+| `below_threshold` | last reported positive, now inside "All Other" | no |
+| `no_data` | never appeared in the table | no |
+
+The threshold is $1.0bn rather than exactly zero because Table 5 rounds to
+0.1bn, so a genuine wind-down lands at 0.0-0.9. The smallest positive
+last-reported holding observed was Finland at $11.2bn, so there is an order of
+magnitude of clearance either side.
+
+The signal now names the figure - *"Below TIC reporting threshold - last
+reported $103.1bn (Dec 2025)"* - because naming the number and its date is the
+whole difference between a fact and a fabrication. COMPOSITE and CROSS-ASSET
+show `n/r` with that figure on hover instead of `ZERO`.
+
+**A consequence worth stating plainly:** the exit path now fires for no country
+at all. That is the correct answer to the question as asked, and it means
+dimension 1 scores only the twenty countries that actually report. Whether the
+model should say anything about the other 28 is a modelling question, recorded
+as `A-0019`, not something to paper over with a default.
+
+
+### F-0098 - The ADMIN tab offered four of eleven jobs and six fewer triggers than exist
+
+Found while auditing the operator surfaces on request, immediately after
+`F-0096` did the same for ABOUT.
+
+| Claim | Reality |
+|---|---|
+| Four actions listed | **Eleven** scheduled jobs, **ten** POST triggers |
+| "TIC Holdings ... 45 countries" | Table 5 names **twenty** |
+| Gold Reserves under "Manual (CSV import)", *"re-download quarterly from gold.org"* | Automated from IMF IRFCL since `D-0076` |
+| CDS, Treasury Direct, Gold Price, Gold Reserve Changes, Broad Money, IMF Gold, composite snapshot, freshness watchdog | **Absent** |
+
+**Why this is worse than a stale data label.** ADMIN is an operator surface. A
+missing trigger is a job an operator has no way to run; a missing schedule is a
+job they will not know has stopped. Nothing here is self-evidently wrong on
+screen the way a stale date is - there is no number to check it against.
+
+**Sample size.** 4 of 11 jobs listed, 4 of 10 triggers, 1 wrong country count,
+1 obsolete "manual" group.
+
+**Fixed.** `ui/src/lib/adminActions.js` lists every registered job with its real
+cron and its `UpdateLog` pipeline name - so a row in the log below can be
+connected to the job that wrote it - and every trigger with its real method.
+
+**Guarded from Python, which is the only place that can.** The drift is between
+`api/routes.py` and `pipelines/scheduler.py` on one side and a JavaScript file
+on the other, and a vitest case cannot read the Python.
+`tests/test_admin_surface.py` asserts every POST route appears, that no offered
+route is a phantom, that GET/POST match the real methods (a GET rendered as a
+POST button silently 405s), that every registered job id is listed and no
+unregistered one is, and that the pipeline names are the ones
+`scheduler.SCHEDULED_PIPELINES` declares.
+
+It also holds the specific falsehoods shut by name: neither surface may say "45
+countries", neither may tell an operator to "re-download" anything, and neither
+may name `mfhhis01.txt` except to mark it as the file NOT to use.
+
+**A mistake I made five times today.** Three of those assertions failed on first
+run by matching **my own explanatory comments**, which quote the wrong claims in
+order to explain why they are wrong. `strip_js_comments()` now exists so the
+sixth time does not happen: a "must not say X" test over a file that documents X
+has to read code, not prose.
