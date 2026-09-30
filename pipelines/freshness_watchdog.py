@@ -110,9 +110,23 @@ CHECKS = [
         "key": "gold_reserves",
         "label": "Gold reserves by country",
         "patterns": ["GOLD_RESERVES"],
-        "max_age_days": 200,     # PROVISIONAL — quarterly + month-start + reporting lag
-        "pipelines": ["Gold_Reserves", "Gold_Reserve_Changes"],
-        "note": "MANUAL CSV from World Gold Council.",
+        # D-0076. Was 200, marked PROVISIONAL, for a quarterly hand-downloaded
+        # WGC CSV. The source is now IMF IRFCL, monthly: rows are dated to the
+        # first of the data month and the release lands about three weeks after
+        # month end, so the newest row is ~50 days old on arrival and ~80 the
+        # day before the next release.
+        #
+        # Derived rather than inherited, because today produced two thresholds
+        # (F-0089, F-0091) that no healthy source could ever satisfy, and in
+        # both cases the false alarm concealed the real defect. 95 covers the
+        # cycle plus drift; one missed release reaches ~110 and trips it.
+        "max_age_days": 95,
+        "pipelines": ["Gold_Reserves", "Gold_Reserve_Changes", "Gold_Reserves_IMF"],
+        "note": (
+            "IMF IRFCL line 56, monthly, fine troy ounces converted to tonnes. "
+            "The World Gold Council CSV is retained as the backfill for the "
+            "~28 countries IRFCL does not carry."
+        ),
     },
     {
         "key": "tic",

@@ -16,6 +16,7 @@ from pipelines.freshness_watchdog import run_freshness_check
 from pipelines.gold_price_fetcher import run_gold_price_fetch
 from pipelines.composite_stress import persist_composite_snapshot
 from pipelines.money_supply_fetcher import run_money_supply_fetch
+from pipelines.imf_gold_reserves import run_imf_gold_fetch
 
 logger = logging.getLogger(__name__)
 # ORDER-01 B5. Set once on the scheduler rather than repeated on every
@@ -59,6 +60,7 @@ SCHEDULED_PIPELINES = {
     "CDS_MultiTenor",
     "TreasuryDirect",
     "Broad_Money_Growth",
+    "Gold_Reserves_IMF",
 }
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
@@ -158,6 +160,36 @@ def scheduled_treasury_direct_fetch():
             logger.warning(f"Treasury Direct anomalies: {result['anomalies']}")
     except Exception as e:
         logger.error(f"Scheduled Treasury Direct fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
+def scheduled_imf_gold_fetch():
+    """Monthly official gold holdings from IMF IRFCL (D-0076).
+
+    The ticker behind the download. Gold reserves came from a World Gold
+    Council CSV that a person fetched by hand; WGC's own source is IMF IFS, so
+    we were reading a quarterly re-publication of a monthly feed, three months
+    behind it, manually.
+
+    Runs on the 25th at 05:15 UTC. IRFCL publishes roughly three weeks after
+    month end, and 05:15 is after the 05:00 watchdog so a failure appears in
+    the next night's report.
+    """
+    db = None
+    try:
+        db = get_session()
+        result = run_imf_gold_fetch(db)
+        logger.info(
+            f"IMF gold: {result['status']} - {result['inserted']} inserted, "
+            f"{result['updated']} updated, {result['countries']} countries, "
+            f"newest {result.get('newest_date')}"
+        )
+        if result.get("rejected"):
+            logger.warning(f"IMF gold implausible values: {result['rejected']}")
+    except Exception as e:
+        logger.error(f"Scheduled IMF gold fetch failed: {e}", exc_info=True)
     finally:
         if db is not None:
             db.close()
@@ -337,6 +369,14 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled gold price daily at 02:30 UTC")
+
+    scheduler.add_job(
+        scheduled_imf_gold_fetch,
+        CronTrigger(day=25, hour=5, minute=15),
+        id="imf_gold", name="Gold Reserves (IMF IRFCL)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled IMF gold reserves monthly on day 25 at 05:15 UTC")
 
     scheduler.add_job(
         scheduled_money_supply_fetch,

@@ -36,6 +36,7 @@ EXPECTED_CRON_JOBS = {
     # tests/test_money_supply_fetcher.py against the watchdog's own list of
     # sources, the only place that says what is supposed to stay fresh.
     "money_supply",
+    "imf_gold",   # D-0076
 }
 EXPECTED_ONE_SHOTS = {"startup_fetches", "startup_cds_fetch"}
 

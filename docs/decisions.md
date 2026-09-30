@@ -1699,3 +1699,70 @@ constant cannot also edit its own justification.
 
 **What this does not fix.** `money_supply` and `gold_reserves` remain MANUAL
 with no fetcher - 75 of 165 points. `A-0015`.
+
+### D-0076 - Gold reserves come from IMF IRFCL, monthly, not from a hand-downloaded WGC file
+
+**The ask.** *"Go the gold reserves, if you can find a real ticker. That's why
+we do the downloads."*
+
+**There is one, and the downloads were its own output.** The files in
+`data/incoming/` are named
+`World_official_gold_holdings_as_of_Sep2026_IFS.xlsx`. The `IFS` is IMF
+International Financial Statistics: the World Gold Council's reserves table is
+a re-publication of an IMF feed. We were reading a **quarterly** re-issue of a
+**monthly** series, three months behind it, by hand.
+
+**The ticker.** IMF **IRFCL** (International Reserves and Foreign Currency
+Liquidity), indicator `IRFCLDT1_IRFCL56V_FTO` - Reserves Data Template line
+56, "gold (including gold deposits and, if appropriate, gold swapped)", volume
+in fine troy ounces. SDMX 2.1, key order `COUNTRY.INDICATOR.SECTOR.FREQUENCY`.
+
+```
+https://api.imf.org/external/sdmx/2.1/data/IRFCL/.IRFCLDT1_IRFCL56V_FTO..M
+```
+
+Note the host. Every older example uses `dataservices.imf.org`, which **no
+longer resolves at all** - not a 404, no connection. The new API was found by
+walking `/dataflow` and looking for a reserves dataset; `IFS` itself is no
+longer published as a dataflow.
+
+**Validated before it was wired in, not after.** 68 countries appear both in
+this feed and in the WGC data already in the database:
+
+| | count | |
+|---|---|---|
+| agree within 10% | **55** | including every large holder to the decimal |
+| real change WGC had missed | 12 | Turkey 534.9 -> **791.4** t, Poland 581.6 -> 648.0, Czechia 76.6 -> 85.8 |
+| scale defect | 1 | Brazil - see `F-0093` |
+
+USA 8133.5/8133.5, Germany 3350.2/3349.1, Italy 2451.8/2451.8, France
+2437.0/2437.0. The sum of the latest reading per country is 30,785 tonnes
+against a world official total of roughly 36,000, which is the right shape for
+83 of ~100 reporting countries.
+
+Turkey is the case that justifies the change on its own: **+256 tonnes** that
+the stale file simply did not contain, in a country the composite scores.
+
+**Choice: IRFCL is primary, the WGC CSV is retained as backfill.** IRFCL
+carries 83 countries; the WGC set has 28 that IRFCL does not (Canada, UAE,
+Qatar, Kuwait, Pakistan and others that do not file the monthly template).
+Dropping the CSV would have traded 272-day-old data for no data at all for
+those. Both write to the same `GOLD_RESERVES` metric, so the UI, the composite
+and the watchdog all read one series - a parallel metric would have left the
+tab showing the stale one with the fresh data beside it unread, which is
+`F-0090`'s shape.
+
+**Tolerance derived, not inherited.** The watchdog's 200 days was marked
+PROVISIONAL and was set for a quarterly hand-downloaded file. IRFCL publishes
+about three weeks after month end and rows are dated to the first of the data
+month, so the newest row is ~50 days old on arrival and ~80 the day before the
+next release. Now **95**. Derived explicitly because today produced two
+thresholds (`F-0089`, `F-0091`) that no healthy source could satisfy, and in
+both cases the false alarm concealed the real defect.
+
+Scheduled monthly on the 25th at 05:15 UTC, after the 05:00 watchdog.
+`POST /api/fetch/gold-reserves-imf` triggers it.
+
+**What this did not fix.** Angola's entire IRFCL series is a thousandfold out
+and is rejected, so Angola has no gold data rather than wrong gold data. It is
+not in the WGC set either. `A-0018`.

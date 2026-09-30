@@ -482,7 +482,7 @@ though see below, because its *number* barely moved and that is the point.
 
 | Source | Age | Tolerance | Dimension | Points | State |
 |---|---|---|---|---|---|
-| `gold_reserves` | 272d | 200 | 2 - Gold | 40 | **MANUAL CSV, no fetcher.** Open. |
+| `gold_reserves` | 60d | 95 | 2 - Gold | 40 | **Fixed** - `D-0076`, IMF IRFCL monthly. |
 | `money_supply` | 637d | 960 | 3 - Monetary | 35 | Fetched and scheduled. Still 637 days old, and that is correct. |
 | `reserves_ex_gold` laggard | 333d | - | 6 | - | `TRESEG_CODES.RUS`; FRED appears to have stopped the series. |
 
@@ -493,17 +493,11 @@ year, and the release lands ~18 months later. There is no fresher number to
 get. What was broken was the plumbing and the threshold, not the vintage - and
 the tolerance now says so honestly instead of showing amber forever.
 
-**What is genuinely left: `gold_reserves`.** 40 points, MANUAL CSV, World Gold
-Council quarterly. The same three questions apply and should be answered in
-this order, because `F-0091` showed the third one masks the first two:
-
-1. Is its 200-day tolerance reachable? WGC publishes quarterly with a lag, so
-   a row dated to quarter-start could be ~200 days old on arrival. **Assume
-   this tolerance is wrong until derived from the real calendar.**
-2. Is it scheduled? `Gold_Reserves` and `Gold_Reserve_Changes` are in
-   `scheduler.SCHEDULED_PIPELINES`, so yes - unlike broad money.
-3. Does it fetch, or does it read a committed file? Read the pipeline before
-   assuming, exactly as `A-0015` wrongly assumed broad money's file was stale.
+**What is genuinely left: nothing on this list.** All three sources that were
+stale this morning are now fetched, scheduled and on tolerances derived from
+their own release calendars. What remains is `A-0017` (no per-country age check
+outside dimension 3), `A-0016` (start-of-period dating inflating every age) and
+`A-0018` (Angola has no gold data at all).
 
 **The pattern, now three for three.** Every stale source today turned out to
 be several defects wearing one symptom, and in two cases an unreachable
@@ -567,3 +561,29 @@ distribution of per-country newest-row ages - the query is cheap and it turns
 this from a worry into a number. Only then is it worth deciding whether each
 dimension needs its own cutoff or whether the watchdog should derive laggards
 per country instead of carrying one by hand.
+
+### A-0018 - Angola has no gold data, and two countries' IRFCL series are unusable
+
+`F-0093` rejects 76 values across exactly two countries. The consequences
+differ and only one is closed.
+
+**Brazil is fine.** Its pre-2026-M03 observations are correctly scaled, so it
+carries 172.4 tonnes from the good part of its own series and only the six
+rescaled months are dropped.
+
+**Angola has nothing.** All 70 of its recent observations are a thousandfold
+out, it is absent from the World Gold Council set, and so it now has **no gold
+reserves data at all** rather than wrong data. That is the right default and it
+is still a gap: dimension 2 cannot score Angola.
+
+**Worth reporting upstream.** Both look like unit errors in the national
+submission rather than anything the IMF derived - `DERIVATION_TYPE="O"` marks
+them as originally reported. `datahelp@imf.org` is the contact in the dataset
+metadata.
+
+**What to check when it is next looked at.** Whether the rejection list has
+grown, and in particular whether any country in the composite's scored set
+joins it. Angola is not scored, so today the cost is nil; the same defect in
+Turkey or Poland would remove a country the model relies on. The count is in
+the `UpdateLog` note for `Gold_Reserves_IMF` on every run, so this is
+observable rather than needing a person to re-derive it.
