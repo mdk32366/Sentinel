@@ -3368,3 +3368,63 @@ run by matching **my own explanatory comments**, which quote the wrong claims in
 order to explain why they are wrong. `strip_js_comments()` now exists so the
 sixth time does not happen: a "must not say X" test over a file that documents X
 has to read code, not prose.
+
+### F-0099 - Dimension 1 scores percentage change, so the largest holders count least
+
+**Found answering a direct question**: why, after Japan and Argentina both moved
+in the last three months, neither was near the top of the stress list. The
+answer is two compounding defects, and the measurement is unambiguous.
+
+**What the data says happened over May-July 2026.**
+
+| | 3-month position change | 3-month net transactions |
+|---|---|---|
+| Japan | **-$105.9bn** | **-$88.6bn** (ST -$73.2bn, LT -$15.4bn) |
+| Argentina | -$0.9bn | **+$0.9bn** - a net *buyer* |
+
+Japan sold $88.6bn, overwhelmingly short-term bills, which is the shape an FX
+intervention leaves. Argentina bought.
+
+**What the model scored.**
+
+| | prev | latest | MoM % | consec | dimension 1 |
+|---|---|---|---|---|---|
+| Japan | 1,116.7 | 1,103.9 | -1.15% | 3 | **15.4** |
+| Argentina | 10.5 | 9.4 | -10.48% | 2 | **38.0** |
+| Uruguay | 3.3 | 3.0 | -9.09% | 2 | 35.3 |
+
+**Defect 1: the magnitude term is a percentage.** `min(30, abs(mom) * 3)` scales
+with the proportion of a position, not its size. One billion dollars of selling
+is worth:
+
+```
+Japan       0.27 points per $bn   (position $1,116.7bn)
+Argentina  28.57 points per $bn   (position    $10.5bn)
+Uruguay    90.91 points per $bn   (position     $3.3bn)
+```
+
+**A 337-fold difference between Japan and Uruguay.** The countries whose selling
+actually moves the Treasury market are the ones this dimension is least able to
+see, and a small holder trimming a rounding-error position outranks the second
+largest creditor liquidating $88.6bn.
+
+**Defect 2: it scores holdings, not transactions** (`A-0021`). Argentina's
+-10.48% was not selling at all - its transactions were positive. So the 38.0 is
+not merely disproportionate, it is pointed the wrong way.
+
+**Sample size.** All 34 countries scoring on dimension 1. The two defects
+compound: the percentage term misranks by size, and the holdings input misranks
+by direction.
+
+**Not fixed here, and deliberately.** `D-0083` surfaces the transaction split so
+a reader can see it (`A-0021` option 1). Changing the *scoring* - to dollars, to
+a size weight, or to transactions - alters every number in the model, which is a
+decision rather than an implementation. `A-0022` records the options with the
+measurement attached, so the next reader argues from figures rather than
+intuition.
+
+**What this cost.** The stress list has been ranking by proportion of position
+rather than by market impact since the dimension was written, and nothing said
+so. The user noticed from domain knowledge - that Japan and Argentina had both
+moved and neither appeared - which is the kind of check the system should have
+been able to make for itself.

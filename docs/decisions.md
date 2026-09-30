@@ -2126,3 +2126,37 @@ test asserts the creation sits behind the lookup.
 composite ranks, which is a scope change. It appears in the run result
 (`created_countries`) and in the `UpdateLog` note, so it shows on the ADMIN
 pipeline log rather than only in a log line nobody reads.
+
+### D-0083 - The country panel shows what a holdings move was made of
+
+**A-0021 option 1**, chosen over changing the scorer's input.
+
+Dimension 1 scores the month-on-month change in **holdings**, which moves with
+transactions and with price. `D-0081` stored `Net U.S. Sales` and
+`Valuation Change` per country, so the split can now be shown.
+
+**The case that justified it.** Japan, July 2026: holdings **-$12.7bn**, net
+transactions **+$0.9bn**, long-term valuation **-$12.1bn**. A net buyer scored
+as a seller. Over the three months to July, Japan's transactions were
+**-$88.6bn** - real and large - which a 1.15% monthly move hides entirely.
+
+**Shown, not scored.** The measurement in `A-0021` is why: across 3,192
+country-months the position change and the published flows disagree by more than
+10% of the move **65% of the time**, so net sales is cleaner about intent and
+worse about completeness. Swapping one incomplete measure for another silently
+is not an improvement, and `D-0078` established the alternative - tell the
+reader what the number does and does not cover.
+
+**On the panel**: the holdings move, of which transacted, of which repriced, and
+the three-month transaction total. When holdings and transactions point opposite
+ways it says so in words, because a reader seeing `-1.15%` and `+$0.9bn` side by
+side should not have to notice the contradiction themselves. It stays quiet when
+they agree - China's decline was 88% transactions - or the note would mean
+nothing.
+
+**A guard improved rather than exempted.** The fields reach the payload through
+a `**treasury_flows(...)` spread, and `tests/test_composite_response_contract.py`
+reported them as declared-but-never-produced - the `F-0082` guard being right
+about what it could see and wrong about the payload. It now follows a spread
+into the helper's return dict. An exemption list would have let the next spread
+hide a field silently, which is the failure that guard exists to prevent.
