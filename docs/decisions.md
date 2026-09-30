@@ -1881,3 +1881,68 @@ assert only what was observed, and say when that was.
 been measured on different amounts of evidence, and the score itself does not
 encode that. `A-0019` options 2-4 remain open; this closes option 1 only, and
 the register says so rather than marking the assumption resolved.
+
+### D-0079 - The "All Other" aggregate is captured, and reported once
+
+**A-0019 option 2.** SLT Table 5 names twenty holders and folds every other
+foreign holder into a single **"All Other"** row. `F-0097` established that a
+country absent from the table is inside that row rather than at zero, and
+`D-0078` marked that on each score as a gap. This closes the other half: the row
+is published, so the non-reporters' **combined** position is knowable even
+though no individual position is.
+
+Live at 2026-07: **$1,842.4bn, 19.92% of all foreign holdings**, -0.43% MoM,
+-1.00% over three months, **+2.74% over twelve**, three consecutive monthly
+declines.
+
+**Grand Total is captured with it**, because All Other alone is close to
+uninterpretable. That +2.74% level rise came with a *falling* share - total
+foreign holdings grew faster - so a level-based reading would have called it
+accumulation by the non-reporters when the opposite was happening. The share is
+the figure that means something, and it needs both rows.
+
+**The line this must not cross.** All Other covers roughly a hundred holders:
+sovereign wealth funds, private institutions, and the 28 scored countries
+outside the table. A -1% move says *someone* reduced. Turning that into 28
+country-level findings would be `F-0097` in a new costume - a number nobody
+observed, asserted about a named sovereign - and that defect cost 1,050 points
+across 32 countries.
+
+So it is a **system-level** series and the constraint is enforced rather than
+intended. `tests/test_tic_all_other.py` asserts it lives in `summary` and not in
+the per-country loop, that `CompositeCountry` has no field for it, that the
+signal module never touches `Country`, and that it reads only rows with
+`country_id IS NULL`.
+
+**It earns no points for anyone.** Option 2 adds context, not score. That is
+the whole of it, and the tests are what keep it that way.
+
+**Notability is judged on the share, not the level**, at half a percentage point
+over three months - derived from the observed series, which held 19.3%-20.1%
+across thirteen months. The real current reading is **not** flagged: a brand-new
+signal that fires on its first live data is the cry-wolf shape of `F-0089`,
+`F-0091` and `F-0095`, and a test pins that too.
+
+**One parser, not two.** `parse_tic_mfh` gained an `admit` argument rather than
+a second function, because two parsers would each own a copy of the
+column-to-month mapping and an off-by-one in either would silently date July's
+aggregate to May. A first attempt rewrote the text so the aggregates were the
+only data rows and returned nothing, because `SKIP_ROWS` drops those labels
+however they arrive.
+
+**"Of Which: Foreign Official" is still excluded.** It is a subset of Grand
+Total, not a peer of All Other, and admitting it would double-count. It is also
+the single most interesting remaining aggregate for this application's thesis -
+central banks selling to private buyers shows up there and nowhere else - and is
+left as open work rather than folded in here.
+
+**On screen**, once, above the table, never on a row: level, share, three
+windows, the decline run, and its own note saying it does not say who. Coloured
+only when the share moves. The `D-0078` coverage tooltip now points at it -
+*"it moves with this country in it, but says nothing about this country
+specifically"*.
+
+**Freshness needs no new entry.** The watchdog's `tic` pattern is `TIC%`, which
+already matches both aggregates, and they arrive in the same file as the country
+rows so their age is identical. The `A-0017` diagnostic joins on `country_id`
+and so correctly excludes them from a per-country distribution.

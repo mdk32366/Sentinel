@@ -102,6 +102,41 @@ SKIP_ROWS = {
 # SKIP_ROWS entry is "Of which:", which does not match a capital W.
 SKIP_PREFIXES = ("Of Which:", "Of which:", "Table 5", "Holdings at end", "Link:")
 
+# D-0079 / A-0019 option 2. Table 5's own aggregate rows, captured as global
+# series (country_id NULL) rather than as countries.
+#
+# `F-0097` established that a country absent from Table 5 is inside its "All
+# Other" row, not at zero, and `D-0078` put that on the screen. This is the
+# other half: the row itself is published, so the non-reporters' combined
+# position is knowable in aggregate even though no individual position is.
+#
+# GRAND TOTAL is captured with it because All Other alone is close to
+# uninterpretable - a rise could mean the non-reporters bought, or simply that
+# the whole market grew. The share of total is the meaningful figure.
+#
+# What this must NEVER do is attribute an aggregate move to an individual
+# country. One observation cannot become 28 findings; that is `F-0097` in a new
+# costume, and `tests/test_tic_all_other.py` asserts no country's score moves.
+TIC_AGGREGATES = {
+    "All Other": {
+        "code": "TIC_ALL_OTHER",
+        "name": "TIC All Other Holders",
+        "description": (
+            "Combined US Treasury holdings of every foreign holder too small to "
+            "be named in SLT Table 5. The 28 scored countries outside the "
+            "table's twenty are inside this figure (F-0097)."
+        ),
+    },
+    "Grand Total": {
+        "code": "TIC_GRAND_TOTAL",
+        "name": "TIC Grand Total Foreign Holdings",
+        "description": (
+            "Total foreign holdings of US Treasury securities. Captured so All "
+            "Other can be read as a share rather than an absolute."
+        ),
+    },
+}
+
 COUNTRY_MAPPING = {
     "Japan": "JPN",
     "United Kingdom": "GBR",
@@ -190,9 +225,15 @@ def fetch_tic_mfh_data() -> str:
     return r.text
 
 
-def parse_tic_mfh(text: str) -> dict:
+def parse_tic_mfh(text: str, admit: frozenset = frozenset()) -> dict:
     """
     Parse a tab-delimited TIC MFH file, in either published layout.
+
+    `admit` names rows that are normally skipped but are wanted by this caller -
+    Table 5's "All Other" and "Grand Total" aggregates (`D-0079`). Passed in
+    rather than handled by a second parser, because the two would then each own
+    a copy of the month-column logic and an off-by-one in either would silently
+    date July's figure to May.
 
     **SLT Table 5** (the current release) heads its columns with ISO months
     on the same row as the `Country` label:
@@ -266,6 +307,25 @@ def parse_tic_mfh(text: str) -> dict:
 
         # Country data row
         country = cols[0].strip('"').strip()
+
+        # D-0079. An explicitly admitted aggregate row, read with the same
+        # column-to-month mapping as a country row and checked before the skip
+        # list, since every one of these labels is in it.
+        if country in admit and current_dates:
+            admitted = []
+            for c in cols[1:]:
+                if not c or c == "------":
+                    continue
+                try:
+                    admitted.append(float(c))
+                except ValueError:
+                    continue
+            if admitted:
+                result.setdefault(country, {}).update(
+                    dict(zip(current_dates[:len(admitted)], admitted))
+                )
+            continue
+
         if (not country
                 or country in SKIP_ROWS
                 or "---" in country
@@ -302,6 +362,82 @@ def parse_tic_mfh(text: str) -> dict:
     return result
 
 
+def parse_tic_aggregates(text: str) -> dict:
+    """`{metric_code: {date_str: value_billions}}` for Table 5's aggregate rows.
+
+    A second pass over the same text rather than a change to `parse_tic_mfh`,
+    whose contract is "countries" and whose fixtures pin exactly that. Mixing
+    aggregates into that dict is how "Of Which: Foreign Official" at 3,773.1
+    came to outrank Japan (`F-0088`).
+
+    Shares the header logic by asking `parse_tic_mfh` to admit these labels, so
+    the two cannot disagree about which column is which month - the off-by-one
+    that would silently date July's figure to May.
+
+    A first attempt rewrote the text so the aggregates were the only data rows
+    and got nothing back, because `SKIP_ROWS` drops them however they arrive.
+    """
+    parsed = parse_tic_mfh(text, admit=frozenset(TIC_AGGREGATES))
+
+    out = {}
+    for label, meta in TIC_AGGREGATES.items():
+        if label in parsed:
+            out[meta["code"]] = parsed[label]
+    return out
+
+
+def ensure_aggregate_metric(db: Session, code: str) -> Metric:
+    meta = next(m for m in TIC_AGGREGATES.values() if m["code"] == code)
+    metric = db.query(Metric).filter_by(code=code).first()
+    if not metric:
+        metric = Metric(
+            code=code,
+            name=meta["name"],
+            category="holdings",
+            unit="billions",
+            source="US Treasury TIC",
+            description=meta["description"],
+        )
+        db.add(metric)
+        db.commit()
+        logger.info("Created metric: %s", code)
+    return metric
+
+
+def import_tic_aggregates(db: Session, text: str) -> dict:
+    """Write Table 5's aggregate rows as global series. Returns per-code counts."""
+    result = {}
+    for code, by_date in parse_tic_aggregates(text).items():
+        metric = ensure_aggregate_metric(db, code)
+        inserted = updated = 0
+        for date_str, value in by_date.items():
+            try:
+                date_obj = datetime.strptime(f"01 {date_str}", "%d %b %Y")
+            except ValueError:
+                continue
+            existing = db.query(TimeSeries).filter(
+                TimeSeries.metric_id == metric.id,
+                TimeSeries.country_id.is_(None),
+                TimeSeries.date == date_obj,
+            ).first()
+            if existing:
+                existing.value = Decimal(str(value))
+                existing.updated_at = datetime.utcnow()
+                updated += 1
+            else:
+                db.add(TimeSeries(
+                    metric_id=metric.id,
+                    country_id=None,
+                    date=date_obj,
+                    value=Decimal(str(value)),
+                ))
+                inserted += 1
+        db.commit()
+        result[code] = {"inserted": inserted, "updated": updated,
+                        "points": len(by_date)}
+    return result
+
+
 def run_treasury_holdings_fetch(db: Session) -> dict:
     """Main TIC holdings fetch pipeline."""
     start_time = datetime.utcnow()
@@ -314,6 +450,9 @@ def run_treasury_holdings_fetch(db: Session) -> dict:
     try:
         tic_text = fetch_tic_mfh_data()
         holdings_by_country = parse_tic_mfh(tic_text)
+        # D-0079. The aggregate rows, as global series. Written before the
+        # per-country loop so a country-mapping failure does not lose them.
+        aggregates = import_tic_aggregates(db, tic_text)
 
         if not holdings_by_country:
             raise ValueError("No holdings data parsed from TIC file — format may have changed")
@@ -363,7 +502,8 @@ def run_treasury_holdings_fetch(db: Session) -> dict:
 
         logger.info(
             f"TIC holdings: {countries_loaded} countries, "
-            f"{total_inserted} inserted, {total_updated} updated"
+            f"{total_inserted} inserted, {total_updated} updated; "
+            f"aggregates: {aggregates}"
         )
 
         # D-0045: refuse to call a frozen source a success.

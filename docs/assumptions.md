@@ -584,36 +584,45 @@ arriving in Turkey or Poland would remove a country the model relies on.
 
 ### A-0019 - Dimension 1 can only speak about twenty countries
 
-**Option 1 is done (`D-0078`). Options 2-4 remain open.**
+**Options 1 and 2 are done (`D-0078`, `D-0079`). Options 3 and 4 remain open.**
 
-`F-0097` removed the false-exit path, and the consequence is that dimension 1 -
-50 points, the largest in the model - now scores only the twenty countries SLT
-Table 5 names. The other 28 scored countries get nothing from it, because their
-position is genuinely unknown.
+`F-0097` removed the false-exit path, so dimension 1 - 50 points, the largest -
+scores only the twenty countries SLT Table 5 names. The other 28 get nothing
+from it, because their position is genuinely unknown.
 
-**What is now disclosed.** Every surface showing a score marks the dimensions
-that cannot speak about that country, with the points they would have been worth
-and why. Germany reads 8.0 with a badge saying 50 of 165 points were unreachable.
-No number changed.
+**Now disclosed (`D-0078`).** Every surface showing a score marks the dimensions
+that cannot speak about that country, with the points forgone and why. Germany
+reads 8.0 with a badge saying 50 of 165 points were unreachable. 16 of 23 ranked
+countries carry a badge. No number changed.
 
-**What is still true and not addressed.** Two countries with the same score may
-have been measured on different amounts of evidence, and the score does not
-encode that. A reader who looks at the badge learns it; a reader who sorts by
-score does not.
+**Now measured in aggregate (`D-0079`).** Table 5's "All Other" row is captured
+and reported once: $1,842.4bn, 19.92% of all foreign holdings, three consecutive
+monthly declines. It says something about the non-reporters collectively and
+nothing about any one of them, and that constraint is enforced by test rather
+than left to discipline.
+
+**What is still true and not addressed.** A reader who sorts by score still sees
+two numbers built from different amounts of evidence. Disclosure and an aggregate
+both inform; neither makes the scores comparable.
 
 **Remaining options.**
 
-2. **Use "All Other" as an aggregate signal.** Table 5 publishes the All Other
-   total. A sharp move says something happened among the non-reporters without
-   saying who. Weak, but real, and free.
 3. **Find a country-level source for the non-reporters.** TIC's B-series and the
    SLT country tables carry more countries at lower frequency. Unknown effort;
-   would need the validation `D-0076` got.
+   would need the validation `D-0076` got. This is the only option that would
+   actually make dimension 1 comparable across countries.
 4. **Re-weight per country.** Score each country out of the dimensions that can
    speak about it. The principled answer, and it changes every number in the
-   model - a decision, not an implementation. `D-0078` was chosen over this
+   model - a decision, not an implementation. `D-0078` was chosen over it
    deliberately, and the coverage module is tested to be incapable of altering a
-   score so that this cannot happen by accident.
+   score so it cannot happen by accident.
+
+**Adjacent and cheap: "Of Which: Foreign Official".** Table 5 publishes it and
+`D-0079` deliberately does not capture it, being a subset of Grand Total rather
+than a peer of All Other. It is the one aggregate that separates central-bank
+selling from private selling, which is closer to this application's thesis than
+anything else on the table. Worth doing on its own terms rather than as part of
+option 2.
 
 **What must not happen** is a default that fills the gap with a guess. That is
 precisely what `F-0097` was: 30 points for "we have no data", dressed as a

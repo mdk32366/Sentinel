@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { coverageBadge } from "../lib/coverage";
+import { AllOtherStrip } from "../components/AllOtherStrip";
 import { useApiResource } from "../hooks/useApiResource";
 import { MAX_RAW_SCORE, STRESS_DIMENSIONS, STRESS_MULTIPLIERS, cdsBandText } from "../lib/dimensions";
 import { DataAsOf } from "../components/DataAsOf";
@@ -78,6 +79,12 @@ export function CompositeTab({ onCountrySelect }) {
           </div>
         </div>
       </div>
+
+      {/* D-0079 / A-0019 option 2. Once, above the table, never on a row:
+          All Other covers ~100 holders and a move says someone reduced, not
+          who. Beside a country it would invite the reading that cost 1,050
+          points across 32 countries (F-0097). */}
+      <AllOtherStrip signal={summary?.all_other} />
 
       {/* Summary cards */}
       <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap" }}>

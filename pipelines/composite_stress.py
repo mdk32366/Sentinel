@@ -894,6 +894,14 @@ def compute_composite_stress(db: Session) -> dict:
             "countries_with_spread_data": len([r for r in results if r["spread_bps"] is not None]),
             "countries_with_cds_data": len([r for r in results if r["cds_5y"] is not None]),
             "oil_dependent_countries": len([r for r in results if r["oil_dependent"]]),
+            # D-0079 / A-0019 option 2. A SYSTEM-LEVEL series, reported once.
+            # SLT Table 5 folds every holder outside its twenty into one "All
+            # Other" row, so the non-reporters' combined position is knowable
+            # even though no individual position is. It is in `summary` rather
+            # than on each country precisely so it cannot be read as a finding
+            # about one - that would be F-0097 again, a number nobody observed
+            # asserted about a named sovereign.
+            "all_other": all_other_signal(db),
         },
         "as_of": tic_latest.strftime("%Y-%m") if tic_latest else None,
     }
@@ -993,6 +1001,7 @@ MAX_M2_DATA_AGE_YEARS = 3
 
 # F-0097. One classifier, shared with gold_fetcher.py, because F-0047 is the
 # standing example of two implementations of one idea drifting apart.
+from pipelines.tic_aggregate import all_other_signal  # noqa: E402
 from pipelines.tic_state import (  # noqa: E402
     BELOW_THRESHOLD, EXITED, NO_DATA,
     classify_tic_state, describe, last_reported_holding,
