@@ -106,11 +106,24 @@ class HoldingItem(BaseModel):
     country_name: str
     holdings_billions_usd: float
     percent_of_total: float
+    # D-0085. Sixteen reporters publish `n.a.` for their TOTAL position and a
+    # real long-term figure. Their holdings are long-term only and must be
+    # labelled as such rather than compared with a total (F-0097's lesson: one
+    # measure quietly presented as another).
+    long_term_only: bool = False
 
 
 class HoldingsResponse(BaseModel):
     date: str
     total_billions_usd: float
+    # D-0085. The figure Treasury publishes for ALL foreign holdings, from SLT
+    # Table 5's Grand Total row (D-0079). `total_billions_usd` is the sum of
+    # the countries listed below and is smaller - it was labelled "Total Foreign
+    # Holdings" on the tab while understating the real total by $537.8bn.
+    grand_total_billions_usd: Optional[float] = None
+    coverage_pct: Optional[float] = None
+    country_count: Optional[int] = None
+    long_term_only_count: Optional[int] = None
     holdings: List[HoldingItem]
 
 
