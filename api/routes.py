@@ -409,6 +409,34 @@ def trigger_treasury_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/snapshot/composite")
+def trigger_composite_snapshot(db: Session = Depends(get_db)):
+    """Recompute the composite and store it, as the nightly job does.
+
+    F-0090. The gap this closes: `POST /fetch/treasury-holdings` above invites
+    a manual data refresh, and `GET /stress/composite` serves a *stored*
+    snapshot (`D-0042`). So a manual fetch moved the data and left the score
+    behind, with nothing able to catch it up before 04:45 UTC.
+
+    Not a cosmetic lag. When the `F-0088` TIC fix landed, HOLDINGS read July
+    2026 while COMPOSITE read December 2025 - two surfaces disagreeing about
+    which month the system is in, the same class of defect as `F-0087`, and
+    `D-0074` had just finished putting freshness on screen where a reader
+    would see it.
+
+    `?recompute=true` on the GET is not the answer: it computes without
+    storing, so it corrects the tab for the one caller who passed the flag
+    and leaves the next reader the old snapshot.
+    """
+    from pipelines.composite_stress import persist_composite_snapshot
+
+    try:
+        return persist_composite_snapshot(db)
+    except Exception as e:
+        logger.error(f"Composite snapshot refresh failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get("/gold-reserves", response_model=GoldReservesResponse)
 def get_gold_reserves(
     country_iso: Optional[str] = Query(None),
