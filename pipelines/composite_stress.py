@@ -595,11 +595,27 @@ def compute_composite_stress(db: Session) -> dict:
         selling_gold = False
 
         if gold_metric and gold_latest:
-            gold_hist = db.query(TimeSeries).filter(
+            gold_rows = db.query(TimeSeries).filter(
                 TimeSeries.metric_id == gold_metric.id,
                 TimeSeries.country_id == country.id,
-                TimeSeries.date >= gold_latest - timedelta(days=400),
+                TimeSeries.date >= gold_latest - timedelta(days=GOLD_WINDOW_DAYS),
             ).order_by(TimeSeries.date.asc()).all()
+
+            # F-0094. This dimension counts "consecutive quarters" and used to
+            # count consecutive ROWS. Those were the same thing only because
+            # the World Gold Council CSV is quarterly - the label was true by
+            # accident of the source.
+            #
+            # D-0076 adds a MONTHLY feed (IMF IRFCL) to the same series. Left
+            # alone, three consecutive monthly dips would have scored as three
+            # consecutive quarters: 12 points for a quarter of movement, and
+            # every country's gold score inflated the day the better source
+            # landed. Fixing the source would have corrupted the score.
+            #
+            # So the series is resampled to one observation per calendar
+            # quarter - the last reading in each - and "consecutive quarters"
+            # now means what it says whatever cadence the rows arrive at.
+            gold_hist = _last_per_quarter(gold_rows)
 
             if gold_hist:
                 gold_tonnes = float(gold_hist[-1].value)
@@ -922,6 +938,28 @@ def get_treseg_signal(db: Session, iso: str, no_tic: bool) -> dict:
 # ─────────────────────────────────────────────────────────────────────────────
 # ORDER-03 D3 — persist, so the endpoint is a read
 # ─────────────────────────────────────────────────────────────────────────────
+
+# F-0094. Six quarters of history, so the documented five-consecutive-quarter
+# cap is reachable. It was 400 days, which holds at most five quarterly rows and
+# therefore at most FOUR consecutive declines - 16 of the 20 available points,
+# with the last 4 unreachable for every country. The same shape as F-0089 and
+# F-0091: a threshold nobody re-derived after the arithmetic changed around it.
+GOLD_WINDOW_DAYS = 600
+
+
+def _last_per_quarter(rows):
+    """One row per calendar quarter - the last reading in each.
+
+    `F-0094`. Dimension 2 scores consecutive QUARTERLY declines. Feeding it
+    monthly rows without collapsing them would count three monthly dips as
+    three quarters. Keyed on (year, quarter) and relying on the caller's
+    ascending date order, so the survivor is the latest reading in its quarter.
+    """
+    by_quarter = {}
+    for row in rows:
+        by_quarter[(row.date.year, (row.date.month - 1) // 3)] = row
+    return [by_quarter[k] for k in sorted(by_quarter)]
+
 
 # F-0092. Dimension 3 will not score a country whose newest broad money
 # figure is older than this. The World Bank publishes year Y around the middle

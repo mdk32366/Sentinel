@@ -3035,3 +3035,85 @@ not a verdict about its parts. `money_supply` was green at the source and
 eighteen years stale for Canada; `reserves_ex_gold` was green at 60 days and
 333 for Russia. The watchdog already knew to look inside one source for a
 laggard and nothing looked inside the other.
+
+### F-0093 - The IMF gold feed has scale defects, and they are not uniform
+
+Brazil's series carries `5544278.72299948` for 2026-M01 and
+`5544278722.99971` from 2026-M03 onward. **The same constant holding, rescaled
+by exactly 1000, mid-series.** Every series attribute is identical across the
+break - `SCALE="6"`, same `SECTOR`, same `METHODOLOGY` - so nothing in the
+metadata distinguishes them.
+
+Read naively that is **172,446 tonnes**, against a world total of roughly
+36,000 across every central bank on earth. Angola reads 18,441 where the real
+figure is under one tonne, for 70 consecutive months.
+
+Had this been imported without a check, Brazil would have appeared as the
+largest holder of gold in history by a factor of twenty, and dimension 2 would
+have scored the 1000x jump as a colossal *increase* - no points, but the gold
+tab would have been nonsense and the country panel worse.
+
+**How close this came to happening.** While exploring the feed I keyed a dict
+by country and kept whichever series came last, which reported Brazil at
+172,446 tonnes and did not report the correct 172.4 that was sitting in the
+same response. Two series per country differing only in `SECTOR` is real -
+Germany has `S1X` and `S1XS1311` - so the exploratory bug and the data bug
+looked alike. `tests/test_imf_gold_reserves.py` now pins both separately.
+
+**Sample size.** 76 rejected values of 13,127 (0.6%), in exactly two
+countries: Angola 70, Brazil 6.
+
+**Fixed.** `MAX_PLAUSIBLE_TONNES = 9000`, between the largest real holder
+(the USA at 8,133.5, the largest there has ever been) and the world total. A
+rejected value is named with its country and period and leaves the previous
+reading standing - not silently dropped, because these need chasing upstream,
+and not averaged or rescaled, because inferring the intended scale is guessing.
+
+**Why a ceiling and not a ratio check.** A ratio against the previous value
+would also have caught Brazil's 1000x jump - and would have rejected Turkey's
+genuine 1.48x accumulation if set tight enough to be useful, or missed
+Angola's flat-but-wrong series entirely, since a constant wrong value never
+jumps. The ceiling catches both and cannot reject real news.
+
+
+### F-0094 - "Consecutive quarters" counted consecutive rows, and four points were unreachable
+
+Found while wiring `D-0076`, because the fix would have triggered it.
+
+**The mislabel.** Dimension 2 awards 4 points per consecutive quarter of
+declining gold reserves, capped at 5. The code walked `gold_hist` backwards
+counting consecutive declining **rows**. Those were the same thing only
+because the World Gold Council CSV is quarterly - the label was true by
+accident of the source, not by anything in the code.
+
+`D-0076` adds a **monthly** feed to the same series. Left alone, three
+consecutive monthly dips would have scored as three consecutive quarters: 12
+points for a single quarter of movement, and every country's gold score
+inflated the day the better source landed. **Fixing the data would have
+corrupted the score** - and it would have looked like the new source
+discovering stress.
+
+**The unreachable cap, found in the same place.** The history window was 400
+days. That holds at most five quarterly rows, so at most **four** consecutive
+declines: 16 of the 20 available points, with the last 4 unreachable for every
+country in every state of the world. The documented cap of five quarters could
+never be hit. Third threshold today that no input could satisfy (`F-0089`,
+`F-0091`), and like those it was invisible because nothing had reason to look.
+
+**Sample size.** One dimension, 20 points, 48 countries, all of them.
+
+**Fixed.** `_last_per_quarter()` resamples the series to one observation per
+calendar quarter - the last reading in each - so "consecutive quarters" means
+what it says whatever cadence the rows arrive at, and a quarterly-only series
+passes through completely unchanged. The window is now 600 days, six quarters,
+making the fifth rung reachable.
+
+Pinned by cases covering monthly collapse, quarterly pass-through **unchanged**
+(or this "fix" would have rescored every country IRFCL does not cover), a mixed
+cadence with two rows on the same date, and ascending order - the
+consecutive-decline walk reads backwards from the end and would report nonsense
+on an unsorted list.
+
+**The lesson.** A label that is true because of the current source is a comment,
+not a guarantee. This one had been correct for as long as the data happened to
+arrive quarterly, and the thing that would have broken it was an improvement.

@@ -367,3 +367,49 @@ the fixtures were written, and the fixture is a trimmed copy of it.
 200 and parses cleanly is indistinguishable from a URL that is current. The
 `D-0045` data-age guard is the only thing that can see it, which is exactly
 what it did for nine months.
+
+### T-0076 - The IMF gold ticker, offline
+
+`tests/test_imf_gold_reserves.py`, 27 cases, no network.
+
+**The conversion is pinned against a known answer.** `OZ_PER_TONNE` is checked
+against `1e6 / 31.1034768`, and then the US series is parsed and asserted to
+come out at **8,133.5 tonnes** - the universally quoted figure for US official
+gold. Germany likewise at 3,349.1. A conversion error is the single most
+damaging thing that could pass here silently, and it is the one thing a
+published figure can adjudicate.
+
+**The scale defects are fixtures, with the real numbers.** Brazil's
+`5544278.72` and `5544278722.99` both appear in one series, and the case
+asserts the good value survives *and* the bad one is rejected - not merely that
+something was rejected, which would pass if both were thrown away.
+
+**Aggregates.** `G163` read as 10,807 tonnes, which would have outranked the
+USA. `EZB` and `WBG` sit in the same `COUNTRY` dimension as real countries.
+
+**The two-sectors-per-country case exists because of my own bug**, not the
+feed's: while exploring I keyed a dict by country and kept whichever series
+came last, which reported Brazil at 172,446 and hid the correct 172.4 in the
+same response. Germany really does carry two series differing only in `SECTOR`,
+so the exploratory mistake and a genuine data shape looked identical.
+
+**The resampling cases guard the fix from itself.** Quarterly pass-through is
+asserted **unchanged**, because a resampler that altered the WGC series would
+have silently rescored every country IRFCL does not cover - 28 of them. Mixed
+cadence with two rows on the same date, and ascending order, are both real
+states of the series after this change.
+
+### T - What is NOT tested here, and why
+
+**The live IMF endpoint is not called by the suite**, on the same grounds as
+the other live sources: a gate that needs the internet fails for reasons
+unrelated to the change. The live feed was parsed by hand first - 13,051
+observations, 83 countries, 2015-01 to 2026-08 - and the fixtures are trimmed
+copies of the real response, values included.
+
+**Nothing asserts the cross-check against WGC still holds.** The 55-of-68
+agreement was measured once, by hand, against production, and is recorded in
+`D-0076`. Automating it would mean a test that reaches two live sources and
+fails when either revises - and revisions are the normal behaviour of both. The
+standing guard is instead the plausibility ceiling, which needs no second
+source to be right.

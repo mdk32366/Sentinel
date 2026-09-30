@@ -409,6 +409,22 @@ def trigger_treasury_fetch(db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.post("/fetch/gold-reserves-imf")
+def trigger_imf_gold_fetch(db: Session = Depends(get_db)):
+    """Fetch monthly gold holdings from IMF IRFCL (D-0076).
+
+    The upstream of the World Gold Council CSV that was being downloaded by
+    hand.
+    """
+    from pipelines.imf_gold_reserves import run_imf_gold_fetch
+
+    try:
+        return run_imf_gold_fetch(db)
+    except Exception as e:
+        logger.error(f"IMF gold fetch failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post("/fetch/money-supply")
 def trigger_money_supply_fetch(db: Session = Depends(get_db)):
     """Fetch broad money growth from the World Bank (F-0091).
