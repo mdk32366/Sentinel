@@ -50,7 +50,7 @@ export function CountryStatCards({ latestTic, ticMom, latestGold, ticHistory, co
       label: "Gold Reserves",
       val: latestGold ? `${latestGold.tonnes.toFixed(0)}t` : "—",
       color: "#E8C547",
-      tip: "Central bank gold in metric tonnes, from the latest World Gold Council / IMF quarterly report. Gold matters here as the alternative reserve asset: a sovereign selling Treasuries while accumulating gold is restructuring its reserves rather than raising cash, and selling both together triggers the 1.5× cross-asset multiplier.",
+      tip: "Central bank gold in metric tonnes, from the IMF's monthly IRFCL return (D-0076). Gold matters here as the alternative reserve asset: a sovereign selling Treasuries while accumulating gold is restructuring its reserves rather than raising cash, and selling both together triggers the 1.5× cross-asset multiplier.",
     },
     {
       label: "Sovereign Yield",

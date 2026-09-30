@@ -87,7 +87,11 @@ class T0017AboutReadmeNameDgs30(unittest.TestCase):
         # ORDER-03 Part F. Search whichever files exist rather than naming one:
         # this test is about D-0016's requirement that 30Y is NAMED, and it
         # should not fail again the next time the component is moved.
+        # F-0096 moved the source catalogue itself out of AboutTab.jsx into
+        # lib/dataSources.js, so that a test could hold its claims shut. This
+        # list is the mechanism the comment above anticipated, used as intended.
         candidates = [
+            root / "ui" / "src" / "lib" / "dataSources.js",
             root / "ui" / "src" / "pages" / "AboutTab.jsx",
             root / "ui" / "src" / "App.jsx",
         ]

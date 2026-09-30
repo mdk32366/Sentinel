@@ -95,7 +95,7 @@ export function CrossAssetTab() {
                     <ColHeader label="Signal" tip="Stress classification: DIVERGENCE (2×) = selling gold while spot price rises — forced seller; CROSS-ASSET (1.5×) = selling both T-bills and gold; EXITED = zero US Treasuries held; T-ONLY = reducing Treasury holdings only; Au ONLY = reducing gold reserves only." align="left" />
                     <ColHeader label="T-Bills MoM" tip="Month-over-month % change in US Treasury holdings. Negative = selling. 'EXITED' means zero holdings — position fully liquidated before TIC reporting window." align="right" />
                     <ColHeader label="Consec ↓" tip="Consecutive months of declining Treasury holdings. Persistence distinguishes structural de-dollarization from tactical rebalancing. 3+ months = significant signal." align="right" />
-                    <ColHeader label="Gold t" tip="Central bank gold reserves in metric tonnes, from the most recent World Gold Council / IMF IFS quarterly report. Large holdings alongside zero Treasuries indicate deliberate reserve restructuring." align="right" />
+                    <ColHeader label="Gold t" tip="Central bank gold reserves in metric tonnes, from the IMF's monthly IRFCL return. Large holdings alongside zero Treasuries indicate deliberate reserve restructuring." align="right" />
                     <ColHeader label="Gold MoM" tip="Quarter-over-quarter % change in gold reserves. Negative = selling gold. When a country sells gold AND Treasuries simultaneously, cross-asset multiplier (1.5×) activates." align="right" />
                     <ColHeader label="Non-$ Reserves" tip="Total reserves excluding gold (TRESEG series, FRED). REBUILDING = non-dollar reserves growing >5% YoY — country is building an alternative reserve base. DEPLETING = shrinking >5% YoY — possible forced selling under distress." align="right" />
                     <ColHeader label="Score" tip="Composite stress score (0-150). Base score from the T-bill and gold signals, multiplied by 1.5x for cross-asset or 2.0x for divergence. Shown as a number rather than a gauge: a bar answers \u0022how full\u0022 when the question is \u0022how much, and driven by what\u0022." align="right" />
@@ -158,7 +158,7 @@ export function CrossAssetTab() {
       </div>
       <DataAsOf
         asOf={data.as_of}
-        source="US Treasury TIC · World Gold Council"
+        source="US Treasury TIC · IMF IRFCL · LBMA"
       />
     </div>
   );
