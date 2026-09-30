@@ -96,6 +96,47 @@ WGC_COUNTRY_MAP = {
 }
 
 
+# ── D-0090 / D-0045 applied to gold reserves ───────────────────────────────
+#
+# `D-0045`: a frozen source is a FAILURE, not a success and not a `partial`.
+# That rule was implemented for TIC (`treasury_holdings.MAX_SOURCE_AGE_DAYS`)
+# and for the gold PRICE (`gold_price_import.MAX_SOURCE_AGE_DAYS`) and never for
+# gold RESERVES - plausibly because this importer could not run at all
+# (`F-0103`), and a job that dies on NameError never reaches the point where a
+# freshness check would matter.
+#
+# There is no fetch here. `data/gold_reserves.csv` is a file a human downloads
+# from the WGC; the docstring has always said "re-download monthly to keep
+# current". Nothing enforced it, so from the moment `F-0103` was fixed this job
+# would have reported `success` forever while importing the same frozen file -
+# which is `F-0050` exactly.
+#
+# **Deriving the bound.** Rows are dated FIRST-of-quarter (`parse_quarter`), so
+# a perfectly current file is already old by this measure:
+#
+#   * 2026-06-24 download -> newest row Q1 26 (2026-01-01) = 174 days old
+#   * 2026-09-26 download -> newest row Q2 26 (2026-04-01) = 178 days old
+#
+# That is the FRESH state, not the stale one. The newest row then stays newest
+# until the WGC publishes the following quarter, so a healthy file peaks around
+# 214-220 days before a prompt refresh resets it. A file that has missed a whole
+# quarter sits at 270+.
+#
+# 240 is chosen to sit in that gap: above anything a promptly-refreshed file
+# reaches, below "you skipped a quarter". A tighter bound would fire on data
+# that is as current as the WGC makes possible, which is `F-0089` - a threshold
+# that cries wolf is retired within the week and teaches everyone to ignore the
+# next one.
+#
+# **Stated uncertainty.** The WGC publication lag is bounded by observation at
+# <= 88 days (Q2 26 ended 2026-06-30 and was present on 2026-09-26) but not
+# pinned more precisely, so 214-220 is an estimate and 240 carries the slack for
+# it. If this ever fires on a file that was genuinely just downloaded, the
+# number is wrong and the evidence will be in the error message - it names the
+# newest row and its age.
+MAX_SOURCE_AGE_DAYS = 240
+
+
 def parse_quarter(q_str: str) -> datetime:
     """
     Parse quarter string like 'Q4 00', 'Q1 26' into first-of-quarter datetime.
@@ -166,6 +207,10 @@ def import_wgc_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
 
     metric = ensure_gold_metric(db)
     inserted = updated = skipped = 0
+    # D-0090. The newest observation this file actually yielded - not the
+    # newest COLUMN, because a trailing column of "AWAITED" parses fine and
+    # writes nothing, which would make a frozen file look current.
+    newest_source_date = None
 
     with open(csv_path, newline='', encoding='utf-8-sig') as f:
         reader = csv.reader(f)
@@ -228,6 +273,31 @@ def import_wgc_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
                     ))
                     inserted += 1
 
+                if newest_source_date is None or date > newest_source_date:
+                    newest_source_date = date
+
+    # D-0090 / D-0045. Refuse a present-but-frozen file. Both entry points -
+    # `run_gold_reserves_fetch` (the scheduler) and `run_gold_fetch` (the
+    # route) - log any exception as status="failed", so raising here is what
+    # makes the log tell the truth.
+    if newest_source_date is None:
+        db.rollback()
+        raise ValueError(
+            f"Gold reserves CSV at {csv_path} yielded no parseable observations "
+            f"({skipped} countries skipped). Refusing to report success."
+        )
+
+    age_days = (datetime.utcnow() - newest_source_date).days
+    if age_days > MAX_SOURCE_AGE_DAYS:
+        db.rollback()
+        raise ValueError(
+            f"Gold reserves CSV at {csv_path} is stale: newest observation "
+            f"{newest_source_date.date()} is {age_days} days old, limit is "
+            f"{MAX_SOURCE_AGE_DAYS}. The file is present but frozen - refresh "
+            f"it from "
+            f"https://www.gold.org/goldhub/data/gold-reserves-by-country"
+        )
+
     db.commit()
     logger.info(f"WGC historical import: {inserted} inserted, {updated} updated, {skipped} countries skipped")
     return {
@@ -236,6 +306,11 @@ def import_wgc_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
         "updated": updated,
         "skipped": skipped,
         "note": "Quarterly data Q4 2000 to present",
+        # D-0090. Surfaced rather than only enforced: a reader should be able
+        # to see the file ageing before the guard fires, not learn about it
+        # from a failure.
+        "source_latest": newest_source_date.date().isoformat(),
+        "source_age_days": age_days,
     }
 
 

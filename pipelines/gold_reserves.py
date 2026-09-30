@@ -84,6 +84,10 @@ def run_gold_reserves_fetch(db: Session) -> dict:
             "inserted": result["inserted"],
             "updated": result["updated"],
             "errors": [],
+            # D-0090. The importer refuses a frozen file; these let a reader
+            # watch it age before that happens.
+            "source_latest": result.get("source_latest"),
+            "source_age_days": result.get("source_age_days"),
         }
 
     except Exception as e:
