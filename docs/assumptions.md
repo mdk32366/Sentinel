@@ -607,7 +607,11 @@ holders, and most coverage badges clear on their own.
 - Sixteen reporters publish only a long-term figure, so those countries have a
   *different* measure available rather than the same one. Stored separately, not
   substituted. Whether dimension 1 should score them on it is open.
-- Qatar, Pakistan and Czechia appear in neither table.
+- Qatar, Pakistan and Czechia appear in neither table. Nothing published names
+  them, so this is a limit of the source rather than of the pipeline.
+- The nineteen reporters missing from the `countries` table were added by
+  `D-0082`, thirteen of them offshore conduits, on the grounds that Cayman and
+  Bermuda were already ranked.
 - Option 4, per-country re-weighting, is still the principled answer to scores
   built from different amounts of evidence - but with 76 countries covered
   instead of 20 it now addresses a much smaller residue. Not worth the

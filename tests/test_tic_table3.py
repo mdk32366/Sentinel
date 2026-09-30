@@ -201,6 +201,36 @@ class TestCountryMapping(unittest.TestCase):
         isos = list(EXTRA_ISO.values())
         self.assertEqual(len(isos), len(set(isos)), "two labels share an ISO code")
 
+    def test_a_country_row_is_created_only_for_a_vetted_label(self):
+        # D-0082. The nineteen labels in EXTRA_ISO get a row created when one
+        # does not exist. A label that is NOT on that list must be reported as
+        # unmapped rather than turned into a country nobody vetted — otherwise a
+        # new aggregate or a renamed region silently becomes a scored sovereign,
+        # which is the F-0088 shape one layer down.
+        import inspect
+
+        from pipelines import tic_table3
+
+        body = inspect.getsource(tic_table3.run_tic_table3_fetch)
+        # Creation sits inside the `if iso:` branch, i.e. behind EXTRA_ISO.
+        self.assertIn("iso = EXTRA_ISO.get(label)", body)
+        create_at = body.index("Country(iso_code=iso, name=label)")
+        guard_at = body.index("iso = EXTRA_ISO.get(label)")
+        self.assertLess(guard_at, create_at, "a row is created before the check")
+        self.assertIn("unmapped.add(label)", body)
+
+    def test_created_countries_are_reported_not_silent(self):
+        # Adding rows to `countries` widens what the composite ranks. It is a
+        # scope change and has to appear in the run result and the UpdateLog
+        # note, not only in a log line nobody reads.
+        import inspect
+
+        from pipelines import tic_table3
+
+        body = inspect.getsource(tic_table3.run_tic_table3_fetch)
+        self.assertIn('"created_countries"', body)
+        self.assertIn("created {len(created)} countries", body)
+
     def test_the_mapping_is_explicit_not_fuzzy(self):
         # A near-miss that maps Jersey to Germany is worse than a country we
         # skip and can see we skipped.

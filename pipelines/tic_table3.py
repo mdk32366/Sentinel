@@ -68,9 +68,20 @@ AGGREGATE_PREFIXES = (
     "Total ", "Memo:", "Of Which:",
 )
 
-# Table 3 labels that our `countries` table does not carry under that name.
+# Table 3 labels our `countries` table does not carry under that name, with the
+# ISO code each should have.
+#
 # Explicit rather than fuzzy-matched: a near-miss that silently maps Jersey to
-# Germany is worse than a country we skip and can see we skipped.
+# Germany is worse than a country we skip and can see we skipped. `D-0082`: a
+# row is created for these when it does not exist, and ONLY for these - a label
+# that is not on this list is reported as unmapped rather than turned into a
+# country nobody vetted.
+#
+# Thirteen of the nineteen are offshore financial centres rather than sovereigns
+# in the stress sense. They are included because the model already ranks the
+# Cayman Islands and Bermuda, which are in Table 5's twenty, so excluding the
+# smaller conduits would be inconsistent rather than principled. Their holdings
+# are real and their rows are as reversible as any other.
 EXTRA_ISO = {
     "Anguilla": "AIA", "Argentina": "ARG", "Aruba": "ABW", "Austria": "AUT",
     "Bahamas": "BHS", "Barbados": "BRB", "British Virgin Islands": "VGB",
@@ -300,15 +311,31 @@ def run_tic_table3_fetch(db: Session, validate: bool = True) -> dict:
         by_name = {c.name.lower(): c for c in db.query(Country).all()}
         by_iso = {c.iso_code: c for c in db.query(Country).all()}
 
-        resolved, unmapped = {}, set()
+        resolved, unmapped, created = {}, set(), []
         for label in {o["label"] for o in observations}:
             country = by_name.get(label.lower())
             if country is None:
                 iso = EXTRA_ISO.get(label)
-                country = by_iso.get(iso) if iso else None
+                if iso:
+                    country = by_iso.get(iso)
+                    if country is None:
+                        # D-0082. Created only for a vetted label. These are
+                        # real reporters with real holdings whose absence was an
+                        # accident of which countries happened to be seeded, not
+                        # a decision about scope.
+                        country = Country(iso_code=iso, name=label)
+                        db.add(country)
+                        db.commit()
+                        by_iso[iso] = country
+                        by_name[label.lower()] = country
+                        created.append(f"{iso} ({label})")
             if country is None:
                 unmapped.add(label)
             resolved[label] = country
+
+        if created:
+            logger.info("TIC Table 3 created %d countries: %s",
+                        len(created), ", ".join(sorted(created)))
 
         inserted = updated = skipped = 0
         countries = set()
@@ -352,6 +379,8 @@ def run_tic_table3_fetch(db: Session, validate: bool = True) -> dict:
 
         status = "partial" if (rejected or unmapped) else "success"
         notes = []
+        if created:
+            notes.append(f"created {len(created)} countries: {', '.join(sorted(created)[:6])}")
         if rejected:
             notes.append(f"{len(rejected)} implausible: {', '.join(rejected[:4])}")
         if unmapped:
@@ -380,6 +409,7 @@ def run_tic_table3_fetch(db: Session, validate: bool = True) -> dict:
             "skipped": skipped, "countries": len(countries),
             "newest_date": newest.date().isoformat() if newest else None,
             "rejected": rejected, "unmapped": sorted(unmapped),
+            "created_countries": sorted(created),
         }
 
     except Exception as exc:

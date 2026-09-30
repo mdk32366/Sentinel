@@ -2094,3 +2094,35 @@ creating it from here would be a second opinion about what it is.
 monitored, because no watchdog source declared it. Table 3 arrives in the same
 release as Table 5, so its freshness is the `tic` source's and it is declared
 there.
+
+### D-0082 - The nineteen reporters absent from the country table are added
+
+`D-0081` imported SLT Table 3 and reported **19 labels it could not place**:
+none of their ISO codes existed in the `countries` table. Their absence was an
+accident of which countries happened to be seeded, not a decision about scope -
+they are real reporters with real published holdings.
+
+**Six are sovereigns**: Argentina, Austria, Greece, New Zealand, Portugal,
+Syria. In a sovereign stress model these plainly belong, and Argentina
+especially.
+
+**Thirteen are offshore financial centres**: Anguilla, Aruba, Bahamas, Barbados,
+British Virgin Islands, Curacao, Guernsey, Jamaica, Jersey, Liberia, Panama,
+Saint Kitts and Nevis, Trinidad and Tobago.
+
+**All nineteen are added**, because the model **already ranks the Cayman Islands
+and Bermuda** - both are in Table 5's twenty - so excluding the smaller conduits
+would have been inconsistent rather than principled. A conduit's holdings say
+something about flows even when they say nothing about a sovereign's posture,
+and the rows are as reversible as any other.
+
+**Rows are created only for a vetted label.** `EXTRA_ISO` is the whole list; a
+label not on it is still reported as `unmapped` rather than turned into a
+country nobody reviewed. Without that guard a renamed region or a new aggregate
+row silently becomes a scored sovereign - the `F-0088` shape one layer down. A
+test asserts the creation sits behind the lookup.
+
+**Creation is reported, not silent.** Adding rows to `countries` widens what the
+composite ranks, which is a scope change. It appears in the run result
+(`created_countries`) and in the `UpdateLog` note, so it shows on the ADMIN
+pipeline log rather than only in a log line nobody reads.
