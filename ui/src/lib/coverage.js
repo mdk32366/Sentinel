@@ -49,7 +49,10 @@ export function ticCoverageNote(row) {
       `largest holders and folds the rest into one "All Other" row, so this ` +
       `country's current position is unknown` +
       (bn != null ? ` — it last reported $${bn}bn${when}` : "") +
-      `. Scored as nothing, not as zero (F-0097).`
+      `. Scored as nothing, not as zero (F-0097). The combined position of ` +
+      `everyone in that row is shown above the table as TIC ALL OTHER HOLDERS ` +
+      `(A-0019 option 2) — it moves with this country in it, but says nothing ` +
+      `about this country specifically.`
     );
   }
   if (row.tic_state === "no_data") {
