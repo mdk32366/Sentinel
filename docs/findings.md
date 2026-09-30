@@ -2847,3 +2847,45 @@ refusal, or the pipeline rejects data the screen still calls current.
 constants, and one case fails if the phrase "45 days in arrears" reappears
 without the correction - the wrong number was justified by a wrong sentence,
 and leaving the sentence is how the number comes back.
+
+### F-0090 - A manual data refresh could not refresh the score that reads it
+
+**Observed live**, minutes after the `F-0088` TIC fix deployed: HOLDINGS
+served `2026-07` and COMPOSITE served `2025-12`. Two surfaces disagreeing
+about which month the system is in.
+
+**The cause.** `POST /api/fetch/treasury-holdings` has always existed and
+invites a manual data refresh - it is how the fresh TIC data was loaded. But
+`GET /api/stress/composite` serves a *stored* snapshot (`D-0042`, so that a
+tab click does not recompute ~230 queries), and the **only** writer of that
+snapshot was the 04:45 UTC scheduled job. Nothing could catch the score up to
+data that had just moved.
+
+`?recompute=true` on the GET is not the answer and made it easy to miss: it
+computes without storing, so it corrects the tab for the one caller who passed
+the flag - which is exactly what I did while verifying, and why the real gap
+took a second look to see - and leaves the next reader the old snapshot.
+
+**Why it matters more than it looks.** A stale score is a wrong score
+presented with the same confidence as a right one, and `D-0074` had that same
+hour finished putting freshness verdicts on every surface. The composite tab
+would have carried a strip reading *"all 6 sources current"* - true, because
+the strip reads the watchdog, which reads the data - above a table scored from
+data seven months older than the strip described. The assurance work would
+have been actively misleading, which is worse than the silence it replaced.
+
+**Sample size.** One write path, one read path, seven months of divergence,
+every manual fetch.
+
+**Fixed.** `POST /api/snapshot/composite` calls the same
+`persist_composite_snapshot` the scheduler calls - not a second scoring path,
+because `F-0047` is the standing example of two jobs that looked equivalent
+running different scorers. Pinned by `tests/test_composite_snapshot_route.py`,
+including that the read path still defaults to the stored snapshot, so the
+fix cannot quietly turn every tab click into a full rescore.
+
+**The lesson, and it is the third time today.** `F-0086` was a colgroup
+disagreeing with its columns, `F-0087` a footer disagreeing with the strip
+above it, and this is a score disagreeing with its own inputs. Each was two
+correct components with no obligation to agree. Freshness is only meaningful
+if everything derived from the data moves when the data moves.
