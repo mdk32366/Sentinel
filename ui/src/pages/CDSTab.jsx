@@ -5,13 +5,19 @@ import { CDSCoverageBanner } from "../components/CDSCoverageBanner";
 import { ColHeader } from "../components/ColHeader";
 import { InfoTip } from "../components/InfoTip";
 import { DataConfidence } from "../components/DataConfidence";
+import { CountryLink } from "../components/CountryLink";
+import { countryHref, navigateToCountry } from "../lib/countryRoute";
 
 const FETCH_KEY = "cds";
 
-/** ISO-3166 for the CDS namespace's own country token (see CdsAllItem). */
+/**
+ * D-0091 / F-0106: rows link to the card with `country_iso3`, the ISO-3166
+ * code the server derives from the CDS token. `country_iso` is the token
+ * itself ("RUSSIA") and is not a card key (see CdsAllItem).
+ */
 const TIER_COLORS = { CRISIS: "#FF4444", STRESSED: "#E07B5A", ELEVATED: "#E8C547", WATCH: "#5A6878" };
 
-export function CDSTab({ onCountrySelect }) {
+export function CDSTab() {
   const rows = useApiResource(`/cds/all`);
   const coverageResource = useApiResource(`/cds/coverage`);
   // D-0060: this tab listed spreads and the COMPOSITE tab ranked countries,
@@ -161,16 +167,16 @@ export function CDSTab({ onCountrySelect }) {
                 return (
                   <tr 
                     key={i} 
-                    onClick={() => onCountrySelect && onCountrySelect(c.country_iso)}
+                    onClick={() => navigateToCountry(c.country_iso3)}
                     style={{ 
                       borderBottom: "1px solid #0F1923", 
-                      cursor: onCountrySelect ? "pointer" : "default" 
+                      cursor: countryHref(c.country_iso3) ? "pointer" : "default" 
                     }}
                     onMouseEnter={e => e.currentTarget.style.background = "#0D1820"}
                     onMouseLeave={e => e.currentTarget.style.background = "transparent"}
                   >
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0" }}>
-                      {c.country_name} <span style={{ color: "#3A4D5C", fontSize: 10 }}>{c.country_iso}</span>
+                      <CountryLink iso={c.country_iso3} name={c.country_name} />
                     </td>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, textAlign: "right", color: isHigh ? "#E07B5A" : "#8A9BAC", fontWeight: isHigh ? 600 : 400 }}>
                       {c.cds_5y ? `${c.cds_5y} bps` : "—"}

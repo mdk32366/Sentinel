@@ -34,7 +34,7 @@ from pipelines.cds_fetcher import (
     pair_cds_tenors,
 )
 # F-0078: ISO -> the CDS metric namespace token ("TUR" -> "TURKEY").
-from pipelines.composite_stress import CDS_NAME_BY_ISO
+from pipelines.composite_stress import CDS_NAME_BY_ISO, ISO_BY_CDS_NAME
 from pipelines.stress_score_v2 import get_latest_metric_value
 # ORDER-03 B2 / F-0020: previously imported inside the handler bodies, which
 # hid these dependencies from any static read of the imports.
@@ -1213,6 +1213,10 @@ async def get_all_cds(db: Session = Depends(get_db)):
 
         results.append({
             "country_iso": country_code,
+            # D-0091: the ISO3 the country card is keyed by. None when the
+            # token is not in CDS_NAME_BY_ISO; the UI then shows the name
+            # unlinked with a visible marker rather than guessing.
+            "country_iso3": ISO_BY_CDS_NAME.get(country_code),
             "country_name": cds_country_for_code(metric5y.code),
             "cds_5y": cds5y,
             "implied_pd_pct": float(implied_pd) if implied_pd is not None else None,

@@ -9,8 +9,10 @@ import { DataConfidence } from "../components/DataConfidence";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
 import { LoadFailure } from "../components/LoadFailure";
+import { CountryLink } from "../components/CountryLink";
+import { navigateToCountry } from "../lib/countryRoute";
 
-export function CompositeTab({ onCountrySelect }) {
+export function CompositeTab() {
   const { data, error, loading } = useApiResource(`/stress/composite`);
   const [view, setView] = useState("all");
 
@@ -95,7 +97,10 @@ export function CompositeTab({ onCountrySelect }) {
           { label:"STRESSED", val:summary?.stressed??0, color:"#E07B5A", desc:"Score 50–75" },
           { label:"ELEVATED", val:summary?.elevated??0, color:"#E8C547", desc:"Score 25–50" },
           { label:"WATCH", val:summary?.watch??0, color:"#5A6878", desc:"Score < 25" },
-          { label:"Top Risk", val:summary?.highest_risk?.country_name??"—", color:"#C8A96E", desc:`Score: ${summary?.highest_risk?.composite_score?.toFixed(0)??"—"}` },
+          // D-0091: the tile opens the highest-risk country's card.
+          { label:"Top Risk", val:summary?.highest_risk
+              ? <CountryLink iso={summary.highest_risk.country_iso} name={summary.highest_risk.country_name} showCode={false} />
+              : "—", color:"#C8A96E", desc:`Score: ${summary?.highest_risk?.composite_score?.toFixed(0)??"—"}` },
         ].map(s => (
           <div key={s.label} style={{ background:"#0F1923", border:`1px solid ${(s.val>0&&s.label!=="Top Risk")?`${s.color}33`:"#1A2530"}`, borderTop:`2px solid ${(s.val>0||s.label==="Top Risk")?s.color:"#1A2530"}`, borderRadius:2, padding:"14px 20px", flex:"1 1 140px" }}>
             <div style={{ fontFamily:"monospace", fontSize:10, color:"#5A6878", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>{s.label}</div>
@@ -176,7 +181,7 @@ export function CompositeTab({ onCountrySelect }) {
                     const tc = TIER_COLORS[c.tier] || "#5A6878";
                     return (
                       <tr key={c.country_iso}
-                        onClick={() => onCountrySelect(c.country_iso)}
+                        onClick={() => navigateToCountry(c.country_iso)}
                         style={{ borderBottom:"1px solid #0F1923", cursor:"pointer" }}
                         onMouseEnter={e => {
                           e.currentTarget.style.background="#0D1820";
@@ -189,8 +194,11 @@ export function CompositeTab({ onCountrySelect }) {
                           if (activityCell) activityCell.style.background="#0A1520";
                         }}>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:12, color:"#E8E0D0", textAlign:"left", whiteSpace:"normal", overflowWrap:"break-word" }}>
-                          <div style={{ lineHeight:1.25 }}>{c.country_name}</div>
-                          <div style={{ fontSize:10, color:"#3A4D5C", marginTop:1 }}>{c.country_iso}</div>
+                          {/* D-0091: a real link to the same card the row opens,
+                              so the name is reachable by keyboard and has a URL. */}
+                          <CountryLink iso={c.country_iso} name={c.country_name}
+                            style={{ display:"block", lineHeight:1.25 }}
+                            codeStyle={{ display:"block", marginLeft:0, marginTop:1 }} />
                         </td>
                         <td style={{ padding:"7px 8px" }}>
                           <span style={{ fontFamily:"monospace", fontSize:10, color:tc, background:`${tc}18`, border:`1px solid ${tc}44`, borderRadius:2, padding:"1px 5px" }}>{c.tier}</span>

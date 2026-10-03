@@ -172,8 +172,15 @@ class CdsAllItem(BaseModel):
     `country_iso` carries the CDS metric namespace's own country token (e.g.
     "RUSSIA"), taken from the `{COUNTRY}_CDS_5Y` metric code. It is NOT an
     ISO-3166 code and is not the `countries.iso_code` used elsewhere.
+
+    `country_iso3` (D-0091 / F-0106) is that ISO-3166 alpha-3 code, derived on
+    the server from `ISO_BY_CDS_NAME`, or null for a token the map does not
+    know. It is what the UI links to the country card with. It must be
+    declared here: `response_model` strips undeclared fields silently
+    (F-0079 / F-0082).
     """
     country_iso: str
+    country_iso3: Optional[str] = None
     country_name: str
     cds_5y: float
     # D-0063: carried by the source and previously discarded. implied_pd_pct

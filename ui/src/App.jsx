@@ -4,9 +4,11 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsi
 import { METRICS, RANGES, TABS } from "./lib/constants";
 import { formatDate } from "./lib/format";
 import { changeBetween, changeSuffix, changeWindowLabel } from "./lib/series";
+import { navigateToTab } from "./lib/countryRoute";
 // ORDER-03 Part F step 4: App owns which tab is open and what is selected.
 // Everything that talks to the API lives in a hook (F-0063).
 import { useApiResource } from "./hooks/useApiResource";
+import { useHashRoute } from "./hooks/useHashRoute";
 import { useChartSeries } from "./hooks/useChartSeries";
 import { useMarketSeries } from "./hooks/useMarketSeries";
 import { CustomTooltip } from "./components/CustomTooltip";
@@ -25,8 +27,10 @@ import { HoldingsTab } from "./pages/HoldingsTab";
 
 
 export default function App() {
-  const [tab, setTab] = useState("MARKETS");
-  const [countryIso, setCountryIso] = useState(null); // for cross-tab navigation
+  // D-0091: the open tab and the country card live in the URL hash
+  // (`#/holdings`, `#/country/RUS`), so a card has an address that can be
+  // linked, refreshed, opened in a new tab and walked with Back.
+  const { tab, iso: countryIso } = useHashRoute();
   const [activeMetrics, setActiveMetrics] = useState(["DGS10", "DGS2", "DFF", "DCOILWTICO"]);
   const [range, setRange] = useState(RANGES[1]);
   const [normalized, setNormalized] = useState(false);
@@ -35,12 +39,6 @@ export default function App() {
   const { rows: chartData, loading } = useChartSeries({ activeMetrics, range, normalized });
   const { data: stats } = useApiResource(`/stats`);
   const { data: health } = useApiResource(`/health`);
-
-  // Navigate to country tab with a specific country
-  const handleCountrySelect = (iso) => {
-    setCountryIso(iso);
-    setTab("COUNTRY");
-  };
 
   const getChange = (code, unit) => {
     const previous = prior[code];
@@ -73,7 +71,7 @@ export default function App() {
       {/* Tabs */}
       <div style={{ borderBottom: "1px solid #1A2530", padding: "0 32px", display: "flex", gap: 0 }}>
         {TABS.map(t => (
-          <button key={t} onClick={() => { setTab(t); if (t !== "COUNTRY") setCountryIso(null); }} style={{
+          <button key={t} onClick={() => navigateToTab(t)} style={{
             background: "transparent", border: "none",
             borderBottom: `2px solid ${tab === t ? "#C8A96E" : "transparent"}`,
             color: tab === t ? "#C8A96E" : "#3A4D5C",
@@ -165,13 +163,15 @@ export default function App() {
           </>
         )}
 
-        {tab === "HOLDINGS" && <HoldingsTab onCountrySelect={handleCountrySelect} latestAll={latest} />}
+        {/* D-0091: every country mention is a <CountryLink> to #/country/<ISO3>,
+            so the tabs no longer need a select callback from here. */}
+        {tab === "HOLDINGS" && <HoldingsTab latestAll={latest} />}
         {tab === "CROSS-ASSET" && <CrossAssetTab />}
-        {tab === "GOLD" && <GoldReservesTab onCountrySelect={handleCountrySelect} latestAll={latest} />}
-        {tab === "COMPOSITE" && <CompositeTab onCountrySelect={handleCountrySelect} />}
-        {tab === "CDS" && <CDSTab onCountrySelect={handleCountrySelect} />}
+        {tab === "GOLD" && <GoldReservesTab latestAll={latest} />}
+        {tab === "COMPOSITE" && <CompositeTab />}
+        {tab === "CDS" && <CDSTab />}
         {tab === "COUNTRY" && (
-          <CountryTab initialIso={countryIso} onIsoChange={setCountryIso} latestAll={latest} />
+          <CountryTab initialIso={countryIso} latestAll={latest} />
         )}
         {tab === "ADMIN" && <AdminTab />}
         {tab === "ABOUT" && <AboutTab />}

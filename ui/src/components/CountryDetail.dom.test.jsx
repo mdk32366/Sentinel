@@ -77,4 +77,23 @@ describe("GOLD threads the yields through to the country panel", () => {
 
     await waitFor(() => expect(screen.getByText("-315bps")).toBeTruthy());
   });
+
+  it("D-0091: the NAME in that row opens the card, and does not open the inline panel", async () => {
+    // G11. The row keeps the inline history panel (F-0064, the test above);
+    // the country name inside it is a link to #/country/<ISO3>. The link
+    // stops propagation, so the two never both fire.
+    window.location.hash = "";
+    const { container } = render(<GoldReservesTab latestAll={JPN_YIELDS} />);
+    await waitFor(() => expect(screen.getByText("Japan")).toBeTruthy());
+
+    const row = [...container.querySelectorAll("tr")].find((tr) => tr.textContent.includes("Japan"));
+    const link = row.querySelector('a[href="#/country/JPN"]');
+    expect(link).toBeTruthy();
+    link.click();
+
+    await waitFor(() => expect(window.location.hash).toBe("#/country/JPN"));
+    expect(screen.queryByText("COUNTRY DETAIL")).toBeNull();
+    expect(screen.queryByText("-315bps")).toBeNull();
+    window.location.hash = "";
+  });
 });
