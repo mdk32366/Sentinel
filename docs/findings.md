@@ -3641,3 +3641,44 @@ runbook rotates both.
 
 Runbook: `docs/rotation-2026-10-02.md`. No values in it - the repository is
 public by the owner's decision.
+
+### F-0106 - Every CDS row opened its country card with a key the card cannot read
+
+The CDS leaderboard passed `country_iso` to the country card on row click. That
+field is the CDS metric namespace's own token - `"RUSSIA"`, `"UNITED_STATES"`,
+`"SAUDI_ARABIA"` - taken from the metric code (`api/routes.py`,
+`country_code = metric5y.code.replace("_CDS_5Y", "")`), and `CdsAllItem`'s
+docstring has always said so: "It is NOT an ISO-3166 code". The card is keyed
+by ISO3. **All 21 rows in the captured production payload were affected.**
+
+What a reader saw: clicking Russia opened a card titled **"RUSSIA"** with no
+holdings and no gold. The card asked for `/holdings/RUSSIA` and
+`/gold-reserves/RUSSIA`, both endpoints look the key up in `countries.iso_code`
+and returned 404, and the hook fails soft to null - so the title fell back to
+the raw key and the panels were simply empty. Only the CDS tile resolved,
+because `/cds` maps ISO to token and falls back to the raw input (`F-0078`).
+`UNITED_STATES` never reached the USA dashboard at all, because that branch is
+keyed on the literal `"USA"`.
+
+**Why it was not noticed.** An empty panel is a plausible answer. Most
+countries have no CDS quote and plenty have no gold row, so a card with nothing
+in it reads as "no data for this country" rather than "wrong country key" - the
+`F-0064` / `F-0097` shape again: a blank indistinguishable from a legitimate
+absence. The page's own comment (`CDSTab.jsx`, the tier join) knew the token was
+not ISO and joined on name for exactly that reason; the row click a few lines
+below did not get the same care.
+
+**Artifact.** `tests/fixtures/api/production_payloads.json`, `cds_all`, 21 rows
+captured 2026-09-28, every `country_iso` a namespace token; `CDS_NAME_BY_ISO`
+(`pipelines/composite_stress.py`, 31 entries) inverts all 21 cleanly to an
+ISO3, 0 unmapped. Not clicked on the live site for this entry; the live check
+is part of the `D-0091` acceptance.
+
+**Fixed** at the source, additively (`D-0091`): `ISO_BY_CDS_NAME` is derived
+from `CDS_NAME_BY_ISO` rather than written out, `/cds/all` returns
+`country_iso3` beside the unchanged `country_iso`, the field is declared on
+`CdsAllItem` (an undeclared key is stripped by `response_model`, `F-0082`), and
+the CDS row links with it. A token the map does not know comes back null and
+renders unlinked with a visible `?`, never guessed in the frontend.
+`tests/test_cds_all_iso3.py` pins the declaration, the 1:1 inverse, the fixture
+against the map, and the endpoint emitting the field through its response model.
