@@ -12,6 +12,7 @@ import { M2GrowthChart } from "../components/usa/M2GrowthChart";
 import { RateScenarios } from "../components/usa/RateScenarios";
 import { USAKeyMetrics } from "../components/usa/USAKeyMetrics";
 import { YieldCurveChart } from "../components/usa/YieldCurveChart";
+import { tabHref } from "../lib/countryRoute";
 
 const RANGES = [[365, "1Y"], [730, "2Y"], [1825, "5Y"], [3650, "10Y"]];
 
@@ -49,6 +50,11 @@ export function USADashboard() {
           US stress is not forced selling — it&apos;s the Fed&apos;s ability to manage <span style={{ color: "#C8A96E" }}>$36T in debt</span> as
           foreign demand weakens, the dollar debasement math, and whether the bond market will accept the terms the Fed is offering.
           <span style={{ color: "#5A6878" }}> Whether official demand is in fact weakening is measured directly below, from the TIC Foreign Official series rather than asserted.</span>
+        </div>
+        <div style={{ marginTop: 8, fontFamily: "monospace", fontSize: 11 }}>
+          <a href={tabHref("ABOUT")} style={{ color: "#5A6878", textDecoration: "none" }}>
+            New to T-bills? Start with the plain-English guide on ABOUT →
+          </a>
         </div>
       </div>
 
