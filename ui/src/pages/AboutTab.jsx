@@ -1,4 +1,5 @@
 import { FUTURE, SIGNALS, SOURCES } from "../lib/dataSources";
+import { TBillsExplainer } from "../components/TBillsExplainer";
 
 export function AboutTab() {
   return (
@@ -9,6 +10,7 @@ export function AboutTab() {
         The highest-conviction signal is simultaneous selling of both treasuries and gold — especially into a rising gold price.
       </div>
 
+      <TBillsExplainer />
       {/* Retired surfaces — D-0051 */}
       <div style={{ marginBottom: 32 }}>
         <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", letterSpacing: "0.15em", textTransform: "uppercase", marginBottom: 16, borderBottom: "1px solid #1A2530", paddingBottom: 6 }}>RETIRED</div>
