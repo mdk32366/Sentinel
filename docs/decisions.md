@@ -2505,3 +2505,88 @@ about its own source.
 **Also surfaced, not only enforced.** The result carries `source_latest` and
 `source_age_days`, so the file can be watched ageing rather than only reported
 on once it is too late.
+
+### D-0091 - Every country mention opens its card
+
+Matt's ask, 2026-10-03: *"Inspect the UI surfaces with countries listed and
+ensure that the country, when clicked, leads to the baseball card for that
+country."* The inventory found fifteen surfaces that render a specific country.
+Six opened the card, three opened the wrong thing, six were dead text. The root
+cause was not any one surface: **the card had no address.** No router, no
+`href`, no shared link - every surface hand-rolled `onClick` on a `div`, `tr` or
+`button`, three behaviours grew out of that, and none of them could be reached
+by keyboard, opened in a new tab, or proved live by a URL. The worst of the
+three is `F-0106`.
+
+**Choice.** One link target, `#/country/<ISO3>`, rendered by one component.
+`ui/src/lib/countryRoute.js` owns the address (`countryHref`, `parseRoute`,
+`navigateToCountry`) and never guesses: a key that is not ISO3-shaped gets no
+href. `useHashRoute` reads it with `useSyncExternalStore`, so App and the
+COUNTRY tab are driven by the URL rather than by local state. `<CountryLink>`
+is a real `<a href>` that stops propagation and never prevents default, used on
+all fifteen surfaces; the GOLD chart navigates through `<CountryAxisTick>` and a
+`Bar` `onClick`. An unknown key renders the name with a **visible** muted `?`,
+not silently: a silently unlinked name looks exactly like a working one, which
+is the `F-0064` / `F-0097` shape. On HOLDINGS and GOLD the name opens the card
+and the row keeps the inline history panel, so `F-0064`'s test is untouched.
+CDS gets an additive server field, `country_iso3`, derived from the one existing
+map (`F-0106`). Guards: `countryLinks.coverage.dom.test.jsx` renders every
+surface against the production fixture and fails on any country name or ISO3
+that is not inside a link to its own card, with fixture-derived minimums so an
+empty render is red, plus a static lint for a raw country cell.
+
+**Rejected.**
+- *Per-surface patches* - fix the CDS key, add an `onClick` to CROSS-ASSET.
+  Fastest, and it leaves no single target, no href, no keyboard access and
+  nothing a generic guard can check. Hand-rolled clicks are what produced three
+  behaviours in the first place.
+- *Row-click only.* Rows are not focusable and have no URL for live proof, and
+  the tiles, chips and chart stay dead.
+- *A global delegated click handler on `[data-country]`.* Invisible coupling
+  with no href - no new tab, no link semantics - and a surface-level test
+  cannot see whether it is wired.
+- *react-router path routes `/country/:iso`.* A new dependency, and
+  `StaticFiles(html=True)` in `main.py` has no SPA fallback, so a deep link
+  would 404 on refresh without a server change. The hash never reaches the
+  server, survives Basic Auth, refreshes and opens in a new tab.
+- *Mapping CDS names to ISO in the frontend.* A second copy of
+  `CDS_NAME_BY_ISO`, which `D-0061` / `F-0062` forbid
+  (`api/routes.py`, the `/cds` history comment).
+
+**What forced the call.** The load-bearing fact is that the CDS tab sends a
+non-ISO token to the card: `api/routes.py` builds `country_code` from the
+metric code and returns it as `country_iso`, `CdsAllItem`'s own docstring says
+it is "NOT an ISO-3166 code", and the captured production payload has
+`"country_iso": "RUSSIA"`. Clicking Russia on CDS opened a card titled "RUSSIA"
+with no holdings and no gold. Matt asked to *ensure*, which needs a guard rather
+than a patch, and a guard needs one thing to check - one component, one href.
+
+*What would change it.* Shareable path URLs: react-router plus a `main.py`
+fallback. Retiring the HOLDINGS / GOLD inline panel in favour of the card:
+switch row behaviour and rewrite the `F-0064` test. CDS quoting sovereigns not
+in `CDS_NAME_BY_ISO`: they show the `?` marker until the map grows, and if that
+becomes common the map needs an owner. Prose mentions in tooltips, ABOUT and
+the Analyst Brief count as "countries listed": a separate ask - a link inside a
+hover tooltip cannot be clicked.
+
+*Who carries the downside.* Readers carry a behaviour change: the tab now lives
+in the URL, so Back steps through tabs. UI-only plus one additive optional API
+field, no data and no migration, so a single revert plus the automatic
+redeploy restores the previous state exactly. The worst plausible failure is a
+link to an empty card, which is what the coverage guard and the live proof are
+aimed at.
+
+*Bias check.* The repeat-of-last-time default was "add routes like PharmFold's
+`/census`", rejected on Sentinel's own evidence (`StaticFiles` with no
+fallback), not on taste. The easy default was to patch only the visibly broken
+CDS tab. What Matt seemed to want is "every country links"; prose and tooltips
+are held back deliberately and said so rather than over-delivered into
+unclickable places. One call to flag: HOLDINGS / GOLD rows were graded wrong
+target although the inline panel is the same component; the row keeps it, so
+nothing is lost either way.
+
+Two edges this build resolved and records here. The COUNTRY picker's section
+heading "United States - Issuer Dashboard" names a country and is linked too,
+so the guard holds with an empty allowlist. The CDS row's muted code now reads
+the ISO3 (`RUS`) rather than the namespace token (`RUSSIA`), because the link
+shows the key it opens.

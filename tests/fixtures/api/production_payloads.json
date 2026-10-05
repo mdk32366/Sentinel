@@ -2,6 +2,7 @@
  "cds_all": [
   {
    "country_iso": "RUSSIA",
+   "country_iso3": "RUS",
    "country_name": "Russia",
    "cds_5y": 13775.17,
    "cds_10y": null,
@@ -11,6 +12,7 @@
   },
   {
    "country_iso": "SAUDI_ARABIA",
+   "country_iso3": "SAU",
    "country_name": "Saudi Arabia",
    "cds_5y": 500.0,
    "cds_10y": 500.0,
@@ -20,6 +22,7 @@
   },
   {
    "country_iso": "EGYPT",
+   "country_iso3": "EGY",
    "country_name": "Egypt",
    "cds_5y": 297.86,
    "cds_10y": null,
@@ -29,6 +32,7 @@
   },
   {
    "country_iso": "TURKEY",
+   "country_iso3": "TUR",
    "country_name": "Turkey",
    "cds_5y": 245.17,
    "cds_10y": null,
@@ -38,6 +42,7 @@
   },
   {
    "country_iso": "SOUTH_AFRICA",
+   "country_iso3": "ZAF",
    "country_name": "South Africa",
    "cds_5y": 128.22,
    "cds_10y": null,
@@ -47,6 +52,7 @@
   },
   {
    "country_iso": "BRAZIL",
+   "country_iso3": "BRA",
    "country_name": "Brazil",
    "cds_5y": 124.9,
    "cds_10y": null,
@@ -56,6 +62,7 @@
   },
   {
    "country_iso": "MEXICO",
+   "country_iso3": "MEX",
    "country_name": "Mexico",
    "cds_5y": 88.7,
    "cds_10y": null,
@@ -65,6 +72,7 @@
   },
   {
    "country_iso": "INDONESIA",
+   "country_iso3": "IDN",
    "country_name": "Indonesia",
    "cds_5y": 88.2,
    "cds_10y": null,
@@ -74,6 +82,7 @@
   },
   {
    "country_iso": "INDIA",
+   "country_iso3": "IND",
    "country_name": "India",
    "cds_5y": 87.67,
    "cds_10y": null,
@@ -83,6 +92,7 @@
   },
   {
    "country_iso": "FRANCE",
+   "country_iso3": "FRA",
    "country_name": "France",
    "cds_5y": 57.42,
    "cds_10y": null,
@@ -92,6 +102,7 @@
   },
   {
    "country_iso": "ITALY",
+   "country_iso3": "ITA",
    "country_name": "Italy",
    "cds_5y": 45.12,
    "cds_10y": null,
@@ -101,6 +112,7 @@
   },
   {
    "country_iso": "CANADA",
+   "country_iso3": "CAN",
    "country_name": "Canada",
    "cds_5y": 39.6,
    "cds_10y": null,
@@ -110,6 +122,7 @@
   },
   {
    "country_iso": "GREECE",
+   "country_iso3": "GRC",
    "country_name": "Greece",
    "cds_5y": 34.9,
    "cds_10y": null,
@@ -119,6 +132,7 @@
   },
   {
    "country_iso": "CHINA",
+   "country_iso3": "CHN",
    "country_name": "China",
    "cds_5y": 33.96,
    "cds_10y": null,
@@ -128,6 +142,7 @@
   },
   {
    "country_iso": "UNITED_STATES",
+   "country_iso3": "USA",
    "country_name": "United States",
    "cds_5y": 33.75,
    "cds_10y": null,
@@ -137,6 +152,7 @@
   },
   {
    "country_iso": "JAPAN",
+   "country_iso3": "JPN",
    "country_name": "Japan",
    "cds_5y": 25.66,
    "cds_10y": null,
@@ -146,6 +162,7 @@
   },
   {
    "country_iso": "SOUTH_KOREA",
+   "country_iso3": "KOR",
    "country_name": "South Korea",
    "cds_5y": 22.31,
    "cds_10y": null,
@@ -155,6 +172,7 @@
   },
   {
    "country_iso": "SPAIN",
+   "country_iso3": "ESP",
    "country_name": "Spain",
    "cds_5y": 18.57,
    "cds_10y": null,
@@ -164,6 +182,7 @@
   },
   {
    "country_iso": "AUSTRALIA",
+   "country_iso3": "AUS",
    "country_name": "Australia",
    "cds_5y": 16.21,
    "cds_10y": null,
@@ -173,6 +192,7 @@
   },
   {
    "country_iso": "GERMANY",
+   "country_iso3": "DEU",
    "country_name": "Germany",
    "cds_5y": 8.95,
    "cds_10y": null,
@@ -182,6 +202,7 @@
   },
   {
    "country_iso": "SWITZERLAND",
+   "country_iso3": "CHE",
    "country_name": "Switzerland",
    "cds_5y": 7.5,
    "cds_10y": null,

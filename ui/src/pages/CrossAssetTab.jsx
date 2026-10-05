@@ -7,6 +7,7 @@ import { DataAsOf } from "../components/DataAsOf";
 import { DataConfidence } from "../components/DataConfidence";
 import { describeCrossAsset } from "../lib/crossAssetNarrative";
 import { LoadFailure } from "../components/LoadFailure";
+import { CountryLink } from "../components/CountryLink";
 
 export function CrossAssetTab() {
   const { data, error, loading } = useApiResource(`/holdings/cross-asset-stress`);
@@ -112,7 +113,8 @@ export function CrossAssetTab() {
                         onMouseEnter={e => e.currentTarget.style.background="#0D1820"}
                         onMouseLeave={e => e.currentTarget.style.background="transparent"}>
                         <td style={{ padding:"8px 9px", fontFamily:"monospace", fontSize:13, color:"#E8E0D0" }}>
-                          {c.country_name}<span style={{ marginLeft:6, fontSize:10, color:"#3A4D5C" }}>{c.country_iso}</span>
+                          {/* D-0091: this board had no way to reach a card at all. */}
+                          <CountryLink iso={c.country_iso} name={c.country_name} codeStyle={{ marginLeft:6 }} />
                         </td>
                         <td style={{ padding:"8px 9px" }}>
                           <span style={{ fontFamily:"monospace", fontSize:10, color:tc, background:`${tc}18`, border:`1px solid ${tc}44`, borderRadius:2, padding:"2px 6px", whiteSpace:"nowrap" }}>{label}</span>

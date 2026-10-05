@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
 import { ColHeader } from "../components/ColHeader";
 import { CountryDetail } from "../components/CountryDetail";
+import { CountryLink } from "../components/CountryLink";
 import { DataAsOf } from "../components/DataAsOf";
 import { DataConfidence } from "../components/DataConfidence";
 import { LoadFailure } from "../components/LoadFailure";
@@ -9,7 +10,7 @@ import { freshness } from "../lib/freshness";
 import { MovementCell } from "../components/MovementCell";
 import { trillions } from "../lib/format";
 
-export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
+export function HoldingsTab({ latestAll = {} }) {
   const { data: holdings, error, loading } = useApiResource(`/holdings`);
   const [selected, setSelected] = useState(null);
   const [sort, setSort] = useState("holdings");
@@ -66,7 +67,11 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
             val: comparable.length,
             sub: ltOnlyCount > 0 ? `+${ltOnlyCount} long-term only` : null,
           },
-          { label: "Top Holder", val: comparable[0]?.country_code ?? "—" },
+          // D-0091: the tile opens the top holder's card. An empty tile stays
+          // a plain dash - no link and no marker, there is no country to name.
+          { label: "Top Holder", val: comparable[0]
+            ? <CountryLink iso={comparable[0].country_code} name={comparable[0].country_code} showCode={false} />
+            : "—" },
           { label: "Top 3 Concentration", val: `${top3pct.toFixed(1)}%`, alert: top3pct > 40 },
           {
             label: "Data As Of",
@@ -90,13 +95,12 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
       {/* Top 8 quick cards */}
       <div style={{ display: "flex", gap: 8, marginBottom: 20, flexWrap: "wrap" }}>
         {rows.slice(0, 8).map(c => (
-          <div key={c.country_code}
-            onClick={() => onCountrySelect(c.country_code)}
-            style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "8px 14px", cursor: "pointer", flex: "1 1 110px", maxWidth: 160 }}>
+          <CountryLink key={c.country_code} iso={c.country_code} name={c.country_name} showCode={false}
+            style={{ display: "block", background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "8px 14px", cursor: "pointer", flex: "1 1 110px", maxWidth: 160 }}>
             <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878" }}>{c.country_code}</div>
             <div style={{ fontFamily: "monospace", fontSize: 13, color: "#E8E0D0", marginTop: 2 }}>${c.holdings_billions_usd.toFixed(0)}B</div>
             <div style={{ fontFamily: "monospace", fontSize: 11, color: "#C8A96E", marginTop: 2 }}>{c.percent_of_total.toFixed(1)}%</div>
-          </div>
+          </CountryLink>
         ))}
       </div>
 
@@ -121,8 +125,10 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
             { iso: "UZB", name: "Uzbekistan", gold: "416t" },
           ].map(c => (
             <div key={c.iso} style={{ background: "#0F1923", border: "1px solid #FF444433", borderRadius: 2, padding: "6px 12px" }}>
-              <span style={{ fontFamily: "monospace", fontSize: 11, color: "#FF4444" }}>{c.iso}</span>
-              <span style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", marginLeft: 6 }}>{c.name}</span>
+              <CountryLink iso={c.iso} name={c.name} showCode={false}>
+                <span style={{ fontFamily: "monospace", fontSize: 11, color: "#FF4444" }}>{c.iso}</span>
+                <span style={{ fontFamily: "monospace", fontSize: 11, color: "#8A9BAC", marginLeft: 6 }}>{c.name}</span>
+              </CountryLink>
               <span style={{ fontFamily: "monospace", fontSize: 10, color: "#E8C547", marginLeft: 8 }}>⬛ $0B · 🥇 {c.gold}</span>
             </div>
           ))}
@@ -134,7 +140,7 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 20px 16px" }}>
           <div style={{ fontFamily: "monospace", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
             FOREIGN TREASURY HOLDINGS
-            <span style={{ marginLeft: 10, fontSize: 10, color: "#3A4D5C" }}>click row for history · click ISO card for full view</span>
+            <span style={{ marginLeft: 10, fontSize: 10, color: "#3A4D5C" }}>click country for its card · click row for history</span>
           </div>
         </div>
         <div style={{ overflowX: "auto" }}>
@@ -160,7 +166,10 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
                     onMouseLeave={e => e.currentTarget.style.background = isSelected ? "#0F1923" : "transparent"}>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#E8E0D0" }}>
                       <span style={{ color: "#3A4D5C", fontSize: 10, marginRight: 8 }}>{i + 1}</span>
-                      {c.country_name}
+                      {/* D-0091: the name opens the card; the row still opens
+                          the inline history panel (F-0064). The link stops
+                          propagation, so the two never both fire. */}
+                      <CountryLink iso={c.country_code} name={c.country_name} />
                       {c.long_term_only && (
                         <span
                           title="Long-term holdings only. This reporter publishes 'n.a.' for its total position, so bills are not included and this figure is NOT comparable with the totals above it (D-0085)."
@@ -168,7 +177,6 @@ export function HoldingsTab({ onCountrySelect, latestAll = {} }) {
                           LT only
                         </span>
                       )}
-                      <span style={{ marginLeft: 8, fontSize: 10, color: "#3A4D5C" }}>{c.country_code}</span>
                     </td>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#8A9BAC", textAlign: "right" }}>${c.holdings_billions_usd.toFixed(1)}B</td>
                     <td style={{ padding: "10px 16px", fontFamily: "monospace", fontSize: 13, color: "#C8A96E", textAlign: "right" }}>{c.percent_of_total.toFixed(1)}%</td>

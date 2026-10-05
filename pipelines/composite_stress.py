@@ -346,6 +346,12 @@ CDS_NAME_BY_ISO = {
     "GBR": "UNITED_KINGDOM",
 }
 
+# D-0091 / F-0106: the inverse, derived rather than written out, so there is
+# one map and no second copy to drift (F-0062 / D-0061). `/cds/all` uses it to
+# hand the UI an ISO-3166 key beside the CDS namespace token, because the
+# country card is keyed by ISO3 and the token ("RUSSIA") opens an empty one.
+ISO_BY_CDS_NAME = {v: k for k, v in CDS_NAME_BY_ISO.items()}
+
 
 def _latest_and_prior(db: Session, code: str, days_back: int = 90):
     """Return (latest_value, prior_value_or_None, as_of_date_or_None).

@@ -111,3 +111,15 @@ code {
   padding: 4px 8px;
   background: var(--code-bg);
 }
+
+/* D-0091: the one link affordance for a country mention. Inherits colour and
+   font from wherever it sits, so a link reads like the text it replaced until
+   it is hovered or focused. */
+a.country-link {
+  color: inherit;
+  text-decoration: none;
+}
+a.country-link:hover,
+a.country-link:focus-visible {
+  text-decoration: underline;
+}
