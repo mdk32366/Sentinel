@@ -3693,3 +3693,13 @@ against the map, and the endpoint emitting the field through its response model.
 
 **Guard.** D-0094 Phase A: `_run_health`, classified failure prefixes, blocked → red now, N=3 → red, missing-channel WARNING. Gates G3/G4/G-mut. G11 replays 30 days of update_logs before merge.
 
+### F-0110 - US M2 (and CPI) had no freshness CHECK
+
+**What.** `pipelines/freshness_watchdog.py` watched FRED yields, oil, the dollar index, OECD sovereign yields and TRESEG reserves — but not `WM2NS`, `M2SL`, or `CPIAUCSL`. A partial FRED run that upserted yields and skipped weekly M2 left DataConfidence green. Same class of blind spot as F-0103 / F-0109: the job can fail one series while the strip still says the source is fine.
+
+**Where.** `CHECKS` in `freshness_watchdog.py`. Confirmed 2026-10-06: `git grep WM2NS|M2SL|CPIAUCSL` on the watchdog → 0 hits before D-0095. Prod held 257 `WM2NS` rows ending 2026-08-31, so the data was present; the guard was not.
+
+**Why it mattered now.** Matt asked to wire weekly M2. D-0058 had already wired the card and ingest. Without a CHECK, the residual that would catch a future silent drop was missing — and A-0013 still named the card as `M2SL`.
+
+**Guard.** D-0095 adds `us_m2` on `WM2NS` only (`period` week, `max_age_days` 55). CPI remains a sibling gap (out of scope unless Matt expands). Gates G4/G5/G-mut.
+

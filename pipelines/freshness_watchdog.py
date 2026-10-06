@@ -108,6 +108,20 @@ CHECKS = [
         "note": "Weekly release (H.10, Mondays).",
     },
     {
+        "key": "us_m2",
+        "period": "week",
+        "label": "US M2 money stock (weekly)",
+        "patterns": ["WM2NS"],
+        "max_age_days": 55,
+        "pipelines": ["FRED"],
+        "note": (
+            "FRED WM2NS, weekly ending Monday, not seasonally adjusted. "
+            "Updated with the monthly H.6 release — denser points, not a fresher "
+            "cutoff than M2SL (D-0058 / D-0095). Attribution: Board of Governors "
+            "via FRED."
+        ),
+    },
+    {
         "key": "gold_price",
         "period": "day",
         "label": "Gold spot price",
@@ -596,7 +610,10 @@ def coverage_end(period_start, period):
     if period_start is None:
         return None
     months = PERIOD_DAYS.get(period, 1)
-    if period == "day":
+    # day: the row is the observation date.
+    # week: FRED WM2NS (and similar) are dated to the week-ENDING Monday, so
+    # the stored date already IS the coverage end (D-0077 / D-0095).
+    if period in ("day", "week"):
         return period_start
     month = period_start.month - 1 + months
     year = period_start.year + month // 12

@@ -369,10 +369,16 @@ it no longer has.
 that produced this assumption is answered. `F-0072` records what the delay
 actually cost: the card was 25bp wrong, not merely late.
 
-Two of the twelve cards — `CPIAUCSL` and `M2SL` — are still monthly, and the
-grid still gives no visual sign of which cards are which. Their tooltips
-disclose it and a test enforces that they keep doing so, which is mitigation
-rather than a fix.
+**Settled 2026-10-06 by `D-0058` / reaffirmed `D-0095`, for M2.** The M2
+card now reads `WM2NS` — weekly, not seasonally adjusted — not `M2SL`. The
+Fed still publishes M2 once a month (H.6); weekly densifies the points, it
+does not leapfrog the release. `M2SL` stays in the FRED ingest list for the
+seasonally adjusted reading published analysis quotes.
+
+One of the twelve cards — `CPIAUCSL` — is still monthly, and the grid still
+gives no visual sign of which cards are which. Its tooltip discloses it and
+a test enforces that it keeps doing so, which is mitigation rather than a
+fix.
 
 **Still open:** whether the card should show the **target range**
 (`DFEDTARU`/`DFEDTARL`) rather than the effective rate. The COUNTRY tab's
