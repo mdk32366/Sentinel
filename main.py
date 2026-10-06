@@ -23,6 +23,7 @@ from config import settings
 from database.connection import init_db
 from pipelines.scheduler import start_scheduler, stop_scheduler
 from api.routes import router
+from api import proof_access
 
 # ── Basic Auth ────────────────────────────────────────────────────────────────
 
@@ -81,8 +82,14 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
         if request.url.path in OPEN_PATHS:
             return await call_next(request)
+        # D-0093: /__proof does its own gating (404 unless armed and HTTPS).
+        if request.url.path == proof_access.PROOF_PATH:
+            return await proof_access.proof_path_gate(request, call_next)
         header = request.headers.get("authorization", "")
         if not _credentials_ok(header):
+            # D-0093: Basic always wins; a valid proof cookie admits reads only.
+            if proof_access.cookie_ok(request):
+                return await proof_access.read_only_gate(request, call_next)
             return PlainTextResponse(
                 "Unauthorized",
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -113,6 +120,7 @@ def _credentials_ok(header: str) -> bool:
 app.add_middleware(BasicAuthMiddleware)
 app.add_middleware(NoStoreAPIMiddleware)
 app.include_router(router)
+app.include_router(proof_access.router)  # D-0093: before the static mount
 app.mount("/", StaticFiles(directory="api/static", html=True), name="static")
 
 if __name__ == "__main__":

@@ -21,6 +21,10 @@ class Settings(BaseSettings):
     # failure, not a fallback to a credential published in a public repo.
     auth_password: str
 
+    # D-0093: proof access. Both empty = dormant. Set only as Fly secrets, never in fly.toml [env].
+    sentinel_proof_token_sha256: str = ""   # lowercase hex SHA-256 of the plaintext token
+    sentinel_proof_expires_at: str = ""     # ISO-8601 UTC with an explicit offset, e.g. 2026-10-06T19:00:00Z
+
     # API
     api_host: str = "0.0.0.0"
     api_port: int = 8000
