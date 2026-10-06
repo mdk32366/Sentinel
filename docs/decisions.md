@@ -1124,6 +1124,8 @@ adjusted", and — the one that matters — that it does **not** promise weekly
 the tip says "the Fed publishes M2 once a month" and a test keeps it saying
 that.
 
+Reaffirmed 2026-10-06 (D-0095); freshness CHECK added.
+
 ### D-0059 — The FRED write is an upsert, and only on the dialect that can be
 
 **Choice.** `pipelines/fred_fetcher.py` writes observations through
@@ -2774,3 +2776,13 @@ password itself still crosses plain HTTP on an `http://` link because
 **What forced the call.** Since Tue Sep 30 7:30 PM PT, LBMA answered Cloudflare 403 six nights running. The job correctly wrote `failed` rows; every surface still said gold was fine, because `_last_success` filtered them out and status was age-only (max_age_days=8 → green for a week). No alert fired: `JARVIS_WEBHOOK_URL` is unset and `_notify` returned silently. D-0041's reversal condition ("LBMA requiring authentication") is met — LBMA's own page now requires an IBA licence to view or redistribute. FRED deleted IBA gold in 2022; no US Government daily spot source exists. gold-api.com was the only candidate verified live that needs no key and whose terms §9 expressly permit third-party website display.
 
 **Reversal condition.** gold-api.com terms §9 removed, or a block / ≥3 failed nights (Phase A now shows this), or its monthly mean diverging from World Bank/WGC monthly by more than 1%, or Matt buys an IBA licence (LBMA returns). For Phase A alone: G11 finding a pipeline whose `failed` is routine — that check gets its own N, with the reason written down; do not weaken the default.
+
+### D-0095 - Weekly M2 (WM2NS) already ships under D-0058; close the freshness blind spot
+
+**Choice.** Reaffirm **D-0058**: MARKETS card + USA M2 growth chart read **WM2NS** only; **M2SL** stays in FRED ingest; no second tile. Add a freshness CHECK `us_m2` on `WM2NS` (`period` week, `max_age_days` 55, pipeline FRED) so a partial FRED run that drops only weekly M2 goes red. Refresh **A-0013** so it no longer names `M2SL` as a card series. Live numbers on 2026-10-06: prod `WM2NS` 257 rows ending 2026-08-31 = 23305.5 ($B); FRED `last_updated` 2026-09-22; next H.6 2026-10-27 — same stamp as `M2SL`.
+
+**Rejected.** Wiring weekly M2 from scratch (already shipped). A second M2 tile (breaks 6×2; D-0058). Dropping `M2SL` from ingest (loses the SA series published analysis quotes). A dedicated M2 cron or denser FRED poll (H.6 is ~every 4 weeks; nightly FRED already picks up the night after release). Treating WM2NS as a fresher *release* than M2SL (identical `last_updated`). CPI freshness CHECK (sibling gap; follow-up unless Matt expands).
+
+**What forced the call.** Matt asked to wire weekly M2 on 2026-10-06. Code search and a Fly read-only probe showed D-0058 already did that. Two residuals remained: (1) `freshness_watchdog.py` CHECKS listed yields, oil, dollar, gold, TIC, CDS, sovereign yields, reserves, World Bank broad money — but not `WM2NS` / `M2SL` / `CPIAUCSL`, so a silent drop of weekly M2 left DataConfidence green (same blind-spot class as F-0103 / F-0109, one series at a time); (2) A-0013 still taught that the M2 *card* was `M2SL`.
+
+**Reversal condition.** FRED stops updating WM2NS; H.6 gains a true weekly *release* calendar; or Matt wants SA on the card for quoting published analysis — then swap the MARKETS `code` and tip to `M2SL` and keep WM2NS ingest (reverse of today). For the CHECK alone: G11 finding 55 false-alarms every healthy H.6 cycle — retune `max_age_days` with the reason written down; do not drop the CHECK.

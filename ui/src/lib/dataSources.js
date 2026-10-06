@@ -32,7 +32,7 @@ export const SOURCES = [
     lag: "1 day",
     coverage: "US, plus 14 developed-market sovereign yields",
     metrics: ["30Y/10Y/5Y/2Y Treasury yields", "Fed Funds (DFF, daily)", "Real Yield (TIPS)", "WTI Crude Oil", "Dollar Index (DXY)", "CPI", "M2 Money Supply (WM2NS, weekly)", "Total reserves ex-gold by country"],
-    notes: "Free API, key in FRED_API_KEY. Runs at 02:00 UTC and again on every app start. Writes are upserts, so a concurrent run cannot duplicate rows (D-0060).",
+    notes: "Free API, key in FRED_API_KEY. Runs at 02:00 UTC and again on every app start. Writes are upserts, so a concurrent run cannot duplicate rows (D-0060). Lag is ~1 business day for daily series; M2 (WM2NS) and CPI follow the monthly H.6 / CPI releases — denser weekly M2 points, not a daily cutoff (D-0058 / D-0095).",
     manual: false,
   },
   {

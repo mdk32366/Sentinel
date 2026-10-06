@@ -47,6 +47,15 @@ class TestCoverageEnd(unittest.TestCase):
         d = datetime(2026, 9, 29)
         self.assertEqual(coverage_end(d, "day"), d)
 
+    def test_a_weekly_row_covers_its_week_ending_date(self):
+        # FRED WM2NS is dated to the week-ENDING Monday (D-0095). That Monday
+        # already is the coverage end — same arithmetic as day, not month.
+        d = datetime(2026, 8, 31)  # a Monday
+        self.assertEqual(coverage_end(d, "week"), d)
+        self.assertEqual(
+            _age_from_coverage(d, "week", datetime(2026, 10, 6)), 36
+        )
+
     def test_it_crosses_a_year_boundary(self):
         self.assertEqual(
             coverage_end(datetime(2026, 12, 1), "month"), datetime(2026, 12, 31)
@@ -113,6 +122,7 @@ class TestEverySourceDeclaresItsPeriod(unittest.TestCase):
     def test_the_periods_match_each_source_real_cadence(self):
         expected = {
             "treasury_yields": "day", "oil": "day", "dollar_index": "day",
+            "us_m2": "week",
             "gold_price": "day", "cds": "day",
             "tic": "month", "gold_reserves": "month",
             "reserves_ex_gold": "month", "sovereign_yields": "month",
