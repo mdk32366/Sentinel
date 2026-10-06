@@ -45,6 +45,7 @@ from pipelines.composite_stress import (
     persist_composite_snapshot,
 )
 from pipelines.freshness_watchdog import get_freshness_report
+from pipelines.fetch_failure import parse_failure_prefix
 import logging
 
 logger = logging.getLogger(__name__)
@@ -91,7 +92,28 @@ def pipeline_status(db: Session = Depends(get_db)):
     to return to anyone who asked."""
     fred_log = db.query(UpdateLog).filter_by(pipeline_name="FRED").order_by(UpdateLog.completed_at.desc()).first()
     treasury_log = db.query(UpdateLog).filter_by(pipeline_name="TIC_Holdings").order_by(UpdateLog.completed_at.desc()).first()
+    # D-0094: last_gold_update remains Gold_Reserves (reserves, not price).
     gold_log = db.query(UpdateLog).filter_by(pipeline_name="Gold_Reserves").order_by(UpdateLog.completed_at.desc()).first()
+    gold_price_log = (
+        db.query(UpdateLog)
+        .filter_by(pipeline_name="Gold_Spot_Price")
+        .order_by(UpdateLog.completed_at.desc())
+        .first()
+    )
+    gold_price_success = (
+        db.query(UpdateLog)
+        .filter(
+            UpdateLog.pipeline_name == "Gold_Spot_Price",
+            UpdateLog.status.in_(["success", "partial"]),
+        )
+        .order_by(UpdateLog.completed_at.desc())
+        .first()
+    )
+    gold_price_failure = None
+    if gold_price_log is not None and gold_price_log.status == "failed":
+        gold_price_failure = parse_failure_prefix(gold_price_log.error_message)
+        # Legacy unprefixed failed rows still surface as a failure; kind stays
+        # None rather than inventing "blocked".
 
     return HealthResponse(
         status="healthy",
@@ -100,6 +122,12 @@ def pipeline_status(db: Session = Depends(get_db)):
         last_fred_update=fred_log.completed_at if fred_log else None,
         last_treasury_update=treasury_log.completed_at if treasury_log else None,
         last_gold_update=gold_log.completed_at if gold_log else None,
+        last_gold_price_run=gold_price_log.completed_at if gold_price_log else None,
+        last_gold_price_status=gold_price_log.status if gold_price_log else None,
+        last_gold_price_failure=gold_price_failure,
+        last_gold_price_success=(
+            gold_price_success.completed_at if gold_price_success else None
+        ),
     )
 
 

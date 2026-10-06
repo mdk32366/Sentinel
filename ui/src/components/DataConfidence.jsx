@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { useApiResource } from "../hooks/useApiResource";
 import { InfoTip } from "./InfoTip";
-import { worstStatus } from "../lib/freshness";
+import { reasonLabel, worstStatus } from "../lib/freshness";
 
 /**
  * Can the reader trust what this tab is showing?
@@ -56,9 +56,18 @@ export function DataConfidence({ sourceKeys = [], label = "Data confidence" }) {
           {label.toUpperCase()}
         </span>
         <span style={{ fontFamily: "monospace", fontSize: 11, color: tone.color, fontWeight: 700 }}>
-          {bad.length === 0
-            ? `all ${mine.length} sources current`
-            : `${bad.length} of ${mine.length} ${bad.length === 1 ? "source is" : "sources are"} ${tone.label}`}
+          {(() => {
+            if (bad.length === 0) return `all ${mine.length} sources current`;
+            const worstSrc = mine.find((s) => s.status === worst) || bad[0];
+            const r = worstSrc?.reason;
+            if (r === "blocked") {
+              return `${bad.length} of ${mine.length} ${bad.length === 1 ? "source is" : "sources are"} blocked at source`;
+            }
+            if (r === "failing") {
+              return `${bad.length} of ${mine.length} ${bad.length === 1 ? "source is" : "sources are"} failing`;
+            }
+            return `${bad.length} of ${mine.length} ${bad.length === 1 ? "source is" : "sources are"} ${tone.label}`;
+          })()}
         </span>
         <span style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>
           {open ? "▾ hide" : "▸ detail"}
@@ -74,7 +83,7 @@ export function DataConfidence({ sourceKeys = [], label = "Data confidence" }) {
                 key={s.key}
                 as="div"
                 title={s.label}
-                tip={`${s.note ?? ""} Tolerance for this source is ${s.max_age_days} days, set from its own release cadence. Latest observation is dated ${s.latest_date ?? "none"} and covers a ${s.period ?? "day"} ending ${s.coverage_end ?? "—"}; the age is measured from that end, not from the label (D-0077).`}
+                tip={`${(() => { const rl = reasonLabel(s); return rl ? `${rl}. ` : ""; })()}${s.note ?? ""} Tolerance for this source is ${s.max_age_days} days, set from its own release cadence. Latest observation is dated ${s.latest_date ?? "none"} and covers a ${s.period ?? "day"} ending ${s.coverage_end ?? "—"}; the age is measured from that end, not from the label (D-0077).`}
                 placement="below"
                 align="left"
                 style={{ display: "flex", alignItems: "baseline", gap: 8, cursor: "help" }}>
@@ -95,6 +104,11 @@ export function DataConfidence({ sourceKeys = [], label = "Data confidence" }) {
                     ? `${s.age_days}d since period end, tolerance ${s.max_age_days}d`
                     : ""}
                 </span>
+                {reasonLabel(s) && (
+                  <span style={{ fontFamily: "monospace", fontSize: 10, color: st.color }}>
+                    · {reasonLabel(s)}
+                  </span>
+                )}
                 {/* A laggard is one metric inside an otherwise current
                     source. Reported because an "ok" source containing a
                     333-day-old series is the kind of thing an aggregate

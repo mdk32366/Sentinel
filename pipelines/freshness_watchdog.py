@@ -10,40 +10,49 @@ WHY THIS EXISTS
     multiplier — the largest in the composite scorer — so three months of
     scoring ran against a July price.
 
+    D-0094 / F-0109: a second blind spot — the watchdog only read successful
+    runs, so six nights of Cloudflare 403s on the gold feed still rendered
+    "success" and "ok". Status is now the worse of age and run-health: a
+    blocked source goes red on the next read; three consecutive failures go
+    red even when the data looks fresh.
+
     The lesson baked into this module: thresholds must be per-source. A blanket
     "one business day" rule screams about healthy Treasury data every weekend
     and stays silent on the source that actually matters.
 
 WHAT IT CHECKS
     1. Data age     — MAX(timeseries.date) per source group vs its own cadence.
-    2. Pipeline age — last SUCCESSFUL update_logs row per pipeline.
+    2. Run health   — latest update_logs row of ANY status, consecutive
+                      failures since the last success, and a classified
+                      failure kind (blocked / transient / …).
     A source can fail either way: a pipeline that runs nightly but writes
-    nothing is as dead as one that never runs.
+    nothing is as dead as one that never runs. A pipeline that fails every
+    night is red even when yesterday's value is still inside the age window.
 
 STATUS LEVELS
-    ok        age <= max_age_days
-    stale     max_age_days < age <= 2x
-    critical  age > 2x, or no data at all
+    ok        age <= max_age_days AND no failing/blocked run verdict
+    stale     age window exceeded (≤ 2×), OR a single non-block failure
+    critical  age > 2×, OR blocked at source, OR N consecutive failures
     unknown   source not yet present in the database (never seeded)
+    anomaly   last success carried an ANOMALIES: marker (D-0046)
 
 OUTPUTS
-    - Dict via get_freshness_report(db) for /api/health and /api/freshness.
+    - Dict via get_freshness_report(db) for /api/freshness (behind auth).
     - An update_logs row named "Freshness" so the watchdog itself is auditable.
     - Optional POST to JARVIS_WEBHOOK_URL when anything is stale or critical.
+      When the variable is unset and there are problems, a WARNING is logged
+      (D-0094); silence was the previous behaviour and hid the outage.
 
 TUNING — READ BEFORE CHANGING A THRESHOLD
     Thresholds allow for weekend + publication lag + one holiday before firing.
 
     MONTH_START: several importers call date.replace(day=1), so a monthly
     series reads up to 31 days older than it is, on top of the source's own
-    publication lag. GOLD_SPOT_USD is the worked example: on 2026-09-26 a
-    fully current series (August data, published early September, stored as
-    2026-08-01) has an age of 56 days. A 45-day threshold alarms on healthy
-    data. 75 is the corrected figure; see F-0030.
+    publication lag. See F-0030 / D-0077 for the coverage-end correction.
 
-    Thresholds marked PROVISIONAL were set by reasoning, not measurement, and
-    the reasoning has already been wrong once. Run with --calibrate against a
-    populated database and set them from observed age before installing.
+    Per-check ``max_consecutive_failures`` (default 3) is the run-health red
+    threshold. Do not raise the default to quiet a noisy pipeline — give that
+    check its own N and say why (D-0094 G11).
 
 VALIDATION
     Pipeline names in CHECKS are matched against the distinct values actually
@@ -62,6 +71,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from database.models import Metric, TimeSeries, UpdateLog
+from pipelines.fetch_failure import parse_failure_fields, parse_failure_prefix
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +118,12 @@ CHECKS = [
                                  # source goes unnoticed for eleven weeks - the
                                  # decoration D-0024 exists to prevent.
         "pipelines": ["Gold_Spot_Price"],
-        "note": "MANUAL CSV. Feeds the 2.0x divergence multiplier.",
+        "note": (
+            "Automated daily fetch (D-0041 / D-0094). Primary: gold-api.com "
+            "/price/XAU spot snapshot at 02:30 UTC; fallback: World Bank Pink "
+            "Sheet monthly (with attribution). Feeds the 2.0x divergence "
+            "multiplier."
+        ),
     },
     {
         "key": "gold_reserves",
@@ -263,22 +278,164 @@ def _latest_dates_by_pattern(db: Session, patterns) -> dict:
     return {code: dt for code, dt in rows if dt is not None}
 
 
-def _last_success(db: Session, pipeline_names) -> dict:
-    """Return {pipeline_name: (completed_at, status)} for the most recent run."""
+DEFAULT_MAX_CONSECUTIVE_FAILURES = 3
+
+# Rank for worst-of(age, run). Matches the sort map in get_freshness_report
+# (critical first). Lower index = worse.
+_STATUS_RANK = {
+    "critical": 0,
+    "stale": 1,
+    "unknown": 2,
+    "anomaly": 3,
+    "ok": 4,
+}
+
+
+def _worse(a: str, b: str) -> str:
+    return a if _STATUS_RANK.get(a, 99) <= _STATUS_RANK.get(b, 99) else b
+
+
+def _run_health(db: Session, pipeline_names) -> dict:
+    """Per-pipeline latest run, last success, consecutive failures, kind.
+
+    D-0094: replaces ``_last_success``, which filtered to success/partial and
+    made a blocked feed look like its last good night forever. ``latest`` is
+    the newest row of ANY status. ``consecutive_failures`` counts ``failed``
+    rows newer than ``last_success``, capped at 30. ``failure_kind`` comes
+    from the machine-readable UpdateLog prefix (None for legacy rows).
+    """
     out = {}
     for name in pipeline_names:
-        row = (
-            db.query(UpdateLog.completed_at, UpdateLog.status,
-                     UpdateLog.error_message)
-            .filter(UpdateLog.pipeline_name == name,
-                    UpdateLog.status.in_(["success", "partial"]))
+        latest_row = (
+            db.query(
+                UpdateLog.completed_at, UpdateLog.status,
+                UpdateLog.error_message, UpdateLog.started_at,
+            )
+            .filter(UpdateLog.pipeline_name == name)
             .order_by(UpdateLog.completed_at.desc())
             .first()
         )
-        if row:
-            out[name] = {"completed_at": row[0], "status": row[1],
-                         "error_message": row[2]}
+        success_row = (
+            db.query(
+                UpdateLog.completed_at, UpdateLog.status,
+                UpdateLog.error_message,
+            )
+            .filter(
+                UpdateLog.pipeline_name == name,
+                UpdateLog.status.in_(["success", "partial"]),
+            )
+            .order_by(UpdateLog.completed_at.desc())
+            .first()
+        )
+
+        consecutive = 0
+        failure_kind = None
+        http_status = None
+        cloudflare = False
+        if latest_row is not None:
+            latest_status = latest_row[1]
+            latest_err = latest_row[2]
+            if latest_status == "failed":
+                fields = parse_failure_fields(latest_err)
+                failure_kind = fields["kind"]  # None for legacy = unknown-ish
+                http_status = fields["http_status"]
+                cloudflare = fields["cloudflare"]
+
+            # Count failed rows newer than last success (or all recent fails).
+            q = (
+                db.query(UpdateLog.status, UpdateLog.completed_at)
+                .filter(UpdateLog.pipeline_name == name)
+                .order_by(UpdateLog.completed_at.desc())
+                .limit(30)
+            )
+            for status, completed_at in q:
+                if success_row and completed_at is not None and success_row[0] is not None:
+                    if completed_at <= success_row[0]:
+                        break
+                if status == "failed":
+                    consecutive += 1
+                elif status in ("success", "partial"):
+                    break
+                # other statuses (e.g. running) stop the streak? treat as break
+                else:
+                    break
+
+        info = {
+            # anomaly marker still reads the last SUCCESS row's error_message
+            "completed_at": success_row[0] if success_row else None,
+            "status": success_row[1] if success_row else None,
+            "error_message": success_row[2] if success_row else None,
+            "latest": None,
+            "last_success_at": success_row[0] if success_row else None,
+            "consecutive_failures": consecutive,
+            "failure_kind": failure_kind,
+            "http_status": http_status,
+            "cloudflare": cloudflare,
+        }
+        if latest_row is not None:
+            info["latest"] = {
+                "completed_at": latest_row[0],
+                "status": latest_row[1],
+                "error_message": latest_row[2],
+            }
+        out[name] = info
     return out
+
+
+def _run_verdict(pipelines: dict, max_consecutive: int) -> tuple:
+    """Return (status_or_None, reason, summary) from run health alone."""
+    worst_status = None
+    worst_reason = None
+    # Prefer the most severe pipeline's reason for the source-level summary.
+    summaries = []
+    for name, info in pipelines.items():
+        latest = info.get("latest") or {}
+        latest_status = latest.get("status")
+        kind = info.get("failure_kind")
+        consecutive = info.get("consecutive_failures") or 0
+        http_status = info.get("http_status")
+        cloudflare = info.get("cloudflare")
+
+        verdict = None
+        reason = None
+        if latest_status == "failed" and kind == "blocked":
+            verdict, reason = "critical", "blocked"
+        elif consecutive >= max_consecutive:
+            verdict, reason = "critical", "failing"
+        elif latest_status == "failed":
+            # transient / rate_limited / parse / unknown / legacy (kind None)
+            verdict, reason = "stale", "last_run_failed"
+
+        if verdict is not None:
+            summaries.append({
+                "pipeline": name,
+                "verdict": verdict,
+                "reason": reason,
+                "failure_kind": kind,
+                "http_status": http_status,
+                "cloudflare": cloudflare,
+                "consecutive_failures": consecutive,
+            })
+            if worst_status is None or _STATUS_RANK[verdict] < _STATUS_RANK[worst_status]:
+                worst_status, worst_reason = verdict, reason
+            elif verdict == worst_status and reason == "blocked":
+                # blocked wins over failing at the same rank
+                worst_reason = "blocked"
+
+    summary = None
+    if summaries:
+        # pick the summary matching worst
+        for s in summaries:
+            if s["verdict"] == worst_status and (
+                worst_reason is None or s["reason"] == worst_reason
+                or worst_reason != "blocked"
+            ):
+                summary = s
+                if s["reason"] == worst_reason:
+                    break
+        if summary is None:
+            summary = summaries[0]
+    return worst_status, worst_reason, summary
 
 
 # D-0046. treasury_direct records a value that jumped more than MAX_JUMP_PP by
@@ -487,9 +644,31 @@ def get_freshness_report(db: Session) -> dict:
             newest = age_days = None
             oldest_code = oldest_date = oldest_age = None
 
-        status = _classify(age_days, check["max_age_days"])
+        age_status = _classify(age_days, check["max_age_days"])
 
-        pipelines = _last_success(db, check.get("pipelines", []))
+        pipelines = _run_health(db, check.get("pipelines", []))
+        max_consecutive = check.get(
+            "max_consecutive_failures", DEFAULT_MAX_CONSECUTIVE_FAILURES
+        )
+        run_status, run_reason, run_summary = _run_verdict(
+            pipelines, max_consecutive
+        )
+
+        # Combined status = worst(age, run). reason from the side that won;
+        # "age" when age decides.
+        if run_status is None:
+            status = age_status
+            reason = "age"
+        else:
+            status = _worse(age_status, run_status)
+            if status == run_status and _STATUS_RANK[run_status] < _STATUS_RANK[age_status]:
+                reason = run_reason
+            elif status == age_status and _STATUS_RANK[age_status] < _STATUS_RANK[run_status]:
+                reason = "age"
+            elif status == run_status:
+                reason = run_reason
+            else:
+                reason = "age"
 
         # D-0046: an anomaly raises an otherwise-OK source to `anomaly`. It
         # never lowers a worse status - stale data with an odd jump is still
@@ -499,16 +678,50 @@ def get_freshness_report(db: Session) -> dict:
             anomalies.extend(_anomalies_from(info))
         if anomalies and status == "ok":
             status = "anomaly"
-        pipeline_view = {
-            name: {
-                "last_run": info["completed_at"].isoformat(),
-                "status": info["status"],
-                "hours_ago": round(
-                    (now - info["completed_at"]).total_seconds() / 3600, 1
+            reason = "anomaly"
+
+        pipeline_view = {}
+        for name, info in pipelines.items():
+            latest = info.get("latest")
+            last_success_at = info.get("last_success_at")
+            if latest is None:
+                continue
+            entry = {
+                "last_run": latest["completed_at"].isoformat()
+                if latest.get("completed_at") else None,
+                "status": latest.get("status"),
+                "hours_ago": (
+                    round(
+                        (now - latest["completed_at"]).total_seconds() / 3600, 1
+                    )
+                    if latest.get("completed_at") else None
+                ),
+                "failure_kind": info.get("failure_kind"),
+                "http_status": info.get("http_status"),
+                "cloudflare": info.get("cloudflare"),
+                "consecutive_failures": info.get("consecutive_failures") or 0,
+                "last_success": (
+                    last_success_at.isoformat() if last_success_at else None
+                ),
+                "hours_since_success": (
+                    round(
+                        (now - last_success_at).total_seconds() / 3600, 1
+                    )
+                    if last_success_at else None
                 ),
             }
-            for name, info in pipelines.items()
-        }
+            pipeline_view[name] = entry
+
+        run_health = None
+        if run_summary is not None:
+            run_health = {
+                "reason": run_summary["reason"],
+                "failure_kind": run_summary["failure_kind"],
+                "http_status": run_summary["http_status"],
+                "cloudflare": run_summary["cloudflare"],
+                "consecutive_failures": run_summary["consecutive_failures"],
+                "pipeline": run_summary["pipeline"],
+            }
 
         sources.append({
             "key": check["key"],
@@ -521,6 +734,7 @@ def get_freshness_report(db: Session) -> dict:
             ),
             "label": check["label"],
             "status": status,
+            "reason": reason,
             "latest_date": newest.date().isoformat() if newest else None,
             "age_days": age_days,
             "max_age_days": check["max_age_days"],
@@ -532,6 +746,7 @@ def get_freshness_report(db: Session) -> dict:
                 if oldest_code and oldest_age != age_days else None
             ),
             "pipelines": pipeline_view,
+            "run_health": run_health,
             "anomalies": anomalies,
             "note": check.get("note"),
         })
@@ -557,11 +772,13 @@ def get_freshness_report(db: Session) -> dict:
     else:
         overall = "ok"
 
+    webhook_configured = bool(os.getenv("JARVIS_WEBHOOK_URL"))
     return {
         "overall": overall,
         "counts": counts,
         "config": config,
         "checked_at": now.isoformat(),
+        "alerting": {"webhook_configured": webhook_configured},
         "sources": sorted(
             sources,
             key=lambda s: ({"critical": 0, "stale": 1, "unknown": 2, "anomaly": 3, "ok": 4}[s["status"]],
@@ -644,10 +861,31 @@ def run_freshness_check(db: Session, notify: bool = True) -> dict:
         db.commit()
         return {"status": "failed", "error": msg}
 
-    problems = [
-        f"{s['label']} {s['age_days']}d (limit {s['max_age_days']}d)"
-        for s in report["sources"] if s["status"] in ("critical", "stale", "unknown")
-    ]
+    problems = []
+    for s in report["sources"]:
+        if s["status"] not in ("critical", "stale", "unknown"):
+            continue
+        reason = s.get("reason") or "age"
+        rh = s.get("run_health") or {}
+        if reason == "blocked":
+            http = rh.get("http_status")
+            cf = rh.get("cloudflare")
+            n = rh.get("consecutive_failures") or 0
+            bit = f"blocked (HTTP {http}" + (", Cloudflare)" if cf else ")")
+            if http is None:
+                bit = "blocked at source"
+            problems.append(
+                f"{s['label']}: {bit} — {n} failed runs"
+            )
+        elif reason == "failing":
+            n = rh.get("consecutive_failures") or 0
+            problems.append(f"{s['label']}: failing — {n} consecutive failed runs")
+        elif reason == "last_run_failed":
+            problems.append(f"{s['label']}: last run failed")
+        else:
+            problems.append(
+                f"{s['label']} {s['age_days']}d (limit {s['max_age_days']}d)"
+            )
 
     status = "success" if report["overall"] == "ok" else "partial"
     err_text = ("; ".join(problems))[:ERROR_FIELD_LIMIT] if problems else None
@@ -663,7 +901,12 @@ def run_freshness_check(db: Session, notify: bool = True) -> dict:
     if problems:
         logger.warning("Stale sources: %s", "; ".join(problems))
         if notify:
-            _notify(report)
+            if not os.getenv("JARVIS_WEBHOOK_URL"):
+                logger.warning(
+                    "FRESHNESS ALERT NOT SENT: JARVIS_WEBHOOK_URL is not configured"
+                )
+            else:
+                _notify(report)
 
     return report
 

@@ -121,7 +121,7 @@ export const METRICS = [
     color: "#DAA520",
     unit: "$/oz",
     scored: false,
-    tip: "LBMA daily gold fix, USD per troy ounce. Gold is the alternative reserve asset: when a central bank sells Treasuries and buys gold, this is the price it pays. Live daily since D-0041 — D-0053 put it on this board as the twelfth card.",
+    tip: "Gold spot, USD per troy ounce (gold-api.com daily snapshot; World Bank Pink Sheet monthly fallback, with attribution). Gold is the alternative reserve asset: when a central bank sells Treasuries and buys gold, this is the price it pays. Live daily since D-0041; source re-ruled under D-0094 after LBMA's Cloudflare block — D-0053 put it on this board as the twelfth card.",
     stressRole: "Context, not a factor. The composite carries its 3-month trend to confirm a pattern, but the SCORED gold signal is reserve tonnage, not price.",
   },
 ];

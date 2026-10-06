@@ -91,3 +91,31 @@ describe("freshness", () => {
     expect(f.stale).toBe(false);
   });
 });
+
+import { reasonLabel } from "./freshness";
+
+describe("reasonLabel (D-0094)", () => {
+  it("names a block with its HTTP status", () => {
+    expect(reasonLabel({
+      reason: "blocked",
+      run_health: { http_status: 403, cloudflare: true },
+    })).toBe("blocked at source (HTTP 403)");
+  });
+
+  it("names a failing streak", () => {
+    expect(reasonLabel({
+      reason: "failing",
+      run_health: { consecutive_failures: 6 },
+    })).toBe("failing — 6 runs");
+  });
+
+  it("names a single failed run", () => {
+    expect(reasonLabel({ reason: "last_run_failed" })).toBe("last run failed");
+  });
+
+  it("is empty for age and anomaly", () => {
+    expect(reasonLabel({ reason: "age" })).toBe("");
+    expect(reasonLabel({ reason: "anomaly" })).toBe("");
+    expect(reasonLabel(null)).toBe("");
+  });
+});
