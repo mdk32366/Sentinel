@@ -508,6 +508,8 @@ the route by which spot arrives.
 **Reversal condition.** LBMA requiring authentication, or its monthly mean
 diverging from the WGC CSV by more than 1% in any month.
 
+*Reversal condition met 2026-09-30 (LBMA/IBA licence wall, Cloudflare 403). See D-0094.*
+
 ### D-0042 — The composite score is persisted nightly and the endpoint is a read
 
 **Choice.** `persist_composite_snapshot()` scores every country once at 04:45
@@ -2758,3 +2760,17 @@ and someone favouring a minimal attack surface would revert; the CI-outage
 evidence and the CI-free kill switch are why it stays. Separately, the Basic
 password itself still crosses plain HTTP on an `http://` link because
 `force_https = false`; that is a follow-up finding, not part of this decision.
+
+### D-0094 - A failed or blocked feed shows red on the next read, and gold spot leaves LBMA
+
+**Choice.** Two halves, one PR.
+
+*Phase A — visibility.* The freshness watchdog reads the latest UpdateLog row of **any** status, not only success/partial. A source whose latest run is classified `blocked` goes **critical** on the next `/api/freshness` read, however fresh the data looks. **Three consecutive** failed runs (per-check `max_consecutive_failures`, default 3) also go critical (`reason=failing`). One non-block failure goes **stale** (`reason=last_run_failed`). Failure kind is a machine-readable prefix on the existing `error_message` String(500) — `FETCH_BLOCKED` / `FETCH_TRANSIENT` / `FETCH_RATE_LIMITED` / `FETCH_PARSE` / `FETCH_UNKNOWN` — with `host=` only and no query string. No schema change, no new status enum value (a `reason` field carries the difference; a new enum would touch five places, the F-0087 trap). `/pipeline-status` gains `last_gold_price_*` fields from `Gold_Spot_Price`; `last_gold_update` stays `Gold_Reserves`. When there are problems and `JARVIS_WEBHOOK_URL` is unset, the watchdog logs exactly `FRESHNESS ALERT NOT SENT: JARVIS_WEBHOOK_URL is not configured`. The gold_price note no longer says "MANUAL CSV".
+
+*Phase B — source (Matt, 2026-10-06 9:36 AM PT).* Primary daily: **gold-api.com** `/price/XAU` (spot snapshot at 02:30 UTC, dated by the provider's `updatedAt`). Fallback: **World Bank Pink Sheet monthly**, with attribution. Sep 30–Oct 5 gap left empty. Three failed nights = red. Do not set `JARVIS_WEBHOOK_URL` without Matt; keep the missing-channel warning.
+
+**Rejected.** A new `failed`/`blocked` status value. Lowering `max_age_days` to quiet the symptom (weekends become noisy; D-0024). An UpdateLog schema column for kind (no migrations). Firing alerts from the fetcher at 7:30 PM PT (second alert path; the 10 PM watchdog owns it). Keeping LBMA without an IBA licence. Yahoo GC=F, Twelve/Metalprice free tiers, Swissquote, GoldAPI.io (terms or automated-access problems). Alpha Vantage as fallback (needs Matt's sign-up; private-display only). Backfilling the gap from a monthly mean.
+
+**What forced the call.** Since Tue Sep 30 7:30 PM PT, LBMA answered Cloudflare 403 six nights running. The job correctly wrote `failed` rows; every surface still said gold was fine, because `_last_success` filtered them out and status was age-only (max_age_days=8 → green for a week). No alert fired: `JARVIS_WEBHOOK_URL` is unset and `_notify` returned silently. D-0041's reversal condition ("LBMA requiring authentication") is met — LBMA's own page now requires an IBA licence to view or redistribute. FRED deleted IBA gold in 2022; no US Government daily spot source exists. gold-api.com was the only candidate verified live that needs no key and whose terms §9 expressly permit third-party website display.
+
+**Reversal condition.** gold-api.com terms §9 removed, or a block / ≥3 failed nights (Phase A now shows this), or its monthly mean diverging from World Bank/WGC monthly by more than 1%, or Matt buys an IBA licence (LBMA returns). For Phase A alone: G11 finding a pipeline whose `failed` is routine — that check gets its own N, with the reason written down; do not weaken the default.

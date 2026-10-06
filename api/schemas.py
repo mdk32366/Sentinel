@@ -89,7 +89,13 @@ class HealthResponse(BaseModel):
     scheduler: str
     last_fred_update: Optional[datetime] = None
     last_treasury_update: Optional[datetime] = None
+    # D-0094: last_gold_update means Gold_Reserves (kept for compatibility).
     last_gold_update: Optional[datetime] = None
+    # D-0094: Gold_Spot_Price gets its own fields. A failed run is visible.
+    last_gold_price_run: Optional[datetime] = None
+    last_gold_price_status: Optional[str] = None
+    last_gold_price_failure: Optional[str] = None  # kind token, never raw text
+    last_gold_price_success: Optional[datetime] = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────

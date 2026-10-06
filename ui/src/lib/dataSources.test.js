@@ -56,11 +56,21 @@ describe("the source catalogue", () => {
     expect(gold.update).toMatch(/monthly/i);
   });
 
+  it("credits spot gold to gold-api.com with World Bank fallback, not LBMA", () => {
+    // D-0094. LBMA has answered Cloudflare 403 since 2026-09-30.
+    const spot = SOURCES.find((s) => /spot gold|gold-api/i.test(s.name));
+    expect(spot).toBeTruthy();
+    expect(spot.name).toMatch(/gold-api/i);
+    expect(spot.notes).toMatch(/World Bank Pink Sheet/i);
+    expect(spot.notes).toMatch(/attribution/i);
+    expect(spot.url).not.toContain("lbma.org.uk");
+  });
+
   it("lists every source the model actually scores on", () => {
     // CDS and TreasuryDirect were absent entirely. CDS is dimension 7 and the
     // only market-priced input in the whole model.
     const blob = SOURCES.map((s) => s.name + s.metrics.join(" ")).join(" ");
-    for (const needed of ["FRED", "TIC", "IMF", "World Bank", "LBMA", "CDS", "TreasuryDirect"]) {
+    for (const needed of ["FRED", "TIC", "IMF", "World Bank", "gold-api", "CDS", "TreasuryDirect"]) {
       expect(blob, `${needed} is not in the catalogue`).toContain(needed);
     }
   });

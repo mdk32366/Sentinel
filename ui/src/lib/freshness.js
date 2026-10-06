@@ -80,3 +80,27 @@ export function worstStatus(sources) {
     "ok",
   );
 }
+
+
+/**
+ * D-0094 — a short label for a non-age freshness reason.
+ * Colours stay on status; this only names why.
+ */
+export function reasonLabel(source) {
+  if (!source) return "";
+  const reason = source.reason;
+  if (!reason || reason === "age" || reason === "anomaly") return "";
+  const rh = source.run_health || {};
+  if (reason === "blocked") {
+    const http = rh.http_status;
+    return http != null
+      ? `blocked at source (HTTP ${http})`
+      : "blocked at source";
+  }
+  if (reason === "failing") {
+    const n = rh.consecutive_failures;
+    return n != null ? `failing — ${n} runs` : "failing";
+  }
+  if (reason === "last_run_failed") return "last run failed";
+  return "";
+}

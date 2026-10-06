@@ -137,3 +137,19 @@ describe("DataConfidence", () => {
     expect(screen.getByText(/tolerance 37d/)).toBeTruthy();
   });
 });
+
+describe("DataConfidence run-health reasons (D-0094)", () => {
+  it("shows the blocked label next to the date and in the summary", async () => {
+    stub([{
+      key: "gold_price", label: "Gold spot price", status: "critical",
+      reason: "blocked",
+      run_health: { http_status: 403, cloudflare: true, consecutive_failures: 6 },
+      latest_date: "2026-09-29", coverage_end: "2026-09-29", period: "day",
+      age_days: 1, max_age_days: 8, note: "Automated daily fetch.",
+    }]);
+    render(<DataConfidence sourceKeys={["gold_price"]} />);
+    await waitFor(() => expect(screen.getByText(/blocked at source/)).toBeTruthy());
+    fireEvent.click(screen.getByText(/detail/));
+    expect(screen.getByText(/blocked at source \(HTTP 403\)/)).toBeTruthy();
+  });
+});

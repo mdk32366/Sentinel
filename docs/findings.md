@@ -3682,3 +3682,14 @@ the CDS row links with it. A token the map does not know comes back null and
 renders unlinked with a visible `?`, never guessed in the frontend.
 `tests/test_cds_all_iso3.py` pins the declaration, the 1:1 inverse, the fixture
 against the map, and the endpoint emitting the field through its response model.
+
+### F-0109 - A failed run is invisible to the watchdog — the second time
+
+**What.** From Tue Sep 30 7:30 PM PT through at least Tue Oct 6, the gold spot job wrote six `failed` UpdateLog rows against LBMA's Cloudflare 403. `/api/freshness` still reported `gold_price` **ok**, and `Gold_Spot_Price` still showed **"success"** ~156 hours ago — the last good night. No alert fired.
+
+**Where.** `pipelines/freshness_watchdog.py` `_last_success` filtered `status.in_(["success", "partial"])`, so a failed run did not exist for freshness. `_classify` was age-only (`max_age_days: 8` for gold). `_notify` returned silently when `JARVIS_WEBHOOK_URL` was unset, with no log line. The fetcher logged 403 the same way as a timeout.
+
+**Why F-0103's fix was local.** F-0103 fixed the gold **reserves** importer never succeeding. It did not change the watchdog's "latest success only" read, so the same class of blind spot survived for every other pipeline — and for gold price once LBMA started failing.
+
+**Guard.** D-0094 Phase A: `_run_health`, classified failure prefixes, blocked → red now, N=3 → red, missing-channel WARNING. Gates G3/G4/G-mut. G11 replays 30 days of update_logs before merge.
+
