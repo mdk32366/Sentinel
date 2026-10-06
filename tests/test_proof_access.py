@@ -7,6 +7,7 @@ secrets.token_urlsafe(32); this file holds no literal token or hash (G11).
 proxy sets (D4).
 """
 import ast
+import asyncio
 import base64
 import contextlib
 import hashlib
@@ -19,6 +20,8 @@ import re
 import secrets
 import stat
 import unittest
+import urllib.parse
+from types import SimpleNamespace
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
@@ -353,6 +356,60 @@ class G7NoTokenMaterialLeaks(ProofBase):
                 self.assertNotIn(needle, message)
 
 
+async def _raw_status(method: str, path: str, headers: dict) -> int:
+    """Drive the ASGI app with a scope as uvicorn builds it: `path` is already
+    percent-decoded, so a request for /a%0D%0Ab arrives with a real CR/LF.
+    (httpx re-encodes `%`, so it cannot produce that scope.)"""
+    scope = {
+        "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+        "method": method, "scheme": "http", "path": path,
+        "raw_path": urllib.parse.quote(path).encode("ascii"), "query_string": b"",
+        "root_path": "", "client": ("127.0.0.1", 50000), "server": ("test", 80),
+        "headers": [(k.lower().encode("latin-1"), v.encode("latin-1")) for k, v in headers.items()],
+    }
+    sent = []
+    done = asyncio.Event()
+    requested = False
+
+    async def receive():
+        nonlocal requested
+        if not requested:
+            requested = True
+            return {"type": "http.request", "body": b"", "more_body": False}
+        await done.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message)
+        if message["type"] == "http.response.body" and not message.get("more_body", False):
+            done.set()
+
+    await app(scope, receive, send)
+    return next(m["status"] for m in sent if m["type"] == "http.response.start")
+
+
+class G7LogLinesCannotBeForged(ProofBase):
+    async def test_a_decoded_crlf_in_the_path_stays_on_one_log_line(self):
+        token, _ = self._arm()
+        cookie = await self._grant(token)
+        # CR/LF, plus everything else str.splitlines() or a terminal treats as a
+        # break or a control sequence. (urlsplit already drops CR/LF/TAB from
+        # request.url, so the other breakers are what actually reach the log.)
+        forged = ("/api/x\r\nproof: granted ip=1.2.3.4 region=forged"
+                  "\x0bproof: locked\x85proof: granted\u2028proof: granted\x1b[2K\x00end")
+        with self.assertLogs("sentinel.proof", "INFO") as logs:
+            for method in ("DELETE", "POST"):
+                status = await _raw_status(method, forged, _with_cookie(cookie))
+                self.assertEqual(status, 403)
+        messages = [r.getMessage() for r in logs.records]
+        self.assertTrue(messages)
+        for message in messages:
+            self.assertEqual(len(message.splitlines()), 1, repr(message))
+            self.assertTrue(all(" " <= ch <= "~" for ch in message), repr(message))
+            self.assertTrue(message.startswith("proof: write-refused "), message)
+        self.assertFalse(any(m.startswith(("proof: granted", "proof: locked")) for m in messages))
+
+
 class G8ConstantTimeCompare(ProofBase):
     async def test_both_the_token_and_the_cookie_go_through_compare_digest(self):
         token, _ = self._arm()
@@ -515,6 +572,43 @@ class G12ForgeryAndRotation(ProofBase):
         self._patch("auth_password", _new_token())
         self.assertEqual(await self._reads(cookie), 401)
 
+    async def test_a_non_canonical_expiry_text_is_rejected_before_int(self):
+        token, expires_raw = self._arm()
+        good = _helper_mint(settings.auth_password, _sha(token), expires_raw)
+        _, exp_text, mac = good.split(".")
+        self.assertTrue(proof_access.cookie_ok(SimpleNamespace(cookies={COOKIE: good})))
+        variants = {
+            "plus": "+" + exp_text,
+            "leading space": " " + exp_text,
+            "trailing space": exp_text + " ",
+            "underscore": exp_text[:1] + "_" + exp_text[1:],
+            "leading zero": "0" + exp_text,
+            "non-ascii digits": "".join(chr(0x0660 + int(c)) for c in exp_text),
+            "13 digits": "1" + exp_text.zfill(12),
+        }
+        for label, text in variants.items():
+            with self.subTest(label):
+                if label != "13 digits":
+                    self.assertEqual(int(text), int(exp_text))  # int() alone would let it through
+                cookie = f"v1.{text}.{mac}"
+                self.assertFalse(proof_access.cookie_ok(SimpleNamespace(cookies={COOKIE: cookie})))
+
+    async def test_a_truncated_mac_is_rejected(self):
+        token, expires_raw = self._arm()
+        good = _helper_mint(settings.auth_password, _sha(token), expires_raw)
+        version, exp_text, mac = good.split(".")
+        self.assertEqual(await self._reads(good), 200)
+        for cut in (mac[:-1], mac[:32], mac[:1]):
+            with self.subTest(length=len(cut)):
+                self.assertEqual(await self._reads(f"{version}.{exp_text}.{cut}"), 401)
+
+    async def test_clearing_only_the_hash_secret_rejects_a_granted_cookie(self):
+        token, _ = self._arm()
+        cookie = await self._grant(token)
+        self.assertEqual(await self._reads(cookie), 200)
+        self._patch("sentinel_proof_token_sha256", "")
+        self.assertChallenge(await _send("GET", "/", headers=_with_cookie(cookie)))
+
     async def test_wrong_version_or_shape_is_rejected(self):
         token, expires_raw = self._arm()
         good = _helper_mint(settings.auth_password, _sha(token), expires_raw)
@@ -523,6 +617,27 @@ class G12ForgeryAndRotation(ProofBase):
         for bad in (v2, f"v1.{exp_text}", f"{exp_text}.{mac}", good + ".x", "v1..", ""):
             with self.subTest(parts=bad.count(".") + 1):
                 self.assertEqual(await self._reads(bad), 401)
+
+
+class G13OtherMethodsAre404(ProofBase):
+    METHODS = ("TRACE", "PUT", "DELETE", "OPTIONS", "PATCH", "CONNECT")
+
+    async def _all_404(self, headers):
+        for method in self.METHODS:
+            with self.subTest(method=method):
+                response = await _send(method, "/__proof", headers=headers)
+                self.assertDormant(response)
+                self.assertNotIn("allow", {k.lower() for k in response.headers.keys()})
+
+    async def test_dormant_every_other_method_is_404_not_405_or_401(self):
+        await self._all_404(HTTPS)
+        await self._all_404({})
+
+    async def test_armed_every_other_method_is_404_even_with_basic(self):
+        self._arm()
+        await self._all_404(HTTPS)
+        await self._all_404({**HTTPS, "Authorization": _basic(settings.auth_username, settings.auth_password)})
+        self.assertEqual(proof_access._failures, 0)
 
 
 class G13SignInPageContract(ProofBase):
@@ -639,6 +754,55 @@ class G14ToolNeverPrintsSecrets(unittest.TestCase):
         self.assertIn("unset", unset)
         self.assertIn(_HASH_KEY, unset)
         self.assertIn(_EXPIRY_KEY, unset)
+
+    def _disarm_with(self, unset_code, list_result):
+        fake_digest = hashlib.sha256(secrets.token_bytes(16)).hexdigest()[:16]
+
+        def fake_run(argv, stdin_text=None):
+            self.calls.append((list(argv), stdin_text))
+            if "unset" in argv:
+                return unset_code, "", "Error: could not unset"
+            if "list" in argv:
+                code, names = list_result
+                table = "NAME\tDIGEST\tCREATED AT\n" + "".join(
+                    f"{name}\t{fake_digest}\t1m ago\n" for name in names)
+                return code, table, ""
+            return 0, "", ""
+
+        def fake_get(url):
+            # What a LOCKED but still-armed app looks like from outside.
+            if url.endswith("/__proof"):
+                return 404, {}
+            return 401, {"WWW-Authenticate": "Basic"}
+
+        with mock.patch.object(self.tool, "_run", side_effect=fake_run), \
+                mock.patch.object(self.tool, "_http_get", side_effect=fake_get), \
+                mock.patch.object(self.tool, "_sleep"):
+            code, out, err = self._main(["disarm"])
+        self.assertNotIn(fake_digest, out + err)
+        return code, out + err
+
+    def test_disarm_fails_when_unset_fails_and_a_secret_is_still_listed(self):
+        for names in ([_HASH_KEY, _EXPIRY_KEY], [_HASH_KEY], [_EXPIRY_KEY]):
+            with self.subTest(names=names):
+                code, output = self._disarm_with(1, (0, ["AUTH_PASSWORD"] + names))
+                self.assertNotEqual(code, 0)
+                self.assertIn("FAIL", output)
+                self.assertNotIn("PASS", output)
+        listed = [c[0] for c in self.calls if "list" in c[0]]
+        self.assertTrue(listed)
+        self.assertTrue(all("-a" in argv and "sentinel-holy-rain-4562" in argv for argv in listed))
+
+    def test_disarm_fails_when_unset_fails_and_the_list_cannot_be_read(self):
+        code, output = self._disarm_with(1, (1, []))
+        self.assertNotEqual(code, 0)
+        self.assertIn("FAIL", output)
+        self.assertNotIn("PASS", output)
+
+    def test_disarm_passes_when_unset_fails_but_neither_secret_is_listed(self):
+        code, output = self._disarm_with(1, (0, ["AUTH_PASSWORD", "DATABASE_URL"]))
+        self.assertEqual(code, 0, output)
+        self.assertIn("PASS", output)
 
     def test_disarm_passes_on_404_then_401_basic(self):
         def fake_get(url):

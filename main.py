@@ -84,7 +84,7 @@ class BasicAuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         # D-0093: /__proof does its own gating (404 unless armed and HTTPS).
         if request.url.path == proof_access.PROOF_PATH:
-            return await call_next(request)
+            return await proof_access.proof_path_gate(request, call_next)
         header = request.headers.get("authorization", "")
         if not _credentials_ok(header):
             # D-0093: Basic always wins; a valid proof cookie admits reads only.

@@ -36,6 +36,7 @@ PROOF_PATH = "/__proof"
 COOKIE_NAME = "sentinel_proof"
 COOKIE_VERSION = "v1"
 READ_METHODS = frozenset({"GET", "HEAD"})
+PROOF_METHODS = frozenset({"GET", "HEAD", "POST"})
 MAX_WINDOW = timedelta(hours=24)
 MAX_BODY_BYTES = 4096
 LOCK_AFTER = 5
@@ -43,6 +44,10 @@ LOCK_AFTER = 5
 _HEX64 = re.compile(r"[0-9a-f]{64}")
 _IP_CHARS = re.compile(r"[^0-9A-Fa-f.:]")
 _REGION_CHARS = re.compile(r"[^0-9a-z]")
+# Canonical unix seconds only: int() would also take "+N", " N", "1_7..." and
+# non-ASCII digits, so the cookie text is pinned before it is parsed.
+_EXP_TEXT = re.compile(r"(?:0|[1-9][0-9]{0,11})")
+_LOG_UNSAFE = re.compile(r"[^\x21-\x7e]")
 
 # D5: one machine, one process (fly.toml), so an in-process counter is
 # coherent. Any `fly secrets import`/`unset` restarts the process and resets it.
@@ -140,6 +145,8 @@ def cookie_ok(request: Request) -> bool:
         if version != COOKIE_VERSION:
             return False
         armed_sha256, expires = state
+        if not _EXP_TEXT.fullmatch(exp_text):
+            return False
         exp_unix = int(exp_text)
         if exp_unix != int(expires.timestamp()):
             return False  # minted under an earlier arming
@@ -157,6 +164,23 @@ def _where(request: Request) -> str:
     return f"ip={ip} region={region}"
 
 
+def _log_safe(text: str, limit: int = 200) -> str:
+    """Printable ASCII only, so a decoded CR/LF in a path cannot forge a log line."""
+    return _LOG_UNSAFE.sub("?", text)[:limit]
+
+
+async def proof_path_gate(request: Request, call_next):
+    """D2 step 2: /__proof skips Basic and does its own gating.
+
+    Any method other than GET/HEAD/POST is a 404 here, before routing, so the
+    static mount can never answer it with a 405 that reveals the route.
+    """
+    if request.method not in PROOF_METHODS:
+        logger.info("proof: dormant-hit (method) %s", _where(request))
+        return _not_found()
+    return await call_next(request)
+
+
 async def read_only_gate(request: Request, call_next):
     """D2 step 4: the cookie admits reads; any write is a 403 with no challenge.
 
@@ -165,7 +189,7 @@ async def read_only_gate(request: Request, call_next):
     """
     if request.method in READ_METHODS:
         return await call_next(request)
-    logger.info("proof: write-refused %s %s %s", request.method, request.url.path, _where(request))
+    logger.info("proof: write-refused %s %s %s", _log_safe(request.method, 16), _log_safe(request.url.path), _where(request))
     return PlainTextResponse("Proof access is read-only", status_code=403)
 
 
@@ -304,21 +328,16 @@ async def _sign_in(request: Request) -> Response:
 router = APIRouter()
 
 
-@router.api_route(
-    PROOF_PATH,
-    methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    include_in_schema=False,
-)
+@router.api_route(PROOF_PATH, methods=sorted(PROOF_METHODS), include_in_schema=False)
 async def proof_sign_in(request: Request) -> Response:
     """GET shows the DOM form, POST trades the token for the cookie.
 
-    Every other method, and every request while dormant, locked or not over
-    HTTPS, is a plain 404. No response here ever carries WWW-Authenticate.
+    Every request while dormant, locked or not over HTTPS is a plain 404 (other
+    methods never get here; see proof_path_gate). No response here ever
+    carries WWW-Authenticate.
     """
     if not _gate(request):
         return _not_found()
-    if request.method in READ_METHODS:
-        return _page(200)
     if request.method == "POST":
         return await _sign_in(request)
-    return _not_found()
+    return _page(200)

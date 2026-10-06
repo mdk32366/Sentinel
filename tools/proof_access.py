@@ -181,12 +181,33 @@ def _poll(url, accept, timeout):
     return False, last
 
 
+def _secrets_still_set(app):
+    """True/False from `fly secrets list`, or None when it cannot be read.
+
+    The listing carries names and digests; only the names are looked at, and
+    none of its output is ever printed.
+    """
+    code, out, _ = _run([_fly(), "secrets", "list", "-a", app])
+    if code != 0:
+        return None
+    return HASH_KEY in out or EXPIRY_KEY in out
+
+
 def cmd_disarm(args):
     base = args.url.rstrip("/")
-    code, out, err = _run([_fly(), "secrets", "unset", HASH_KEY, EXPIRY_KEY, "-a", args.app])
+    code, _, _ = _run([_fly(), "secrets", "unset", HASH_KEY, EXPIRY_KEY, "-a", args.app])
     if code != 0:
-        print(f"warning: fly secrets unset exited {code}: {(err or out or '').strip()}", file=sys.stderr)
-        print("Checking the live state anyway.", file=sys.stderr)
+        # A locked page is also a 404 and / is a 401 either way, so the live
+        # checks below cannot tell "disarmed" from "unset failed while locked"
+        # (old cookies would still read). Only the secret list can.
+        still_set = _secrets_still_set(args.app)
+        if still_set is None:
+            print(f"FAIL: fly secrets unset exited {code} and fly secrets list could not be read")
+            return 1
+        if still_set:
+            print(f"FAIL: fly secrets unset exited {code} and a proof secret is still listed")
+            return 1
+        print(f"note: fly secrets unset exited {code}, but neither proof secret is listed", file=sys.stderr)
 
     page_ok, page_status = _poll(f"{base}/__proof", lambda s, h: s == 404, args.timeout)
     if not page_ok:
