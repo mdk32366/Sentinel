@@ -2662,3 +2662,99 @@ WTI card tip; rejected because the myth is load-bearing and needs its own visibl
 card. What Emma or Matt seemed to want was the "baseball card"; ABOUT was picked
 over the USA card with the pointer keeping that path. One call to flag: the 12px
 body text (ABOUT uses 11px) — a small deviation for readability.
+
+### D-0093 - Short-lived, read-only proof access past Basic Auth, shipped dormant
+
+Matt's call, 2026-10-06: option (b), a short-lived, read-only way past Basic
+Auth so the box browser can run the live click proofs for D-0091 (fifteen
+surfaces) and D-0092 (L1-L5) with the credentials never shown. Both proofs
+stalled at the same wall: Chrome's native Basic Auth dialog is browser chrome,
+not DOM, so Secure Form cannot fill it and a screen handoff could not type into
+it. `user:pass@` URLs and driving Chrome over CDP or an extension are banned,
+and the curl fallback only proves strings are present in the bundle, not that a
+reader can click them.
+
+**Choice.** A real DOM sign-in page at `/__proof`, in `api/proof_access.py`,
+that trades a one-time proof token for a signed cookie which admits **GET and
+HEAD only**. It is armed only while two Fly secrets are set -
+`SENTINEL_PROOF_TOKEN_SHA256` (the lowercase hex SHA-256 of the token, never the
+token) and `SENTINEL_PROOF_EXPIRES_AT` (ISO-8601 with an explicit offset) - and
+the expiry is in the future and **no more than 24h ahead**. Otherwise it is
+dormant: `/__proof` is a 404, the cookie is ignored, and Basic Auth behaves
+exactly as before. `BasicAuthMiddleware` gains two steps and nothing else
+changes: `/__proof` passes to its own route, and after Basic fails a valid
+cookie admits reads while any other method gets `403 "Proof access is
+read-only"` with **no** `WWW-Authenticate`, so the native dialog cannot return
+mid-proof. Basic always wins, for any method; `_credentials_ok` and the 401 are
+untouched. The token is compared as `hmac.compare_digest` of SHA-256 digests;
+the body is parsed by hand (capped at 4096 bytes, `parse_qs`) because
+`python-multipart` is absent and a FastAPI 422 echoes the input. The cookie is
+`v1.<exp_unix>.<mac>`, HttpOnly, Secure, SameSite=Strict, host-only, and lives
+exactly as long as the armed window; its MAC key mixes in the Basic Auth
+password, so the stored hash alone cannot mint one, and changing either proof
+secret or the password invalidates every cookie. `/__proof` answers only when
+`Fly-Forwarded-Proto` is `https` (Fly sets it and a client cannot override it,
+unlike `X-Forwarded-Proto`), because `force_https = false` is live. Five failed
+sign-ins lock the page until the process restarts; issued cookies keep reading.
+The `sentinel.proof` log records events and never the token, hash, cookie, body
+or `Authorization` header. `tools/proof_access.py` (stdlib) runs on Matt's
+laptop: `arm` generates the token there, pipes the hash and expiry into
+`fly secrets import` over stdin and puts the plaintext on the clipboard,
+printing neither; `disarm` unsets both secrets and waits for `/__proof` 404 and
+`/` 401 + Basic; `status` reports armed or dormant without sending a token.
+Guards: `tests/test_proof_access.py` G1-G14, each shown able to go red by eight
+deliberate breakages, with `tests/test_frontend_auth.py` unmodified.
+
+**Rejected.**
+- *A `?token=` query parameter.* The secret lands in the URL bar, history, the
+  Referer header, Fly and uvicorn access logs, and screenshots.
+- *Allowlisting the box egress IP.* Likely shared NAT or dynamic, so it could
+  admit other tenants, and it carries no per-user identity.
+- *Replacing Basic Auth app-wide with a session login.* Scope creep across every
+  route and test, for a proof window.
+- *A `user:pass@` URL, or driving Chrome over CDP or an extension.* Both banned.
+- *Auth at the Fly proxy.* Fly does no auth today (`fly.toml` has none, and the
+  live 401 is the app's 12-byte `Unauthorized`), so there is nothing to adjust.
+- *A separate unauthenticated proof app or staging deploy.* A new app, database
+  and secrets, and it proves a different deployment from the one readers use.
+- *An in-SPA login that sends `Authorization` from `fetch`.* The first page
+  navigation still triggers the native dialog.
+- *Seeding Chrome with Basic credentials.* Invasive, puts the real password in
+  the shared box browser profile, and long-lived.
+- *A proof-only branch reverted afterwards.* A revert is another CI deploy, and
+  the D-0092 deploy needed five attempts through an Actions outage; teardown by
+  `fly secrets unset` needs no CI at all.
+
+**What forced the call.** The load-bearing fact is that Basic Auth is enforced
+inside the app, not at the Fly proxy: `BasicAuthMiddleware` in `main.py` returns
+`PlainTextResponse("Unauthorized")` with `WWW-Authenticate: Basic`, `fly.toml`
+carries no auth config, and the live `curl -sSI` answers `401` with
+`content-length: 12`, which is exactly that response. So an app-level cookie
+path can work without touching the proxy. Matt asked for the credentials never
+to be shown, which rules out every route that puts the password or a token in a
+URL, a prompt or a screenshot, and leaves a DOM field that Secure Form can fill.
+
+*What would change it.* Secure Form refusing the `/__proof` field: the DOM form
+gains nothing, so disarm and choose again. Wanting the LLM brief during proofs:
+that breaks read-only and needs a new decision. Going multi-machine: the
+in-process lockout needs shared state. Fly adding proxy-side auth: the gate
+moves there. `Fly-Forwarded-Proto` missing on live requests: the armed page
+would stay 404, and the HTTPS check needs a different signal.
+
+*Who carries the downside.* Matt carries a permanent dormant code path and, for
+a short armed window (4h by default, 24h cap), read access for anyone holding
+the token - no writes and no LLM spend. Kaylee carries the build and the
+teardown discipline. Reversible in minutes: `fly secrets unset` with no CI,
+auto-expiry at most 24h out, or a squash revert for the code. No data, schema
+or UI change.
+
+*Bias check.* The architect's sketch was kept in shape with seven evidence-led
+changes, the largest being that the token is generated on Matt's laptop rather
+than the box. The easy default was the box IP allowlist, rejected on the
+shared-egress risk. What Matt seemed to want was simply "let Kaylee click"; the
+read-only limit and mandatory teardown make the window slightly less convenient
+on purpose. One call to flag: shipping dormant code permanently is a judgment,
+and someone favouring a minimal attack surface would revert; the CI-outage
+evidence and the CI-free kill switch are why it stays. Separately, the Basic
+password itself still crosses plain HTTP on an `http://` link because
+`force_https = false`; that is a follow-up finding, not part of this decision.
