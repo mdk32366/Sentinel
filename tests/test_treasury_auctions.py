@@ -335,6 +335,18 @@ class ZScoreWindow(unittest.TestCase):
         self.assertEqual(last["b2c_z_window"], 26)
         # Mean of the 26 before it is 2.5, so the 9.0s fell outside the window.
         self.assertAlmostEqual(last["b2c_z"], 0.0, places=9)
+        # The band the panel draws is this window, from here, not recomputed
+        # in JavaScript (one window rule, not two: F-0047).
+        mean, sd = last.get("b2c_window_mean"), last.get("b2c_window_sd")
+        self.assertIsInstance(mean, float, "no window mean on the row")
+        self.assertIsInstance(sd, float, "no window sd on the row")
+        self.assertAlmostEqual(mean, 2.5, places=9)
+        self.assertAlmostEqual(sd, 0.5099019513592785, places=9)
+
+    def test_a_window_too_short_to_score_has_no_band(self):
+        rows = demand.attach_zscores(series("13-Week", [2.0, 2.5, 3.0]))
+        self.assertIsNone(rows[-1].get("b2c_window_mean", "absent"))
+        self.assertIsNone(rows[-1].get("b2c_window_sd", "absent"))
 
     def test_nulls_are_skipped_and_the_window_reports_what_it_used(self):
         values = [2.0, None, 2.5, None, 3.0, 2.0, 2.5, 3.0, 2.0, 2.5, 3.0]
@@ -484,6 +496,28 @@ class ResponseModelsDeclareWhatIsSent(unittest.TestCase):
         self.assertEqual(sorted(set(body["auction"]) - declared), [])
         for key in ("bidders", "soma", "comp_tendered", "noncomp_accepted"):
             self.assertIn(key, body["auction"])
+
+
+class ThePanelUsesTheSameRulings(unittest.TestCase):
+    """D-0101 and D-0103 live in Python and in ui/src/lib/auctions.js. A JS
+    test cannot read the Python, so the comparison is made from here."""
+
+    JS = Path(__file__).resolve().parents[1] / "ui" / "src" / "lib" / "auctions.js"
+
+    def js(self):
+        return self.JS.read_text(encoding="utf-8")
+
+    def test_the_charted_terms_match(self):
+        import re
+        m = re.search(r"export const CHARTED_TERMS = \[([^\]]*)\]", self.js())
+        self.assertIsNotNone(m, "CHARTED_TERMS not found in auctions.js")
+        self.assertEqual(re.findall(r'"([^"]+)"', m.group(1)), list(demand.CHARTED_TERMS))
+
+    def test_the_stale_threshold_matches(self):
+        import re
+        m = re.search(r"export const STALE_BUSINESS_DAYS = (\w+);", self.js())
+        self.assertIsNotNone(m)
+        self.assertEqual(m.group(1), str(demand.STALE_BUSINESS_DAYS))
 
 
 class Scheduling(unittest.TestCase):
