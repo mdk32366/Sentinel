@@ -33,6 +33,8 @@ what found it.
 import unittest
 from datetime import datetime, timedelta
 
+import inspect
+
 from pipelines.tic_state import (
     TIC_EXIT_THRESHOLD_BN,
     classify_tic_state,
@@ -47,16 +49,21 @@ class Row:
         self.date, self.value = date, value
 
 
-def classify(tic_hist, tic_last):
+def classify(tic_hist, tic_last, peak_bn=None):
     """Exercise the REAL classifier, not a copy of it.
 
     An earlier draft of this file reimplemented the rule here, which would have
     passed while the shipped classifier said something else - and duplicating
     the rule is the defect being fixed (`F-0047`: two implementations of one
     idea, and the endpoint serving the wrong one).
+
+    `peak_bn` defaults to the last holding: a country whose last row is its
+    highest. D-0106 makes the peak decide whether a near-zero holding is an
+    exit, so the exit cases below pass it explicitly.
     """
     last_bn = float(tic_last.value) if tic_last else None
-    return classify_tic_state(bool(tic_hist), last_bn), last_bn
+    peak = peak_bn if peak_bn is not None else last_bn
+    return classify_tic_state(bool(tic_hist), last_bn, peak), last_bn
 
 
 NOW = datetime(2026, 7, 1)
@@ -75,8 +82,8 @@ class TestTheFourStates(unittest.TestCase):
         self.assertEqual(state, "below_threshold")
         self.assertEqual(bn, 103.1)
 
-    def test_a_near_zero_last_holding_is_a_genuine_exit(self):
-        state, _ = classify([], Row(datetime(2024, 6, 1), 0.0))
+    def test_a_near_zero_last_holding_after_a_real_one_is_a_genuine_exit(self):
+        state, _ = classify([], Row(datetime(2024, 6, 1), 0.0), peak_bn=30.6)
         self.assertEqual(state, "exited")
 
     def test_no_rows_at_all_is_no_data_not_an_exit(self):
@@ -87,13 +94,14 @@ class TestTheFourStates(unittest.TestCase):
 
     def test_the_states_are_mutually_exclusive(self):
         cases = [
-            ([Row(NOW, 5.0)], Row(NOW, 5.0)),
-            ([], Row(datetime(2025, 12, 1), 103.1)),
-            ([], Row(datetime(2024, 6, 1), 0.0)),
-            ([], None),
+            ([Row(NOW, 5.0)], Row(NOW, 5.0), None),
+            ([], Row(datetime(2025, 12, 1), 103.1), None),
+            ([], Row(datetime(2024, 6, 1), 0.0), 30.6),
+            ([], Row(datetime(2024, 6, 1), 0.5), 0.94),
+            ([], None, None),
         ]
-        states = [classify(h, l)[0] for h, l in cases]
-        self.assertEqual(len(set(states)), 4, f"states collapsed: {states}")
+        states = [classify(h, l, p)[0] for h, l, p in cases]
+        self.assertEqual(len(set(states)), 5, f"states collapsed: {states}")
 
 
 class TestOnlyARealExitEarnsThePostureScore(unittest.TestCase):
@@ -130,6 +138,50 @@ class TestTheThreshold(unittest.TestCase):
 
     def test_it_is_not_zero(self):
         self.assertGreater(TIC_EXIT_THRESHOLD_BN, 0.0)
+
+
+class TestAnExitNeedsSomethingToExitFrom(unittest.TestCase):
+    """D-0106. Owner ruling, 2026-10-08: whether a country has exited depends
+    on whether it ever held Treasuries in the first place. A country that never
+    held $1bn cannot have liquidated a position, and calling it EXITED is
+    worth a 50-point base score for a liquidation that never happened.
+
+    Production, 2026-10-08: Cyprus (peak $0.94bn), Venezuela ($0.84bn) and
+    Liberia ($0.65bn) have never held $1bn. Each still reports, so each is
+    `reported` today - and each would have been called `exited` the month it
+    dropped out of the TIC tables."""
+
+    def test_a_country_that_never_held_a_billion_never_held(self):
+        state, _ = classify([], Row(datetime(2026, 7, 1), 0.5), peak_bn=0.943)  # Cyprus
+        self.assertEqual(state, "never_held")
+
+    def test_a_country_that_held_and_wound_down_has_exited(self):
+        state, _ = classify([], Row(datetime(2026, 7, 1), 0.2), peak_bn=30.6)
+        self.assertEqual(state, "exited")
+
+    def test_the_bar_is_the_same_line_an_exit_falls_below(self):
+        line = TIC_EXIT_THRESHOLD_BN
+        self.assertEqual(classify([], Row(NOW, 0.1), peak_bn=line)[0], "exited")
+        self.assertEqual(classify([], Row(NOW, 0.1), peak_bn=line - 0.01)[0], "never_held")
+
+    def test_the_peak_cannot_be_left_out(self):
+        # A default would let a caller skip the question this ruling is about.
+        params = inspect.signature(classify_tic_state).parameters
+        self.assertIn("peak_reported_bn", params)
+        self.assertIs(params["peak_reported_bn"].default, inspect.Parameter.empty)
+
+    def test_never_held_says_what_it_never_held(self):
+        line = describe("never_held", 0.5, datetime(2026, 7, 1), peak_bn=0.943)
+        self.assertIn("0.9", line)
+        self.assertNotIn("xited", line)
+
+    def test_both_call_sites_pass_the_peak(self):
+        for path in ("pipelines/composite_stress.py", "pipelines/gold_fetcher.py"):
+            with open(path, encoding="utf-8") as fh:
+                code = "\n".join(
+                    ln for ln in fh.read().splitlines() if not ln.lstrip().startswith("#")
+                )
+            self.assertIn("peak_reported_holding", code, f"{path} does not read the peak")
 
 
 class TestTheDefectWouldBeCaughtNow(unittest.TestCase):
