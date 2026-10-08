@@ -202,7 +202,7 @@ class Nulls(unittest.TestCase):
         self.assertEqual(row["shares_check"], "unverifiable")
 
     def test_a_share_gap_is_stored_and_flagged_not_forced(self):
-        # F-0111 / D-0104.
+        # F-0112 / D-0104.
         row = auctions.parse_record(record("912795L66", "2009-01-26"))
         self.assertEqual(row["shares_check"], "gap")
         self.assertEqual(row["bidder_gap"], Decimal("10000000"))

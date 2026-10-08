@@ -31,7 +31,7 @@ THE LOAD-BEARING RULE (ORDER auction-demand §2, A-0025)
 ABSENT IS A CATEGORY (§3)
     Every NULL column has a reason in `null_reasons`. A share with a missing
     input is NULL. Bidder shares that do not sum to 1 are stored and flagged
-    `gap` (D-0104, F-0111), never forced.
+    `gap` (D-0104, F-0112), never forced.
 
 SCHEDULE
     Weekdays 22:00 UTC, after the day's auctions close and results publish.

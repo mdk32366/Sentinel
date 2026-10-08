@@ -2980,4 +2980,4 @@ missing. A gap is reported in the ingest summary. Owner ruling, 2026-10-08.
 figure because it disagrees with another published figure. `b2c_check` treats
 disagreement the same way.
 
-**What forced the call.** `F-0111`.
+**What forced the call.** `F-0112`.

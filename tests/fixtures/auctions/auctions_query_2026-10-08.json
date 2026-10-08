@@ -1,7 +1,7 @@
 {
  "source": "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query",
  "captured": "2026-10-08",
- "note": "Verbatim records from the live API (D-0098). Every auction held in June 2026, plus named edge cases: the golden bill's 13-week reopening, F-0111's share gap, pre-SOMA 2008 records, an FRN and a TIPS filed as Notes, a CMB, a 10Y reopening, and three announced-but-not-held auctions.",
+ "note": "Verbatim records from the live API (D-0098). Every auction held in June 2026, plus named edge cases: the golden bill's 13-week reopening, F-0112's share gap, pre-SOMA 2008 records, an FRN and a TIPS filed as Notes, a CMB, a 10Y reopening, and three announced-but-not-held auctions.",
  "data": [
   {
    "record_date": "2008-01-03",

@@ -8,14 +8,32 @@ for itself identifies nothing.
     python tools/mark_disposable.py --show     # report status, change nothing
 
 Never run this against a database whose data you would miss.
+
+F-0111: the canary is looked up with the inspector, never by selecting from a
+table that may not exist. On Postgres a failed statement aborts the whole
+transaction, so the old probe-and-swallow left every later statement - the
+CREATE TABLE included - failing on exactly the fresh databases that need
+marking.
 """
 import argparse
 import sys
+from pathlib import Path
 
-from sqlalchemy import create_engine, text
+# A script's sys.path starts at tools/, not the repo root (F-0111).
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from config import settings
-from database.connection import CANARY_MARKER, CANARY_TABLE
+from sqlalchemy import create_engine, inspect, text  # noqa: E402
+
+from config import settings  # noqa: E402
+from database.connection import CANARY_MARKER, CANARY_TABLE  # noqa: E402
+
+
+def read_canary(conn):
+    """The canary's marker, or None if there is no canary table. Issues no
+    statement that can fail."""
+    if not inspect(conn).has_table(CANARY_TABLE):
+        return None
+    return conn.execute(text(f"SELECT marker FROM {CANARY_TABLE} LIMIT 1")).scalar()
 
 
 def main() -> int:
@@ -31,13 +49,7 @@ def main() -> int:
         print(f"database   : {target}")
         print(f"timeseries : {rows} rows")
 
-        existing = None
-        try:
-            existing = conn.execute(
-                text(f"SELECT marker FROM {CANARY_TABLE} LIMIT 1")
-            ).scalar()
-        except Exception:
-            pass
+        existing = read_canary(conn)
         print(f"canary     : {existing!r}")
 
         if args.show:
