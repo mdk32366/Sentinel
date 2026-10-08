@@ -5,6 +5,10 @@
 > 
 > **Numbering ruled 2026-09-26 (`D-0021`).** Continue from the highest number
 > present. `D-0017` and `D-0018` are **VOID — NEVER ISSUED**; do not reuse them.
+>
+> **Numbers are issued by `python tools/register.py next D` (`D-0096`)**, run
+> after `git fetch`, at the moment of append. CI fails a register with a gap, a
+> duplicate, or a citation with no heading.
 
 ---
 
@@ -1579,6 +1583,23 @@ credential that is itself on the rotation list, and a secret-entry box behind
 it means the weakest credential guards the strongest. `flyctl secrets set` is
 versioned and auditable; a UI paste is not.
 
+### D-0072 — Grok's model is chosen by measured latency, and the error log carries the status code
+*RECONSTRUCTED FROM COMMIT `79fc310` (PR #52) AND `F-0085`, 2026-10-08 under
+`D-0096`. The number was cited in shipped code and a test the day it was
+minted; the entry was never written.*
+
+**Choice.** `BRIEF_PROVIDERS["grok"]` moves from the retired `grok-2-latest` to
+`grok-4.20-0309-non-reasoning`. A provider failure logs its HTTP status code,
+never the body. Cited at `api/routes.py` (model choice and status logging) and
+`tests/test_analyst_brief_wiring.py`.
+
+**Rejected.** `grok-4.7`, the newest name: 36.3s per brief, half the 75s
+timeout. `grok-4.3`: 7.0s but 1730 chars against 2508. Continuing to log only
+the exception type (`D-0069`): a retired model and a revoked key wrote the same
+line.
+
+**What forced the call.** `F-0085`. Measurements and the 404 are recorded there.
+
 ### D-0073 — The six country tiles explain themselves, and the CDS tile is coloured by the ladder
 
 **Choice.** Each tile on the country panel carries a hover and
@@ -2636,8 +2657,9 @@ the USA `#/about` link.
   the job with keyboard support built in.
 - *A live T-bill yield beside the copy.* No bill-rate feed in `METRICS`, and
   inventing one is forbidden.
-- *Folding the "T-Bill" label vs all-Treasuries mismatch into this PR.* Held as
-  F-0107 candidate; this PR stays copy-only.
+- *Folding the "T-Bill" label vs all-Treasuries mismatch into this PR.* Held as an
+  unnumbered finding candidate; this PR stays copy-only. *(Numbered F-0107 when
+  written; renumbered 2026-10-08 under `D-0096`, which voids that number.)*
 
 **What forced the call.** The load-bearing fact is that Sentinel can see holdings
 fall but not what the proceeds bought: TIC feeds are holdings and net transactions
@@ -2786,3 +2808,47 @@ password itself still crosses plain HTTP on an `http://` link because
 **What forced the call.** Matt asked to wire weekly M2 on 2026-10-06. Code search and a Fly read-only probe showed D-0058 already did that. Two residuals remained: (1) `freshness_watchdog.py` CHECKS listed yields, oil, dollar, gold, TIC, CDS, sovereign yields, reserves, World Bank broad money — but not `WM2NS` / `M2SL` / `CPIAUCSL`, so a silent drop of weekly M2 left DataConfidence green (same blind-spot class as F-0103 / F-0109, one series at a time); (2) A-0013 still taught that the M2 *card* was `M2SL`.
 
 **Reversal condition.** FRED stops updating WM2NS; H.6 gains a true weekly *release* calendar; or Matt wants SA on the card for quoting published analysis — then swap the MARKETS `code` and tip to `M2SL` and keep WM2NS ingest (reverse of today). For the CHECK alone: G11 finding 55 false-alarms every healthy H.6 cycle — retune `max_age_days` with the reason written down; do not drop the CHECK.
+
+### D-0096 - Register numbers come from a tool, and CI refuses a register that does not add up
+
+**Choice.** `tools/register.py next {D|F|A}` is the only way a number is
+issued. It takes the highest number headed in the working tree or in
+`origin/master`, plus one, and a VOID heading counts as issued.
+`tests/test_register_integrity.py` runs `tools/register.py check` in CI and
+fails on any of six violations:
+- an ID that heads more than one entry;
+- a gap between the lowest and highest number;
+- a cited ID with no heading, in code, tests, docs or a test filename;
+- a candidate referenced by number;
+- a `T-NNNN` testplan heading with no matching decision;
+- one number taken on this branch and on `origin/master` since they diverged.
+
+The three gaps the check found on 2026-10-08 are closed by the `D-0021`
+precedent. A number cited in shipped code is reconstructed from its commit, so
+`D-0072` is now written up from `79fc310` and `F-0085`. A number used nowhere
+is voided, which covers `F-0108`. A numbered candidate is renumbered as
+unnumbered (`D-0034`), so `D-0092`'s text drops the number and `F-0107` is
+voided.
+
+**Rejected.** (a) Keep the convention and reconcile by hand. That is what
+happened, and the reconciliation cost days each time. (b) A reservation file or
+counter committed to the repo. Two branches still both increment it, and the
+result is a merge conflict in a file nobody reads instead of a named collision.
+(c) Renumbering the gaps away. That breaks the citations already in code,
+which `D-0021` ruled out.
+
+**What forced the call.** A register audit on 2026-10-08 found that nothing in
+the repo issued or validated a number. `D-0021` and `D-0034` were prose. Three
+numbers had gone missing silently: `D-0072` was cited at two lines of
+`api/routes.py` and in a test with no entry, `F-0107` was named as a
+"candidate", and `F-0108` was skipped.
+
+**Known limit.** The check sees `origin/master` as of the last `git fetch`, and
+CI sees the base as of the run. `master` has no branch protection, so two PRs
+that each pass CI against a stale base can still both merge. Requiring
+branches to be up to date before merging, with this test as a required check,
+closes that. It is an owner setting in GitHub, not code.
+
+**Reversal condition.** None for issuing numbers. Add a line to `MENTIONS` in
+`tools/register.py`, with its reason, only if the check flags a mention that is
+not a citation.
