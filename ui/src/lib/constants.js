@@ -133,7 +133,7 @@ export const RANGES = [
   { label: "5Y",  days: 1825 },
 ];
 
-export const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "CDS", "COUNTRY", "ADMIN", "ABOUT"];
+export const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "CDS", "AUCTIONS", "COUNTRY", "ADMIN", "ABOUT"];
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 

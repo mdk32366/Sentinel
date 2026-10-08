@@ -17,6 +17,7 @@ import { StatCard } from "./components/StatCard";
 import { Ticker } from "./components/Ticker";
 import { AboutTab } from "./pages/AboutTab";
 import { AdminTab } from "./pages/AdminTab";
+import { AuctionsTab } from "./pages/AuctionsTab";
 import { CDSTab } from "./pages/CDSTab";
 import { CompositeTab } from "./pages/CompositeTab";
 import { CountryTab } from "./pages/CountryTab";
@@ -170,6 +171,7 @@ export default function App() {
         {tab === "GOLD" && <GoldReservesTab latestAll={latest} />}
         {tab === "COMPOSITE" && <CompositeTab />}
         {tab === "CDS" && <CDSTab />}
+        {tab === "AUCTIONS" && <AuctionsTab />}
         {tab === "COUNTRY" && (
           <CountryTab initialIso={countryIso} latestAll={latest} />
         )}
