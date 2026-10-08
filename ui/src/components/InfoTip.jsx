@@ -55,6 +55,10 @@ export function InfoTip({
       onMouseLeave={hide}
       onFocus={show}
       onBlur={hide}
+      // Marks the anchor so tooltips.coverage tests can see that a header or
+      // tile carries an explanation; focusable so a keyboard reaches it too.
+      data-tip={tip ? "yes" : undefined}
+      tabIndex={tip ? 0 : undefined}
       {...rest}
     >
       {children}
