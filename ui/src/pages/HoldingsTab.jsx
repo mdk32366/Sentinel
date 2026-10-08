@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
 import { ColHeader } from "../components/ColHeader";
+import { InfoTip } from "../components/InfoTip";
 import { CountryDetail } from "../components/CountryDetail";
 import { CountryLink } from "../components/CountryLink";
 import { DataAsOf } from "../components/DataAsOf";
@@ -57,6 +58,7 @@ export function HoldingsTab({ latestAll = {} }) {
         {[
           {
             label: "Total Foreign Holdings",
+            tip: "All US Treasuries held by foreign holders: the Grand Total row of TIC SLT Table 5, the published figure. The note shows how much of it the countries in the table account for. The rest belongs to holders TIC does not name (D-0085).",
             val: `$${trillions(grandTotal)}T`,
             // The published total, with how much of it the list below accounts
             // for. D-0085: the tile used to show the sum of the rows.
@@ -64,17 +66,22 @@ export function HoldingsTab({ latestAll = {} }) {
           },
           {
             label: "Countries Listed",
+            tip: "Countries with a total Treasury holding in SLT Table 3, which covers every reporting country rather than Table 5's twenty (D-0081). \"Long-term only\" countries publish just their long-term holdings, so they are listed but not compared or summed with these.",
             val: comparable.length,
             sub: ltOnlyCount > 0 ? `+${ltOnlyCount} long-term only` : null,
           },
           // D-0091: the tile opens the top holder's card. An empty tile stays
           // a plain dash - no link and no marker, there is no country to name.
-          { label: "Top Holder", val: comparable[0]
+          { label: "Top Holder",
+            tip: "The country with the largest total Treasury holding this month. Click it to open its country card.",
+            val: comparable[0]
             ? <CountryLink iso={comparable[0].country_code} name={comparable[0].country_code} showCode={false} />
             : "—" },
-          { label: "Top 3 Concentration", val: `${top3pct.toFixed(1)}%`, alert: top3pct > 40 },
+          { label: "Top 3 Concentration", val: `${top3pct.toFixed(1)}%`, alert: top3pct > 40,
+            tip: "The three largest holders' combined share of all foreign holdings. Above 40% the tile turns red: a decision by three governments then moves a large slice of foreign demand at once." },
           {
             label: "Data As Of",
+            tip: "The month the latest TIC release describes. TIC publishes about seven weeks after the month ends, so a date one to two months back is normal. The age beneath says how old it actually is (F-0083).",
             val: asOf,
             // F-0083: the tile said "Dec 2025" and nothing else while the
             // source had been frozen for 302 days.
@@ -83,7 +90,9 @@ export function HoldingsTab({ latestAll = {} }) {
           },
         ].map(s => (
           <div key={s.label} style={{ background: "#0F1923", border: `1px solid ${s.alert ? "#E07B5A33" : "#1A2530"}`, borderTop: `2px solid ${s.alert ? "#E07B5A" : "#1A2530"}`, borderRadius: 2, padding: "14px 20px", flex: "1 1 140px" }}>
-            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{s.label}</div>
+            <InfoTip as="div" title={s.label} tip={s.tip} placement="below" style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
+              <span style={{ borderBottom: "1px dashed #2A3D50" }}>{s.label}</span>
+            </InfoTip>
             <div style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: s.alert ? "#E07B5A" : "#E8E0D0" }}>{s.val}</div>
             {s.sub && (
               <div style={{ fontFamily: "monospace", fontSize: 10, color: s.subColor ?? "#5A6878", marginTop: 3 }}>{s.sub}</div>

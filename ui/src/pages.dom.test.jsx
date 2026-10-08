@@ -114,6 +114,21 @@ describe("every tab mounts", () => {
   }
 });
 
+describe("every column header that mounts carries a tip", () => {
+  // The rendered half of tooltips.coverage.test.js: InfoTip marks an anchor
+  // that has a tip with data-tip, so a header without one is visible here.
+  for (const [label, Component, props] of TABS) {
+    it(`${label}: every <th> has a tooltip`, async () => {
+      const { container } = render(<Component {...props} />);
+      await waitFor(() => expect(container.firstChild).not.toBeNull());
+      const bare = [...container.querySelectorAll("th")]
+        .filter((th) => th.dataset.tip !== "yes")
+        .map((th) => th.textContent.trim());
+      expect(bare).toEqual([]);
+    });
+  }
+});
+
 describe("the tabs that carry static content render it", () => {
   it("ABOUT names the project and the retired STRESS tab", () => {
     // D-0051 put the retired tab on ABOUT precisely so it would not be

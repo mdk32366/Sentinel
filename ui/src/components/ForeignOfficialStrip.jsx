@@ -1,4 +1,5 @@
 import { trillions } from "../lib/format";
+import { InfoTip } from "./InfoTip";
 
 /**
  * What central banks are doing, as distinct from everyone else.
@@ -39,12 +40,18 @@ export function ForeignOfficialStrip({ signal }) {
   const dir = (v) => (v == null ? "#5A6878" : v < 0 ? "#E07B5A" : "#5DB87A");
 
   const figures = [
-    { label: "official", val: `$${trillions(signal.level_bn)}T`, color: "#8A9BAC" },
-    { label: "share of total", val: signal.share_pct == null ? "—" : `${signal.share_pct.toFixed(2)}%`, color: unusual ? "#C8A96E" : "#8A9BAC" },
-    { label: "private", val: signal.private_bn == null ? "—" : `$${trillions(signal.private_bn)}T`, color: "#8A9BAC" },
-    { label: "12mo", val: pct(signal.twelve_month_pct), color: dir(signal.twelve_month_pct) },
-    { label: "share move 12mo", val: pp(signal.share_move_12m_points), color: dir(signal.share_move_12m_points) },
-    { label: "in bills", val: signal.bills_share_of_official_pct == null ? "—" : `${signal.bills_share_of_official_pct.toFixed(2)}%`, color: "#8A9BAC" },
+    { label: "official", val: `$${trillions(signal.level_bn)}T`, color: "#8A9BAC",
+      tip: "Table 5's \"Of Which: Foreign Official\" line: Treasuries held by central banks and other official institutions, across every foreign holder, named and unnamed. A subset of the Grand Total, never added to All Other (D-0080)." },
+    { label: "share of total", val: signal.share_pct == null ? "—" : `${signal.share_pct.toFixed(2)}%`, color: unusual ? "#C8A96E" : "#8A9BAC",
+      tip: "Official holdings as a percentage of all foreign holdings in the same month. Turns gold when the last twelve months' fall in this share is in the steepest tenth of the series' own history (D-0088)." },
+    { label: "private", val: signal.private_bn == null ? "—" : `$${trillions(signal.private_bn)}T`, color: "#8A9BAC",
+      tip: "Grand Total minus Foreign Official: everything foreign holders own that is not held by an official institution. Derived rather than published, so there is no third figure to keep in step." },
+    { label: "12mo", val: pct(signal.twelve_month_pct), color: dir(signal.twelve_month_pct),
+      tip: "Change in the official level over the last twelve monthly releases. A level can rise while the share falls, when private holdings grow faster." },
+    { label: "share move 12mo", val: pp(signal.share_move_12m_points), color: dir(signal.share_move_12m_points),
+      tip: "Change in the official share of the Grand Total over twelve months, in percentage points. Judged against this series' own rolling history: the note below gives its percentile and the median move (D-0088)." },
+    { label: "in bills", val: signal.bills_share_of_official_pct == null ? "—" : `${signal.bills_share_of_official_pct.toFixed(2)}%`, color: "#8A9BAC",
+      tip: "The share of official holdings in Treasury bills, from Table 5's separate bills and bonds lines. A higher bill share means shorter-dated holdings that can run off without being sold. If bills and bonds stop summing to the total, a red warning appears below." },
   ];
 
   return (
@@ -55,7 +62,10 @@ export function ForeignOfficialStrip({ signal }) {
         </span>
         {figures.map((f) => (
           <span key={f.label} style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C" }}>
-            {f.label} <span style={{ color: f.color, fontWeight: 600 }}>{f.val}</span>
+            <InfoTip title={f.label} tip={f.tip} placement="below">
+              <span style={{ borderBottom: "1px dashed #2A3D50" }}>{f.label}</span>
+            </InfoTip>{" "}
+            <span style={{ color: f.color, fontWeight: 600 }}>{f.val}</span>
           </span>
         ))}
         <span style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C" }}>

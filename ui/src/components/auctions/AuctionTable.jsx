@@ -3,6 +3,7 @@ import { useState } from "react";
 import {
   fmtBn, fmtPct, fmtRatio, fmtShare, fmtZ, reasonText, sortRows,
 } from "../../lib/auctions";
+import { InfoTip } from "../InfoTip";
 
 /**
  * Latest-auctions table (ORDER auction-demand §7).
@@ -24,14 +25,22 @@ const NEUTRAL = "#8A9BAC";
 const MONO = { fontFamily: "monospace" };
 
 const COLUMNS = [
-  { key: "term", label: "Term", align: "left" },
-  { key: "auction_date", label: "Auction date", align: "left" },
-  { key: "b2c_recomputed", label: "B2C", fmt: fmtRatio },
-  { key: "b2c_z", label: "Z (B2C)", fmt: fmtZ, reasonKey: "b2c_z_reason" },
-  { key: "primary_dealer_share", label: "Dealer share", fmt: fmtShare },
-  { key: "dealer_z", label: "Z (dealer)", fmt: fmtZ, reasonKey: "dealer_z_reason" },
-  { key: "indirect_bidder_share", label: "Indirect share", fmt: fmtShare },
-  { key: "allocation_pct", label: "% at high", fmt: fmtPct },
+  { key: "term", label: "Term", align: "left",
+    tip: "The auction's term family (D-0103): a bill's own term, or a note's or bond's original term, so a 10-year reopening counts as 10Y." },
+  { key: "auction_date", label: "Auction date", align: "left",
+    tip: "The day the auction was held and its results published." },
+  { key: "b2c_recomputed", label: "B2C", fmt: fmtRatio,
+    tip: "Bid-to-cover: dollars bid for every dollar sold. Recomputed from Treasury's totals with the Fed's SOMA rollover taken out of both sides, which is how Treasury defines its own figure (D-0098). Higher means more demand. ≠ marks a row where this differs from Treasury's reported figure by more than 0.01." },
+  { key: "b2c_z", label: "Z (B2C)", fmt: fmtZ, reasonKey: "b2c_z_reason",
+    tip: "How unusual this bid-to-cover is against the previous 26 auctions of the same term, in standard deviations, needing at least 8 (D-0099). Negative means weaker demand than usual. Not colour-coded until alert thresholds are ruled (D-0102)." },
+  { key: "primary_dealer_share", label: "Dealer share", fmt: fmtShare,
+    tip: "Share of competitive accepted bids taken by primary dealers (D-0097). Dealers are expected to bid at every auction, so a high share means less outside demand took the securities." },
+  { key: "dealer_z", label: "Z (dealer)", fmt: fmtZ, reasonKey: "dealer_z_reason",
+    tip: "How unusual the dealer share is against the same 26-auction window. Positive means dealers were left holding more than usual." },
+  { key: "indirect_bidder_share", label: "Indirect share", fmt: fmtShare,
+    tip: "Share taken by indirect bidders: investors bidding through a dealer or the New York Fed, including foreign central banks and international accounts. A rough read on foreign demand." },
+  { key: "allocation_pct", label: "% at high", fmt: fmtPct,
+    tip: "Of the bids placed at the auction's highest accepted rate, the percentage that were filled. Treasury's 'allotted at high' figure." },
 ];
 
 function reasonFor(row, column) {
@@ -113,15 +122,17 @@ export function AuctionTable({ rows }) {
           <thead>
             <tr>
               {COLUMNS.map((c) => (
-                <th key={c.key} style={{ padding: "6px 14px", textAlign: c.align ?? "right", borderBottom: "1px solid #1A2530" }}>
+                <InfoTip as="th" key={c.key} title={c.label} tip={c.tip} placement="above" align={c.align === "left" ? "left" : "right"}
+                  style={{ padding: "6px 14px", textAlign: c.align ?? "right", borderBottom: "1px solid #1A2530" }}>
                   <button type="button" onClick={() => toggle(c.key)} style={{
                     ...MONO, background: "transparent", border: "none", cursor: "pointer", padding: 0,
                     fontSize: 10, letterSpacing: "0.08em", textTransform: "uppercase",
                     color: sort.key === c.key ? "#C8A96E" : "#5A6878",
                   }}>
-                    {c.label}{sort.key === c.key ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}
+                    <span style={{ borderBottom: "1px dashed #2A3D50" }}>{c.label}</span>
+                    {sort.key === c.key ? (sort.dir === "desc" ? " ▼" : " ▲") : ""}
                   </button>
-                </th>
+                </InfoTip>
               ))}
             </tr>
           </thead>

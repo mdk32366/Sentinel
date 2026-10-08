@@ -2,6 +2,7 @@ import { useApiResource } from "../hooks/useApiResource";
 import { MANUAL_TRIGGERS, SCHEDULED_JOBS } from "../lib/adminActions";
 import { useAsyncAction } from "../hooks/useAsyncAction";
 import { ColHeader } from "../components/ColHeader";
+import { InfoTip } from "../components/InfoTip";
 
 /**
  * How long to wait after a pipeline returns before re-reading its log row.
@@ -67,14 +68,21 @@ export function AdminTab() {
       {stats && (
         <div style={{ display: "flex", gap: 12, marginBottom: 24, flexWrap: "wrap" }}>
           {[
-            { label: "Total Records", val: stats.timeseries_records?.toLocaleString() },
-            { label: "Metrics Tracked", val: stats.metrics },
-            { label: "Countries", val: stats.countries },
-            { label: "Data From", val: stats.data_earliest ? new Date(stats.data_earliest).getFullYear() : "—" },
-            { label: "Latest Data", val: stats.data_latest ? new Date(stats.data_latest).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—" },
+            { label: "Total Records", val: stats.timeseries_records?.toLocaleString(),
+              tip: "Rows in the timeseries table: every stored observation, across every metric and country (GET /api/stats). A count of data points, not of series. Treasury auction results live in their own table and are not counted here." },
+            { label: "Metrics Tracked", val: stats.metrics,
+              tip: "Rows in the metrics table: each distinct series code the pipelines have written, such as DGS10 or GOLD_RESERVES. A code registered once stays counted even if its source has since stopped." },
+            { label: "Countries", val: stats.countries,
+              tip: "Rows in the countries table: every country any pipeline has ever written a value for. This is not the number reporting now. TIC and IMF coverage differ, and each tab states its own." },
+            { label: "Data From", val: stats.data_earliest ? new Date(stats.data_earliest).getFullYear() : "—",
+              tip: "Year of the oldest date in the timeseries table, across all series. Most series start much later; this is the deepest history any one of them reaches." },
+            { label: "Latest Data", val: stats.data_latest ? new Date(stats.data_latest).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—",
+              tip: "Newest date in the timeseries table, across all series. One daily series is enough to make this current, so it does not mean every source is. The per-source verdict is the data-confidence strip on each tab (D-0074)." },
           ].map(s => (
             <div key={s.label} style={{ background: "#0F1923", border: "1px solid #1A2530", borderRadius: 2, padding: "12px 18px", flex: "1 1 140px" }}>
-              <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>{s.label}</div>
+              <InfoTip title={s.label} tip={s.tip} placement="below" as="div" style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
+                <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>{s.label}</span>
+              </InfoTip>
               <div style={{ fontFamily: "monospace", fontSize: 18, fontWeight: 700, color: "#E8E0D0" }}>{s.val}</div>
             </div>
           ))}

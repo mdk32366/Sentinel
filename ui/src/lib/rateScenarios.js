@@ -27,19 +27,33 @@ export const SCENARIOS = [
 export function scenarioOutcomes({ ff }) {
   const hot = ff <= 1;
   return [
-    { label: "Fed Funds Target", val: `${ff.toFixed(1)}%`, color: "#5DB87A" },
+    {
+      label: "Fed Funds Target", val: `${ff.toFixed(1)}%`, color: "#5DB87A",
+      tip: "The policy rate this scenario assumes. The Fed sets it directly; everything beside it is the market's likely response, which the Fed does not control.",
+    },
     {
       label: "Likely 10Y Response",
       val: ff <= 0 ? "Rises 150-250bps" : ff <= 1 ? "Rises 100-200bps" : ff <= 2 ? "Rises 50-100bps" : "Holds ±25bps",
       color: hot ? "#E07B5A" : "#E8C547",
+      tip: "Editorial range for the 10-year yield's move under this path, not model output (A-0012). The reference is 2020-22: after the Fed went to zero, the 10Y rose from 0.5% to 3.5%.",
     },
-    { label: "Yield Curve Shape", val: hot ? "Bear Steepener ⚠" : ff <= 2 ? "Steepens" : "Flat", color: hot ? "#E07B5A" : "#E8C547" },
-    { label: "Dollar Effect", val: hot ? "Weakens sharply" : ff <= 2 ? "Weakens" : "Stable", color: hot ? "#E07B5A" : "#E8C547" },
-    { label: "Foreign Selling", val: hot ? "Accelerates" : "Continues", color: hot ? "#E07B5A" : "#E8C547" },
+    {
+      label: "Yield Curve Shape", val: hot ? "Bear Steepener ⚠" : ff <= 2 ? "Steepens" : "Flat", color: hot ? "#E07B5A" : "#E8C547",
+      tip: "Editorial judgement. A bear steepener is short rates falling while long rates rise: the market charging more to lend long even as the Fed eases.",
+    },
+    {
+      label: "Dollar Effect", val: hot ? "Weakens sharply" : ff <= 2 ? "Weakens" : "Stable", color: hot ? "#E07B5A" : "#E8C547",
+      tip: "Editorial judgement of the dollar's direction under this path. Lower policy rates cut the return on holding dollars.",
+    },
+    {
+      label: "Foreign Selling", val: hot ? "Accelerates" : "Continues", color: hot ? "#E07B5A" : "#E8C547",
+      tip: "Editorial judgement of foreign holders' behaviour under this path. What foreign official holders are actually doing is measured from TIC in the Foreign Official strip at the top of this page.",
+    },
     {
       label: "Breaking Point Risk",
       val: ff <= 0 ? "CRISIS" : hot ? "HIGH" : "MODERATE",
       color: ff <= 0 ? "#FF4444" : hot ? "#E07B5A" : "#E8C547",
+      tip: "Editorial rating of how close this path pushes interest toward the 25% and 35% of revenue lines in the Fiscal Breaking Point Calculator.",
     },
   ];
 }

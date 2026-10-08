@@ -8,6 +8,7 @@ import { DataAsOf } from "../components/DataAsOf";
 import { DataConfidence } from "../components/DataConfidence";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
+import { InfoTip } from "../components/InfoTip";
 import { LoadFailure } from "../components/LoadFailure";
 import { CountryLink } from "../components/CountryLink";
 import { navigateToCountry } from "../lib/countryRoute";
@@ -93,17 +94,24 @@ export function CompositeTab() {
       {/* Summary cards */}
       <div style={{ display:"flex", gap:12, marginBottom:20, flexWrap:"wrap" }}>
         {[
-          { label:"CRISIS", val:summary?.crisis??0, color:"#FF4444", desc:"All signals + multiplier" },
-          { label:"STRESSED", val:summary?.stressed??0, color:"#E07B5A", desc:"Score 50–75" },
-          { label:"ELEVATED", val:summary?.elevated??0, color:"#E8C547", desc:"Score 25–50" },
-          { label:"WATCH", val:summary?.watch??0, color:"#5A6878", desc:"Score < 25" },
+          { label:"CRISIS", val:summary?.crisis??0, color:"#FF4444", desc:"Score ≥ 75",
+            tip:"Countries with a composite score of 75 or more. The composite is the raw score across the scored dimensions (out of 165), times a multiplier: ×1.5 when Treasuries and gold are both being sold, ×2.0 when gold is sold into a rising gold price. A country that has exited Treasuries while rebuilding its non-gold reserves gets a further ×1.2, capped at 150." },
+          { label:"STRESSED", val:summary?.stressed??0, color:"#E07B5A", desc:"Score 50–75",
+            tip:"Countries with a composite score of at least 50 and below 75: the raw score across the scored dimensions, times any multiplier, as for CRISIS." },
+          { label:"ELEVATED", val:summary?.elevated??0, color:"#E8C547", desc:"Score 25–50",
+            tip:"Countries with a composite score of at least 25 and below 50." },
+          { label:"WATCH", val:summary?.watch??0, color:"#5A6878", desc:"Score < 25",
+            tip:"Countries scoring above zero but below 25. A country scoring exactly zero is left off the board, unless it has exited Treasuries, in which case it is always listed." },
           // D-0091: the tile opens the highest-risk country's card.
           { label:"Top Risk", val:summary?.highest_risk
               ? <CountryLink iso={summary.highest_risk.country_iso} name={summary.highest_risk.country_name} showCode={false} />
-              : "—", color:"#C8A96E", desc:`Score: ${summary?.highest_risk?.composite_score?.toFixed(0)??"—"}` },
+              : "—", color:"#C8A96E", desc:`Score: ${summary?.highest_risk?.composite_score?.toFixed(0)??"—"}`,
+            tip:"The country with the highest composite score in the stored snapshot. The snapshot is recomputed nightly at 04:45 UTC, or on POST /api/snapshot/composite (D-0042). Click to open its card (D-0091)." },
         ].map(s => (
           <div key={s.label} style={{ background:"#0F1923", border:`1px solid ${(s.val>0&&s.label!=="Top Risk")?`${s.color}33`:"#1A2530"}`, borderTop:`2px solid ${(s.val>0||s.label==="Top Risk")?s.color:"#1A2530"}`, borderRadius:2, padding:"14px 20px", flex:"1 1 140px" }}>
-            <div style={{ fontFamily:"monospace", fontSize:10, color:"#5A6878", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>{s.label}</div>
+            <InfoTip title={s.label} tip={s.tip} placement="below" as="div" style={{ fontFamily:"monospace", fontSize:10, color:"#5A6878", textTransform:"uppercase", letterSpacing:"0.1em", marginBottom:4 }}>
+              <span style={{ borderBottom:"1px dashed #2A3D50", paddingBottom:1 }}>{s.label}</span>
+            </InfoTip>
             <div style={{ fontFamily:"monospace", fontSize:20, fontWeight:700, color:(s.val>0||s.label==="Top Risk")?s.color:"#3A4D5C" }}>{s.val}</div>
             <div style={{ fontFamily:"monospace", fontSize:10, color:"#3A4D5C", marginTop:3 }}>{s.desc}</div>
           </div>

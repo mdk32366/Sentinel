@@ -9,6 +9,7 @@ import { CountryAxisTick } from "../components/CountryAxisTick";
 import { CountryLink } from "../components/CountryLink";
 import { navigateToCountry } from "../lib/countryRoute";
 import { LoadFailure } from "../components/LoadFailure";
+import { InfoTip } from "../components/InfoTip";
 
 export function GoldReservesTab({ latestAll = {} }) {
   const { data: reserves, error, loading } = useApiResource(`/gold-reserves`);
@@ -29,17 +30,23 @@ export function GoldReservesTab({ latestAll = {} }) {
       {/* Summary */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
-          { label: "Total CB Gold", val: `${total?.toLocaleString(undefined, { maximumFractionDigits: 0 })}t` },
-          { label: "Countries Reporting", val: reserves.country_count },
+          { label: "Total CB Gold", val: `${total?.toLocaleString(undefined, { maximumFractionDigits: 0 })}t`,
+            tip: "The sum of each country's most recent official gold reading, in metric tonnes. The source is the IMF IRFCL monthly return, converted from fine troy ounces, with the World Gold Council series as backfill (D-0076). Countries file at different times, so this adds readings from different months rather than giving a single-date world total." },
+          { label: "Countries Reporting", val: reserves.country_count,
+            tip: "Countries with at least one official gold reading on record, each counted once at its latest. Not all of them filed this month: the As Of column gives each one's month." },
           // D-0091: opens the top holder's card (USA -> the USA dashboard).
           { label: "Top Holder", val: rows[0]
             ? <CountryLink iso={rows[0].country_code} name={rows[0].country_code} showCode={false} />
-            : "—" },
-          { label: "US Share", val: rows.find(r => r.country_code === "USA") ? `${rows.find(r => r.country_code === "USA").percent_of_total.toFixed(1)}%` : "—" },
-          { label: "Data", val: "Per-country latest" },
+            : "—",
+            tip: "The country with the largest latest gold holding. Click to open its card (D-0091)." },
+          { label: "US Share", tip: "United States holdings as a share of the Total CB Gold figure, using each country's latest reading.", val: rows.find(r => r.country_code === "USA") ? `${rows.find(r => r.country_code === "USA").percent_of_total.toFixed(1)}%` : "—" },
+          { label: "Data", val: "Per-country latest",
+            tip: "Every figure on this tab uses each country's most recent reading, whatever month it is from, because reporting lags differ by country. The As Of column gives each country's month." },
         ].map(s => (
           <div key={s.label} style={{ background: "#0F1923", border: "1px solid #1A2530", borderTop: "2px solid #C8A96E", borderRadius: 2, padding: "14px 20px", flex: "1 1 140px" }}>
-            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{s.label}</div>
+            <InfoTip title={s.label} tip={s.tip} placement="below" as="div" style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
+              <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>{s.label}</span>
+            </InfoTip>
             <div style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: "#E8E0D0" }}>{s.val}</div>
           </div>
         ))}

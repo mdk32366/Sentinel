@@ -1,4 +1,5 @@
 import { trillions } from "../lib/format";
+import { InfoTip } from "./InfoTip";
 
 /**
  * What the countries the model cannot see individually are doing together.
@@ -35,13 +36,19 @@ export function AllOtherStrip({ signal }) {
     v == null ? "#5A6878" : v < 0 ? "#E07B5A" : "#5DB87A";
 
   const figures = [
-    { label: "level", val: `$${trillions(signal.level_bn)}T`, color: "#8A9BAC" },
-    { label: "share of total", val: signal.share_pct == null ? "—" : `${signal.share_pct.toFixed(2)}%`, color: "#8A9BAC" },
-    { label: "1mo", val: pct(signal.mom_pct), color: dirColor(signal.mom_pct) },
-    { label: "3mo", val: pct(signal.three_month_pct), color: dirColor(signal.three_month_pct) },
-    { label: "12mo", val: pct(signal.twelve_month_pct), color: dirColor(signal.twelve_month_pct) },
+    { label: "level", val: `$${trillions(signal.level_bn)}T`, color: "#8A9BAC",
+      tip: "The All Other row of SLT Table 5: Treasuries held by every foreign holder too small to be named among the twenty, added together. Roughly a hundred holders, including sovereign funds, private institutions and the 28 scored countries outside the table (D-0079)." },
+    { label: "share of total", val: signal.share_pct == null ? "—" : `${signal.share_pct.toFixed(2)}%`, color: "#8A9BAC",
+      tip: "All Other as a percentage of Table 5's Grand Total for the same month. This separates the unnamed holders buying or selling from total foreign holdings simply growing, which the level alone cannot do." },
+    { label: "1mo", val: pct(signal.mom_pct), color: dirColor(signal.mom_pct),
+      tip: "Change in the All Other level against the previous monthly release. Green is a rise, red a fall. It says someone among the unnamed holders moved; it never says who (F-0097)." },
+    { label: "3mo", val: pct(signal.three_month_pct), color: dirColor(signal.three_month_pct),
+      tip: "Change in the All Other level over three monthly releases. A level can rise while the share falls, when total foreign holdings grow faster, so read it beside the share." },
+    { label: "12mo", val: pct(signal.twelve_month_pct), color: dirColor(signal.twelve_month_pct),
+      tip: "Change in the All Other level over twelve monthly releases, the full depth of the thirteen months SLT Table 5 publishes." },
     {
       label: "share move 3mo",
+      tip: "Change in All Other's share of the Grand Total over three months, in percentage points. A move of half a point or more lights this strip: the share moved within about 19.3%-20.1% over the thirteen months to 2026-07, so that is outside ordinary drift. Who moved is not knowable from this row.",
       val: signal.share_move_3m_points == null
         ? "—"
         : `${signal.share_move_3m_points > 0 ? "+" : ""}${signal.share_move_3m_points.toFixed(2)}pp`,
@@ -57,7 +64,10 @@ export function AllOtherStrip({ signal }) {
         </span>
         {figures.map((f) => (
           <span key={f.label} style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C" }}>
-            {f.label} <span style={{ color: f.color, fontWeight: 600 }}>{f.val}</span>
+            <InfoTip title={f.label} tip={f.tip} placement="below">
+              <span style={{ borderBottom: "1px dashed #2A3D50" }}>{f.label}</span>
+            </InfoTip>{" "}
+            <span style={{ color: f.color, fontWeight: 600 }}>{f.val}</span>
           </span>
         ))}
         {signal.consecutive_declines > 0 && (
