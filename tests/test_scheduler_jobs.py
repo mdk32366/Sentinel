@@ -38,6 +38,7 @@ EXPECTED_CRON_JOBS = {
     "money_supply",
     "imf_gold",   # D-0076
     "tic_table3", # D-0081
+    "treasury_auctions", # D-0098
 }
 EXPECTED_ONE_SHOTS = {"startup_fetches", "startup_cds_fetch"}
 
