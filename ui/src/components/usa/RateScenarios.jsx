@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { SCENARIOS, scenarioOutcomes } from "../../lib/rateScenarios";
+import { InfoTip } from "../InfoTip";
 
 /**
  * Pick a rate path and see what it does to the long end.
@@ -31,7 +32,9 @@ export function RateScenarios() {
           <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
             {scenarioOutcomes(scenario).map((s) => (
               <div key={s.label}>
-                <div style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", marginBottom: 2 }}>{s.label}</div>
+                <InfoTip as="div" title={s.label} tip={s.tip} placement="below" style={{ fontFamily: "monospace", fontSize: 10, color: "#3A4D5C", marginBottom: 2 }}>
+                  <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>{s.label}</span>
+                </InfoTip>
                 <div style={{ fontFamily: "monospace", fontSize: 12, color: s.color, fontWeight: 600 }}>{s.val}</div>
               </div>
             ))}

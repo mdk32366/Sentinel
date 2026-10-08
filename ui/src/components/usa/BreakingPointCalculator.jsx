@@ -3,6 +3,7 @@ import {
   interestCost, interestPercentOfRevenue, rateTable,
 } from "../../lib/fiscal";
 import { ColHeader } from "../ColHeader";
+import { InfoTip } from "../InfoTip";
 
 const BREAK = breakingPointRate();
 const CRISIS = crisisRate();
@@ -32,16 +33,29 @@ export function BreakingPointCalculator({ dgs10, customRate, onCustomRate }) {
   const headroom = dgs10 != null ? BREAK - (customRate ?? dgs10) : null;
 
   const readout = [
-    { label: "Annual Interest Cost", val: `$${activeInterest.toFixed(2)}T`, color },
-    { label: "% of Federal Revenue", val: `${activeInterestPct.toFixed(1)}%`, color },
-    { label: "Warning zone (25%)", val: `${BREAK.toFixed(1)}% yield`, color: "#E07B5A" },
-    { label: "Crisis zone (35%)", val: `${CRISIS.toFixed(1)}% yield`, color: "#FF4444" },
+    {
+      label: "Annual Interest Cost", val: `$${activeInterest.toFixed(2)}T`, color,
+      tip: "Projected annual federal interest at the modelled 10Y: $0.55T already locked in, plus the $6T yearly rollover repriced at that yield. Hand-entered FY2024 and CBO inputs (A-0012); a sensitivity, not a forecast.",
+    },
+    {
+      label: "% of Federal Revenue", val: `${activeInterestPct.toFixed(1)}%`, color,
+      tip: "The interest cost as a share of $4.9T federal revenue (FY2024). 25% is the emerging-market danger line and 35% the Japan-level crisis line used on this panel.",
+    },
+    {
+      label: "Warning zone (25%)", val: `${BREAK.toFixed(1)}% yield`, color: "#E07B5A",
+      tip: "The 10Y yield at which interest reaches 25% of revenue under this model: (0.25 × $4.9T − $0.55T) ÷ $6T rollover.",
+    },
+    {
+      label: "Crisis zone (35%)", val: `${CRISIS.toFixed(1)}% yield`, color: "#FF4444",
+      tip: "The 10Y yield at which interest reaches 35% of revenue under this model: (0.35 × $4.9T − $0.55T) ÷ $6T rollover.",
+    },
     {
       label: "Distance to warning",
       val: headroom == null ? "—"
         : headroom > 0 ? `+${headroom.toFixed(2)}pp headroom`
         : `${headroom.toFixed(2)}pp BREACHED`,
       color: headroom != null && headroom <= 0 ? "#FF4444" : "#5DB87A",
+      tip: "The warning-zone yield minus the modelled 10Y (the slider if set, otherwise live DGS10), in percentage points. Negative means the 25% line is already crossed.",
     },
   ];
 
@@ -67,7 +81,9 @@ export function BreakingPointCalculator({ dgs10, customRate, onCustomRate }) {
       <div style={{ display: "flex", gap: 16, marginBottom: 20, flexWrap: "wrap" }}>
         {readout.map((s) => (
           <div key={s.label} style={{ background: "#0F1923", borderRadius: 2, padding: "10px 16px", flex: "1 1 140px" }}>
-            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", marginBottom: 4 }}>{s.label}</div>
+            <InfoTip as="div" title={s.label} tip={s.tip} placement="below" style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", marginBottom: 4 }}>
+              <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>{s.label}</span>
+            </InfoTip>
             <div style={{ fontFamily: "monospace", fontSize: 16, fontWeight: 700, color: s.color }}>{s.val}</div>
           </div>
         ))}

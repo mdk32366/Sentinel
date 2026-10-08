@@ -146,7 +146,7 @@ export function CDSTab() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr>
-                <ColHeader label="Country" align="left" />
+                <ColHeader label="Country" tip="The sovereign whose 5-year CDS spread is quoted, from the World Government Bonds board. Click the row to open its country card (D-0091)." align="left" />
                 <ColHeader label="5Y CDS" tip="5-year sovereign CDS spread (basis points)" sortKey="cds5y" activeSort={sort} onSort={setSort} align="right" />
                 {/* D-0062: the 10Y CDS and Term-Structure columns are gone.
                     The World Government Bonds board publishes only 5Y - the
@@ -158,7 +158,7 @@ export function CDSTab() {
                 <ColHeader label="Implied PD" tip="The source implied 5-year probability of default. It is the 5Y spread rescaled by a constant of about 1/60, not a second opinion - carried because a percentage is readable and basis points are not. Deliberately NOT scored: doing so would double-count the level band." align="right" />
                 <ColHeader label="Stress Tier" tip="This country's tier on the COMPOSITE tab. CDS is dimension 7 of that score." align="right" />
                 <ColHeader label="CDS Share" tip="How much of this country's composite stress score comes from its CDS spread. 100% means the country is ranked on CDS alone." align="right" />
-                <ColHeader label="Signal" align="left" />
+                <ColHeader label="Signal" tip="HIGH when the 5Y spread is above 300 basis points, the same cut the Very High tile counts. A level flag only: how fast the spread is moving is in 6M Change." align="left" />
               </tr>
             </thead>
             <tbody>

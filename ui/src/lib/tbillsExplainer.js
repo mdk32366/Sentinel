@@ -57,6 +57,11 @@ export const TBILLS_EXPLAINER = {
   cheatSheet: {
     summary: "Cheat sheet: which way do yields move?",
     headers: ["When this happens…", "Bill prices", "Yields"],
+    headerTips: [
+      "What the market expects or fears. Each row is one common reason bill prices move.",
+      "Which way the price of a bill that already exists usually moves when that happens.",
+      "Which way its yield moves. Always the opposite of price: the payoff at maturity is fixed, so paying less for it earns more.",
+    ],
     rows: [
       ["People expect the Fed to raise rates", "Down", "Up"],
       ["People expect the Fed to cut rates", "Up", "Down"],

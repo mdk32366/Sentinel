@@ -13,6 +13,7 @@ import { useChartSeries } from "./hooks/useChartSeries";
 import { useMarketSeries } from "./hooks/useMarketSeries";
 import { CustomTooltip } from "./components/CustomTooltip";
 import { DataConfidence } from "./components/DataConfidence";
+import { InfoTip } from "./components/InfoTip";
 import { StatCard } from "./components/StatCard";
 import { Ticker } from "./components/Ticker";
 import { AboutTab } from "./pages/AboutTab";
@@ -143,14 +144,21 @@ export default function App() {
               <div style={{ marginTop: 12, background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "14px 28px", display: "flex", gap: 32, alignItems: "center", flexWrap: "wrap" }}>
                 <span style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C", letterSpacing: "0.1em" }}>SPREAD</span>
                 {[
-                  { label: "30Y–10Y", val: latest["DGS30"] != null ? latest["DGS30"] - latest["DGS10"] : null },
-                  { label: "10Y–2Y", val: latest["DGS10"] - latest["DGS2"] },
-                  { label: "10Y–5Y", val: latest["DGS5"] != null ? latest["DGS10"] - latest["DGS5"] : null },
-                  { label: "5Y–2Y", val: latest["DGS5"] != null ? latest["DGS5"] - latest["DGS2"] : null },
-                  { label: "10Y–FF", val: latest["DFF"] != null ? latest["DGS10"] - latest["DFF"] : null },
+                  { label: "30Y–10Y", val: latest["DGS30"] != null ? latest["DGS30"] - latest["DGS10"] : null,
+                    tip: "30-year minus 10-year Treasury yield (DGS30 − DGS10), in percentage points. A widening gap is the market charging more to lend for the longest terms: the long end repricing duration risk." },
+                  { label: "10Y–2Y", val: latest["DGS10"] - latest["DGS2"],
+                    tip: "10-year minus 2-year Treasury yield (DGS10 − DGS2), the classic curve slope. Below zero the curve is inverted, the oldest recession signal there is, and is marked INVERTED." },
+                  { label: "10Y–5Y", val: latest["DGS5"] != null ? latest["DGS10"] - latest["DGS5"] : null,
+                    tip: "10-year minus 5-year Treasury yield (DGS10 − DGS5). The 5Y is close to the average maturity of the debt that rolls over each year, so this is the extra the market asks to lend past the rollover point." },
+                  { label: "5Y–2Y", val: latest["DGS5"] != null ? latest["DGS5"] - latest["DGS2"] : null,
+                    tip: "5-year minus 2-year Treasury yield (DGS5 − DGS2): the front of the curve, where expectations for Fed policy over the next few years show first." },
+                  { label: "10Y–FF", val: latest["DFF"] != null ? latest["DGS10"] - latest["DFF"] : null,
+                    tip: "10-year yield minus the effective fed funds rate (DGS10 − DFF): what the bond market sets against what the Fed sets. A long end rising while the Fed cuts widens this." },
                 ].filter(s => s.val != null).map(s => (
                   <div key={s.label} style={{ fontFamily: "monospace" }}>
-                    <span style={{ fontSize: 11, color: "#3A4D5C", marginRight: 8 }}>{s.label}</span>
+                    <InfoTip title={s.label} tip={s.tip} placement="above" style={{ fontSize: 11, color: "#3A4D5C", marginRight: 8 }}>
+                      <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>{s.label}</span>
+                    </InfoTip>
                     <span style={{ fontSize: 15, color: s.val < 0 ? "#E07B5A" : "#5DB87A", fontWeight: 600 }}>{s.val > 0 ? "+" : ""}{s.val.toFixed(2)}pp</span>
                     {s.label === "10Y–2Y" && s.val < 0 && <span style={{ marginLeft: 8, fontSize: 10, color: "#E07B5A88" }}>INVERTED</span>}
                   </div>

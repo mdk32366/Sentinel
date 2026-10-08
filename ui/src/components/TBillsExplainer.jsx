@@ -1,4 +1,5 @@
 import { TBILLS_EXPLAINER } from "../lib/tbillsExplainer";
+import { InfoTip } from "./InfoTip";
 
 const CARD = {
   background: "#0A1520",
@@ -98,11 +99,11 @@ export function TBillsExplainer() {
           }}>
             <thead>
               <tr>
-                {cheatSheet.headers.map((h) => (
-                  <th key={h} style={{
+                {cheatSheet.headers.map((h, i) => (
+                  <InfoTip as="th" key={h} title={h} tip={cheatSheet.headerTips[i]} placement="above" style={{
                     textAlign: "left", padding: "4px 8px", color: "#5A6878",
                     borderBottom: "1px solid #1A2530", fontWeight: 600,
-                  }}>{h}</th>
+                  }}><span style={{ borderBottom: "1px dashed #2A3D50" }}>{h}</span></InfoTip>
                 ))}
               </tr>
             </thead>

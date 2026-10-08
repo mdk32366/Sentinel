@@ -3,6 +3,7 @@ import { useApiResource } from "../hooks/useApiResource";
 import { tierColor, tierLabel } from "../lib/format";
 import { AlertBanner } from "../components/AlertBanner";
 import { ColHeader } from "../components/ColHeader";
+import { InfoTip } from "../components/InfoTip";
 import { DataAsOf } from "../components/DataAsOf";
 import { DataConfidence } from "../components/DataConfidence";
 import { describeCrossAsset } from "../lib/crossAssetNarrative";
@@ -47,15 +48,29 @@ export function CrossAssetTab() {
 
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
-          { label: "Exited Position", val: (data.cross_asset_stress||[]).filter(c=>c.no_tic_holdings).length + (data.treasury_only_stress||[]).filter(c=>c.no_tic_holdings).length, alert: true, color: "#FF8C00" },
-          { label: "Cross-Asset Stress", val: summary?.cross_asset_stressed ?? 0, alert: (summary?.cross_asset_stressed ?? 0) > 0, color: "#E07B5A" },
-          { label: "Treasury-Only Stress", val: summary?.treasury_only ?? 0, alert: (summary?.treasury_only ?? 0) > 5, color: "#E8C547" },
-          { label: "Gold-Only Stress", val: summary?.gold_only ?? 0, color: "#C8A96E" },
-          { label: "Spot Gold 3M", val: spot3m != null ? `${spot3m > 0 ? "+" : ""}${spot3m}%` : "—", alert: spotRising, color: spotRising ? "#5DB87A" : "#E07B5A" },
-          { label: "Gold Price", val: spotPrice != null ? `$${spotPrice.toLocaleString()}` : "—", color: "#C8A96E" },
+          { label: "Exited Position",
+            tip: "Countries whose last reported Treasury holding is about zero and that hold more than 50 tonnes of gold: a completed liquidation. Absence from TIC's named list does not count; only a reported zero does (F-0097). Counted among the countries shown in the Cross-Asset and Treasury-Only lists.",
+            val: (data.cross_asset_stress||[]).filter(c=>c.no_tic_holdings).length + (data.treasury_only_stress||[]).filter(c=>c.no_tic_holdings).length, alert: true, color: "#FF8C00" },
+          { label: "Cross-Asset Stress",
+            tip: "Countries reducing both Treasuries and gold reserves, including divergence cases. Each side counts as selling on a fall of more than 0.5% in the latest reading, or on repeated declines. Scored at 1.5x, or 2x when the gold is sold into a rising spot price.",
+            val: summary?.cross_asset_stressed ?? 0, alert: (summary?.cross_asset_stressed ?? 0) > 0, color: "#E07B5A" },
+          { label: "Treasury-Only Stress",
+            tip: "Countries reducing Treasury holdings while their gold is not falling. Scored at 1x. The border turns amber above five countries.",
+            val: summary?.treasury_only ?? 0, alert: (summary?.treasury_only ?? 0) > 5, color: "#E8C547" },
+          { label: "Gold-Only Stress",
+            tip: "Countries reducing gold reserves while their Treasury holdings are not falling. Scored at 1x. Gold is held in tonnes, so a fall is a decision, never a price move.",
+            val: summary?.gold_only ?? 0, color: "#C8A96E" },
+          { label: "Spot Gold 3M",
+            tip: "Change in the spot gold price over roughly the last three months. Above +2% counts as rising, and any country selling gold into a rising price is scored at 2x (divergence).",
+            val: spot3m != null ? `${spot3m > 0 ? "+" : ""}${spot3m}%` : "—", alert: spotRising, color: spotRising ? "#5DB87A" : "#E07B5A" },
+          { label: "Gold Price",
+            tip: "Latest spot gold price in US dollars per troy ounce: gold-api.com, with the World Bank monthly average as fallback (D-0094). It sets the divergence multiplier and nothing else on this tab.",
+            val: spotPrice != null ? `$${spotPrice.toLocaleString()}` : "—", color: "#C8A96E" },
         ].map(s => (
           <div key={s.label} style={{ background: "#0F1923", border: `1px solid ${s.alert ? `${s.color}33` : "#1A2530"}`, borderTop: `2px solid ${s.alert ? s.color : "#1A2530"}`, borderRadius: 2, padding: "14px 20px", flex: "1 1 140px" }}>
-            <div style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>{s.label}</div>
+            <InfoTip as="div" title={s.label} tip={s.tip} placement="below" style={{ fontFamily: "monospace", fontSize: 10, color: "#5A6878", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>
+              <span style={{ borderBottom: "1px dashed #2A3D50" }}>{s.label}</span>
+            </InfoTip>
             <div style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700, color: s.alert ? s.color : "#E8E0D0" }}>{s.val}</div>
           </div>
         ))}
