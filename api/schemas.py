@@ -280,6 +280,8 @@ class CrossAssetItem(BaseModel):
 
 
 class CrossAssetStressResponse(BaseModel):
+    # F-0113: every exited country, whichever stress list it falls in or none.
+    exited: List[CrossAssetItem] = []
     cross_asset_stress: List[CrossAssetItem]
     treasury_only_stress: List[CrossAssetItem]
     gold_only_stress: List[CrossAssetItem]

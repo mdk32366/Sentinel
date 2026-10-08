@@ -55,6 +55,13 @@ export function ticCoverageNote(row) {
       `about this country specifically.`
     );
   }
+  if (row.tic_state === "never_held") {
+    return (
+      "Not covered by the Treasury dimension. This country has never reported " +
+      "$1bn of Treasuries, so a holding near zero is not an exit: there was no " +
+      "position to liquidate (D-0106)."
+    );
+  }
   if (row.tic_state === "no_data") {
     return (
       "Not covered by the Treasury dimension. This country has never appeared " +

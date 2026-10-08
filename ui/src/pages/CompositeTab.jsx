@@ -221,6 +221,8 @@ export function CompositeTab() {
                               ? <span style={{ color:"#5A6878", fontSize:10 }} title={`Below TIC reporting threshold — last reported $${c.tic_last_reported_bn}bn on ${c.tic_last_reported_date}`}>n/r</span>
                               : c.tic_state==="no_data"
                                 ? <span style={{ color:"#3A4D5C", fontSize:10 }} title="Never among the reported holders">—</span>
+                              : c.tic_state==="never_held"
+                                ? <span style={{ color:"#3A4D5C", fontSize:10 }} title="Never held $1bn of Treasuries, so there was no position to exit (D-0106)">—</span>
                                 : c.tic_mom_pct!=null?`${c.tic_mom_pct>0?"+":""}${c.tic_mom_pct.toFixed(1)}%`:"—"}
                         </td>
                         <td style={{ padding:"7px 8px", fontFamily:"monospace", fontSize:11, textAlign:"right" }}>

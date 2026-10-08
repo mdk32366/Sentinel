@@ -3025,3 +3025,29 @@ change.
 **What forced the call.** Owner ruling, 2026-10-08. Floating-rate notes and
 inflation-protected bonds were filed as plain "Notes" and needed a proper
 home.
+
+### D-0106 - A country has exited only if it once held $1bn of Treasuries
+
+**Choice.** `classify_tic_state` takes the country's peak reported holding,
+with no default. A country last reported under `TIC_EXIT_THRESHOLD_BN` ($1bn)
+is `exited` only if it once reported at least that much. Otherwise it is the
+new state `never_held`, which is scored as `no_data` is: nothing. The bar for
+"held" is the same line an exit falls below. Owner ruling, 2026-10-08: "it
+depends on whether those countries have ever bought T-bills in the first
+place."
+
+**Rejected.** (a) Any positive holding counts as having held. A country that
+moved from $0.3bn to $0.1bn has not liquidated anything worth a 50-point base
+score. (b) A higher bar such as $10bn. That has no measured basis, and would
+make a real small-holder exit invisible.
+
+**What forced the call.** Production, 2026-10-08:
+- No country is classified `exited` today, so no score moves.
+- Cyprus (peak $0.94bn), Venezuela ($0.84bn) and Liberia ($0.65bn) have never
+  held $1bn. All three still report.
+- Under the old rule, each would have been scored as a completed liquidation
+  the first month it dropped out of the TIC tables: 50 points in the
+  composite, and 50 to 90 plus multipliers on CROSS-ASSET.
+
+**Reversal condition.** A measured case of a genuine exit by a country whose
+peak was under $1bn.
