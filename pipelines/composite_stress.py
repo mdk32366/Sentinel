@@ -601,7 +601,9 @@ def compute_composite_stress(db: Session) -> dict:
         tic_last_bn, tic_last_date = last_reported_holding(
             db, tic_metric.id, country.id
         )
-        tic_state = classify_tic_state(bool(tic_hist), tic_last_bn)
+        # D-0106: an exit needs a position to exit from.
+        tic_peak_bn = peak_reported_holding(db, tic_metric.id, country.id)
+        tic_state = classify_tic_state(bool(tic_hist), tic_last_bn, tic_peak_bn)
         no_tic_holdings = tic_state == EXITED
 
         if len(tic_hist) >= 2:
@@ -827,8 +829,8 @@ def compute_composite_stress(db: Session) -> dict:
             # Germany, holding $103.1bn. Naming the last reported figure and its
             # date is the whole difference between a fact and a fabrication.
             signals.append(describe(tic_state, tic_last_bn, tic_last_date))
-        elif tic_state == NO_DATA:
-            signals.append(describe(tic_state, tic_last_bn, tic_last_date))
+        elif tic_state in (NO_DATA, NEVER_HELD):
+            signals.append(describe(tic_state, tic_last_bn, tic_last_date, tic_peak_bn))
         if exited_cross:
             signals.append("⚠ EXITED + gold selling — maximum de-dollarization stress")
         if selling_tic and tic_consec >= 3:
@@ -1333,8 +1335,8 @@ from pipelines.tic_aggregate import (  # noqa: E402
     all_other_signal, foreign_official_signal,
 )
 from pipelines.tic_state import (  # noqa: E402
-    BELOW_THRESHOLD, EXITED, NO_DATA,
-    classify_tic_state, describe, last_reported_holding,
+    BELOW_THRESHOLD, EXITED, NEVER_HELD, NO_DATA,
+    classify_tic_state, describe, last_reported_holding, peak_reported_holding,
 )
 
 PIPELINE_NAME = "Composite_Snapshot"

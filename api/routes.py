@@ -450,12 +450,19 @@ def get_cross_asset_stress(db: Session = Depends(get_db)):
         cross = [r for r in result if r.get("cross_asset_stress") or r.get("divergence_signal")]
         treasury_only = [r for r in result if not r.get("cross_asset_stress") and not r.get("divergence_signal") and r.get("selling_treasuries")]
         gold_only = [r for r in result if not r.get("selling_treasuries") and r.get("selling_gold")]
+        # F-0113. An exited country is never `selling_treasuries`, so the three
+        # lists above drop every one not selling gold, and split the rest
+        # between gold-only and cross-asset by the spot price. The exited are
+        # a list of their own.
+        exited = [r for r in result if r.get("no_tic_holdings")]
         spot = result[0] if result else {}
         return {
             "cross_asset_stress": cross,
             "treasury_only_stress": treasury_only,
             "gold_only_stress": gold_only,
+            "exited": exited,
             "summary": {
+                "exited": len(exited),
                 "cross_asset_stressed": len(cross),
                 "treasury_only": len(treasury_only),
                 "gold_only": len(gold_only),

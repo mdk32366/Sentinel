@@ -3765,3 +3765,54 @@ where the classes miss by more than 1e-6 of the total.
 **Consequence.** Asserting that shares sum to 1 would fail the ingest on a
 published figure. `D-0104` stores and flags it instead.
 
+### F-0113 - CROSS-ASSET could not show the countries it calls exited
+
+**Claim.** Three defects on one surface, found while writing its tooltips on
+2026-10-08:
+1. **Exited countries not selling gold were dropped.**
+   `compute_cross_asset_stress` returns every exited country holding 50t or
+   more of gold. `GET /holdings/cross-asset-stress` then split them into three
+   lists, and an exited country is never `selling_treasuries`. So:
+   - not selling gold: in no list, and dropped from the response;
+   - selling gold with spot flat: in the gold-only list;
+   - selling gold into a rising spot: in the cross-asset list.
+2. **The "Exited Position" tile undercounted.** It added up the cross-asset
+   and Treasury-only lists, so it counted only the third kind.
+3. **The EXITED view showed the wrong list.** It displayed `gold_only_stress`,
+   which holds some exited countries and some that are not.
+
+**Artifact.** `api/routes.py` `get_cross_asset_stress`, and
+`ui/src/pages/CrossAssetTab.jsx` (tile `val`, `displayData`). With one exited
+country of each kind, the tile read 1 for 3: red in
+`ui/src/pages/CrossAssetTab.dom.test.jsx` before the fix.
+
+**Sample size.** No country is exited in production today (`D-0106`), so
+nothing on screen was wrong yet. Every exit would have been.
+
+**Fixed.** The response carries `exited`, a list of its own, and
+`summary.exited`. The tile counts it, the EXITED view shows it, and ALL
+includes it, each country once.
+
+
+### F-0114 - Treasury's frozen history file lists El Salvador at $85-94bn
+
+**Claim.** `SLV` holds 12 `TIC_UST_HOLDINGS` rows: $1.1bn for January and
+February 2025, then $85.0bn in March, rising to $93.8bn in December 2025. That
+would rank El Salvador 21st among all foreign holders. Nothing current
+supports it:
+- `slt_table3.txt`, the 76-country table, has no El Salvador row.
+- No other country carries the same values.
+- The series does not match Table 3's nearest figure, "Total IROs" ($93.2bn).
+
+**Artifact.** The rows were written in one 6,680-row import on 2026-06-24,
+from `mfhhis01.txt`: the history file `F-0088` found frozen. The file's
+2025 block, line 32, reads `El Salvador 93.8 92.2 91.6 88.6 82.2 82 89.5 88.4
+86.3 85 1.1 1.1`. The importer mapped the label correctly. The label itself is
+almost certainly wrong in Treasury's file.
+
+**Sample size.** One country, 10 implausible months, from one source file.
+
+**Consequence.** `SLV` has no current rows and a last holding of $93.8bn, so
+it is `below_threshold`. It is scored as nothing, and the coverage note says
+it "last reported $93.8bn". The figure is unsupported. Whether to delete the
+rows is an owner decision; not done.

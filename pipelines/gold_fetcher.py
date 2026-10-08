@@ -31,7 +31,7 @@ from pipelines.composite_stress import get_treseg_signal
 from pipelines.paths import DATA_DIR
 
 from pipelines.tic_state import (
-    EXITED, classify_tic_state, last_reported_holding,
+    EXITED, classify_tic_state, last_reported_holding, peak_reported_holding,
 )
 
 logger = logging.getLogger(__name__)
@@ -381,7 +381,8 @@ def compute_cross_asset_stress(db: Session) -> list:
         _last_bn, _last_date = last_reported_holding(
             db, tic_metric.id, country.id
         )
-        _tic_state = classify_tic_state(bool(tic_hist), _last_bn)
+        _peak_bn = peak_reported_holding(db, tic_metric.id, country.id)
+        _tic_state = classify_tic_state(bool(tic_hist), _last_bn, _peak_bn)
         no_tic = _tic_state == EXITED
         if no_tic:
             if gold_tonnes < 50:

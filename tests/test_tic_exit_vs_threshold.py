@@ -126,9 +126,10 @@ class TestOnlyARealExitEarnsThePostureScore(unittest.TestCase):
 class TestTheThreshold(unittest.TestCase):
     def test_it_admits_a_rounded_wind_down(self):
         # Table 5 rounds to 0.1bn, so a genuine wind-down lands at 0.0-0.9
-        # rather than exactly on zero.
+        # rather than exactly on zero. A wind-down of something: D-0106 makes
+        # the position it wound down from part of the test.
         for v in (0.0, 0.1, 0.9):
-            self.assertEqual(classify([], Row(NOW, v))[0], "exited")
+            self.assertEqual(classify([], Row(NOW, v), peak_bn=30.6)[0], "exited")
 
     def test_it_is_far_below_every_real_below_threshold_holding(self):
         # The smallest positive last-reported holding observed in production was

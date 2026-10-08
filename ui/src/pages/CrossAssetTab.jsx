@@ -21,9 +21,15 @@ export function CrossAssetTab() {
   }
 
   const { summary } = data;
-  const allStressed = [...(data.cross_asset_stress || []), ...(data.treasury_only_stress || []), ...(data.gold_only_stress || [])].sort((a, b) => b.stress_score - a.stress_score);
+  // F-0113: the exited are their own list. An exited country not selling gold
+  // is in none of the three stress lists, so ALL adds them, each country once.
+  const exited = data.exited || [];
+  const seen = new Set();
+  const allStressed = [...(data.cross_asset_stress || []), ...(data.treasury_only_stress || []), ...(data.gold_only_stress || []), ...exited]
+    .filter((c) => !seen.has(c.country_iso) && seen.add(c.country_iso))
+    .sort((a, b) => b.stress_score - a.stress_score);
   const displayData = view === "cross" ? data.cross_asset_stress
-    : view === "exited" ? data.gold_only_stress
+    : view === "exited" ? exited
     : view === "treasury" ? data.treasury_only_stress
     : allStressed;
 
@@ -49,8 +55,8 @@ export function CrossAssetTab() {
       <div style={{ display: "flex", gap: 12, marginBottom: 20, flexWrap: "wrap" }}>
         {[
           { label: "Exited Position",
-            tip: "Countries whose last reported Treasury holding is about zero and that hold more than 50 tonnes of gold: a completed liquidation. Absence from TIC's named list does not count; only a reported zero does (F-0097). Counted among the countries shown in the Cross-Asset and Treasury-Only lists.",
-            val: (data.cross_asset_stress||[]).filter(c=>c.no_tic_holdings).length + (data.treasury_only_stress||[]).filter(c=>c.no_tic_holdings).length, alert: true, color: "#FF8C00" },
+            tip: "Countries that once held at least $1bn of Treasuries, now report under $1bn, and hold more than 50 tonnes of gold: a completed liquidation. A country that never held $1bn has nothing to exit (D-0106), and absence from TIC's named list does not count; only a reported figure does (F-0097). Counts every exited country, whether or not it is selling gold (F-0113).",
+            val: summary?.exited ?? exited.length, alert: (summary?.exited ?? exited.length) > 0, color: "#FF8C00" },
           { label: "Cross-Asset Stress",
             tip: "Countries reducing both Treasuries and gold reserves, including divergence cases. Each side counts as selling on a fall of more than 0.5% in the latest reading, or on repeated declines. Scored at 1.5x, or 2x when the gold is sold into a rising spot price.",
             val: summary?.cross_asset_stressed ?? 0, alert: (summary?.cross_asset_stressed ?? 0) > 0, color: "#E07B5A" },
@@ -80,7 +86,7 @@ export function CrossAssetTab() {
         {[
           { label: "⚡ Divergence", desc: "Selling gold INTO rising spot. 2× score.", color: "#FF4444" },
           { label: "⚠ Cross-Asset", desc: "Selling both treasuries AND gold. 1.5×.", color: "#E07B5A" },
-          { label: "🚨 Exited", desc: "Zero US Treasuries held + significant gold. Completed liquidation.", color: "#FF8C00" },
+          { label: "🚨 Exited", desc: "Held $1bn+ of Treasuries, now under $1bn, with significant gold. Completed liquidation.", color: "#FF8C00" },
           { label: "T-Bills Only", desc: "Reducing treasury holdings. 1×.", color: "#E8C547" },
           { label: "Au Only", desc: "Reducing gold reserves only. 1×.", color: "#C8A96E" },
         ].map(s => (
