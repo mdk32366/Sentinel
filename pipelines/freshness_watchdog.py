@@ -70,7 +70,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from database.models import Metric, TimeSeries, UpdateLog
+from database.models import Metric, TimeSeries, TreasuryAuction, UpdateLog
 from pipelines.fetch_failure import parse_failure_fields, parse_failure_prefix
 
 logger = logging.getLogger(__name__)
@@ -78,7 +78,20 @@ logger = logging.getLogger(__name__)
 PIPELINE_NAME = "Freshness"
 ERROR_FIELD_LIMIT = 480
 
-# patterns are SQL LIKE patterns matched against metrics.code
+
+
+def _latest_auction_date(db: Session) -> dict:
+    """D-0098. Auctions live in their own table, not in timeseries, so their
+    CHECK supplies its own latest date instead of metric-code patterns."""
+    latest = db.query(func.max(TreasuryAuction.auction_date)).scalar()
+    if latest is None:
+        return {}
+    return {"TREASURY_AUCTIONS": datetime.combine(latest, datetime.min.time())}
+
+
+# patterns are SQL LIKE patterns matched against metrics.code. A CHECK whose
+# data is not in timeseries gives `latest` (db -> {code: datetime}) instead and
+# an empty `patterns`.
 CHECKS = [
     {
         "key": "treasury_yields",
@@ -275,7 +288,31 @@ CHECKS = [
             "healthy. Feeds composite dimension 3."
         ),
     },
+    {
+        "key": "treasury_auctions",
+        "period": "day",
+        "label": "Treasury auction results",
+        "patterns": [],
+        "latest": _latest_auction_date,
+        # Bills auction Monday to Thursday. Thursday to the next Tuesday across
+        # a Monday holiday is the longest healthy gap, five days. D-0101's
+        # 3-business-day banner on the panel is the reader's signal; this is
+        # the operator's.
+        "max_age_days": 6,
+        "pipelines": ["Treasury_Auctions"],
+        "note": (
+            "Fiscal Data auctions_query, every marketable auction since 2008 "
+            "(D-0098). Feeds the Auction Demand panel; not part of any "
+            "composite score."
+        ),
+    },
 ]
+
+
+def _latest_dates(db: Session, check: dict) -> dict:
+    if "latest" in check:
+        return check["latest"](db)
+    return _latest_dates_by_pattern(db, check["patterns"])
 
 
 def _latest_dates_by_pattern(db: Session, patterns) -> dict:
@@ -563,7 +600,7 @@ def calibrate(db: Session) -> str:
     now = datetime.utcnow()
     lines = ["Observed freshness — set thresholds from these, not from theory", ""]
     for check in CHECKS:
-        latest = _latest_dates_by_pattern(db, check["patterns"])
+        latest = _latest_dates(db, check)
         if not latest:
             lines.append(f"  {check['label']:<34} NO DATA — cannot calibrate")
             continue
@@ -645,7 +682,7 @@ def get_freshness_report(db: Session) -> dict:
     sources = []
 
     for check in CHECKS:
-        latest_by_code = _latest_dates_by_pattern(db, check["patterns"])
+        latest_by_code = _latest_dates(db, check)
 
         period = check.get("period", "day")
 

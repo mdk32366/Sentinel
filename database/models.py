@@ -1,4 +1,7 @@
-from sqlalchemy import Text, Column, Integer, String, Float, DateTime, ForeignKey, Index, Numeric
+from sqlalchemy import (
+    Boolean, Column, Date, DateTime, Float, ForeignKey, Index, Integer, Numeric,
+    String, Text, UniqueConstraint,
+)
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 from datetime import datetime
@@ -97,6 +100,84 @@ class CompositeSnapshot(Base):
 
     def __repr__(self):
         return f"<CompositeSnapshot {self.country_count} countries @ {self.computed_at}>"
+
+
+class TreasuryAuction(Base):
+    """One Treasury marketable auction result, with its demand metrics (D-0098).
+
+    Natural key `(cusip, auction_date)`: a reopening sells an existing CUSIP
+    again, so CUSIP alone is not unique. Amounts are whole dollars, as the
+    source publishes them. Every nullable column is NULL only with a reason in
+    `null_reasons`; a missing amount is never stored as 0.
+
+    `raw` and `null_reasons` are JSON as Text, not JSONB, for the same reason as
+    CompositeSnapshot: the suite runs on SQLite.
+    """
+    __tablename__ = "treasury_auctions"
+
+    id = Column(Integer, primary_key=True)
+    cusip = Column(String(9), nullable=False, index=True)
+    auction_date = Column(Date, nullable=False, index=True)
+    issue_date = Column(Date)
+    maturity_date = Column(Date)
+    security_type = Column(String(10), nullable=False)
+    security_term = Column(String(40), nullable=False)
+    original_security_term = Column(String(40))
+    # D-0103. NULL for TIPS, FRNs and CMBs, which are stored but never charted.
+    term_group = Column(String(40), index=True)
+    reopening = Column(Boolean)
+    inflation_indexed = Column(Boolean)
+    floating_rate = Column(Boolean)
+    cash_management_bill = Column(Boolean)
+
+    offering_amt = Column(Numeric(20, 2))
+    total_tendered = Column(Numeric(20, 2))
+    total_accepted = Column(Numeric(20, 2))
+    soma_tendered = Column(Numeric(20, 2))
+    soma_accepted = Column(Numeric(20, 2))
+    comp_tendered = Column(Numeric(20, 2))
+    comp_accepted = Column(Numeric(20, 2))
+    noncomp_accepted = Column(Numeric(20, 2))
+    fima_noncomp_tendered = Column(Numeric(20, 2))
+    fima_noncomp_accepted = Column(Numeric(20, 2))
+    primary_dealer_tendered = Column(Numeric(20, 2))
+    primary_dealer_accepted = Column(Numeric(20, 2))
+    direct_bidder_tendered = Column(Numeric(20, 2))
+    direct_bidder_accepted = Column(Numeric(20, 2))
+    indirect_bidder_tendered = Column(Numeric(20, 2))
+    indirect_bidder_accepted = Column(Numeric(20, 2))
+
+    high_yield = Column(Numeric(12, 6))
+    high_discnt_rate = Column(Numeric(12, 6))
+    high_investment_rate = Column(Numeric(12, 6))
+    allocation_pct = Column(Numeric(12, 6))  # % allotted at high
+
+    b2c_reported = Column(Numeric(12, 6))
+    b2c_recomputed = Column(Numeric(18, 10))
+    b2c_check = Column(String(12), nullable=False)  # ok | mismatch | unverifiable
+    # A-0025: total - SOMA == comp + noncomp + FIMA tendered. ok | fail | unverifiable
+    identity_check = Column(String(12), nullable=False)
+
+    primary_dealer_share = Column(Numeric(18, 12))
+    direct_bidder_share = Column(Numeric(18, 12))
+    indirect_bidder_share = Column(Numeric(18, 12))
+    shares_check = Column(String(12), nullable=False)  # ok | gap | unverifiable (D-0104)
+    bidder_gap = Column(Numeric(20, 2))
+
+    null_reasons = Column(Text, nullable=False, default="{}")
+    raw = Column(Text, nullable=False)
+    # treasury_auctions.PARSER_VERSION that derived this row (D-0105).
+    parser_version = Column(Integer, nullable=False, default=1)
+    source_record_date = Column(Date)
+    ingested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("cusip", "auction_date", name="uq_treasury_auction_cusip_date"),
+    )
+
+    def __repr__(self):
+        return f"<TreasuryAuction {self.cusip} {self.auction_date} {self.security_term}>"
 
 
 class UpdateLog(Base):

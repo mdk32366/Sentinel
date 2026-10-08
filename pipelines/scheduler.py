@@ -18,6 +18,7 @@ from pipelines.composite_stress import persist_composite_snapshot
 from pipelines.money_supply_fetcher import run_money_supply_fetch
 from pipelines.imf_gold_reserves import run_imf_gold_fetch
 from pipelines.tic_table3 import run_tic_table3_fetch
+from pipelines.treasury_auctions import run_treasury_auctions_fetch
 
 logger = logging.getLogger(__name__)
 # ORDER-01 B5. Set once on the scheduler rather than repeated on every
@@ -63,6 +64,7 @@ SCHEDULED_PIPELINES = {
     "Broad_Money_Growth",
     "Gold_Reserves_IMF",
     "TIC_Table3",
+    "Treasury_Auctions",
 }
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
@@ -298,6 +300,30 @@ def scheduled_gold_price_fetch():
             db.close()
 
 
+def scheduled_treasury_auctions_fetch():
+    """Treasury auction results from Fiscal Data (D-0098).
+
+    Weekdays 22:00 UTC: after the day's auctions close (11:30-13:00 ET) and
+    their results publish. The first run backfills from 2008 (D-0100); later
+    runs re-read the trailing 30 days so a revised result is picked up.
+    """
+    db = None
+    try:
+        db = get_session()
+        result = run_treasury_auctions_fetch(db)
+        logger.info(
+            f"Treasury auctions: {result['status']} - {result.get('inserted', 0)} inserted, "
+            f"{result.get('updated', 0)} updated, latest={result.get('latest_date')}"
+        )
+        if result.get("mismatches"):
+            logger.warning(f"Treasury auctions B2C mismatches: {result['mismatches']}")
+    except Exception as e:
+        logger.error(f"Scheduled Treasury auctions fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
 def scheduled_freshness_check():
     """Daily freshness sweep. Reads; the only thing it writes is its own log row."""
     db = None
@@ -421,6 +447,14 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled broad money growth monthly on day 14 at 05:30 UTC")
+
+    scheduler.add_job(
+        scheduled_treasury_auctions_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=22, minute=0),
+        id="treasury_auctions", name="Treasury Auction Results",
+        replace_existing=True,
+    )
+    logger.info("Scheduled Treasury auction results weekdays at 22:00 UTC")
 
     scheduler.add_job(
         scheduled_freshness_check,

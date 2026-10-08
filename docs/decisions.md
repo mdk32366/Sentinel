@@ -2852,3 +2852,176 @@ closes that. It is an owner setting in GitHub, not code.
 **Reversal condition.** None for issuing numbers. Add a line to `MENTIONS` in
 `tools/register.py`, with its reason, only if the check flags a mention that is
 not a citation.
+
+### D-0097 - Auction bidder shares are taken over competitive accepted (D-NEW-1)
+
+**Choice.** Primary dealer, direct and indirect bidder shares are each class's
+accepted amount over `comp_accepted`. Owner ruling, 2026-10-08, at the
+Planner's default.
+
+**Rejected.** `total_accepted`. Treasury publishes the bidder-class breakdown
+for competitive tenders only, so over the total the three shares sum to
+something below 1 that moves with non-competitive and SOMA volume rather than
+with who bid. Against the 26-week bill of 2026-06-15 the three classes sum
+exactly to `comp_accepted` (74,980,149,000).
+
+**What forced the call.** ORDER auction-demand §1. The shares must sum to 1.0
+(±1e-6). Where Treasury's own figures do not, see `D-0104`.
+
+### D-0098 - The auction source is Fiscal Data `auctions_query`, read as published (D-NEW-2)
+
+**Choice.** Treasury Fiscal Data,
+`https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/accounting/od/auctions_query`.
+Public, no key, paginated JSON (`page[size]` up to 10,000). Checked 2026-10-08
+against the dataset's own `meta.labels` / `dataTypes` and the golden record
+`912797VH7` / 2026-06-15.
+
+| Quantity (§1, §2) | Field |
+|---|---|
+| CUSIP, auction / issue / maturity date | `cusip`, `auction_date`, `issue_date`, `maturity_date` |
+| Security type, term | `security_type`, `security_term`, `original_security_term` |
+| Total tendered / accepted (**SOMA included**) | `total_tendered`, `total_accepted` |
+| SOMA tendered / accepted | `soma_tendered`, `soma_accepted` |
+| Competitive tendered / accepted | `comp_tendered`, `comp_accepted` |
+| Non-competitive accepted, FIMA | `noncomp_accepted`, `fima_noncomp_tendered`, `fima_noncomp_accepted` |
+| Bidder classes | `primary_dealer_*`, `direct_bidder_*`, `indirect_bidder_*` (`_tendered`, `_accepted`) |
+| Reported bid-to-cover | `bid_to_cover_ratio` |
+| % allotted at high | `allocation_pctage` |
+| High rate / yield | `high_yield` (coupons), `high_discnt_rate` and `high_investment_rate` (bills) |
+| TIPS, FRN, CMB flags | `inflation_index_security`, `floating_rate`, `cash_management_bill_cmb` |
+
+**Units.** Whole dollars. `offering_amt` carries the format label `$1,000,000`,
+but its value for the golden bill is `77000000000`, which is the $77bn
+offering in dollars. No conversion is applied, and a test pins that.
+
+**Nulls.** One encoding only: the string `"null"`. All 114 keys are present on
+every one of 6,323 records since 2008. No empty strings, no absent keys. The
+parser still treats an absent key or an empty string as `NULL`, so a change in
+encoding cannot turn into a zero.
+
+**SOMA.** `total_*` includes SOMA. 218,768,419,200 − 6,455,051,600 =
+212,313,367,600, the subtotal Treasury's release prints. So the recomputed
+bid-to-cover is `(total_tendered − soma_tendered) / (total_accepted −
+soma_accepted)`. Where SOMA is `"null"` the recomputed value is `NULL`
+(`soma_not_reported`) and `b2c_check` is `unverifiable`. A missing SOMA is not a
+zero SOMA. That affects 57 records, all before 2008-04-07.
+
+**Natural key.** `(cusip, auction_date)`. Reopenings share a CUSIP. The golden
+CUSIP itself has two records, the second a 13-week reopening on 2026-09-14.
+
+**Pending auctions.** The dataset lists announced auctions before they are
+held, with every result field `"null"`. They are skipped and counted as
+`pending`, not stored, and are picked up once results exist.
+
+**What forced the call.** ORDER auction-demand §4 required this before any code.
+Measured on 2026-10-08 over all 6,323 records with `auction_date` ≥ 2008-01-01.
+6,263 agree with Treasury's reported bid-to-cover to ±0.01 and 0 disagree. On
+all 6,263, total − SOMA equals comp + noncomp + FIMA tendered (`A-0025`).
+
+### D-0099 - Auction z-scores use the trailing 26 same-term auctions, at least 8 (D-NEW-3)
+
+**Choice.** For each auction, the window is the 26 auctions of the same term
+group (`D-0103`) immediately before it. It excludes the auction itself and
+skips `NULL` values. The z-score is (value − mean) / sample standard deviation
+over the values actually used, and `window_used` reports how many that was.
+Fewer than 8 gives `NULL` (`insufficient_history`). Zero variance gives `NULL`
+(`zero_variance`). Computed at read time. Owner ruling, 2026-10-08, at the
+Planner's default.
+
+**Rejected.** A materialized view. About 6,300 rows do not need one, and a
+stored z-score goes stale the moment a row is revised.
+
+### D-0100 - Auction backfill starts 2008-01-01 (D-NEW-4)
+
+**Choice.** The first backfill requests `auction_date` ≥ 2008-01-01, 6,320
+held auctions as of 2026-10-08. Owner ruling at the Planner's default. The
+dataset reaches back to 1979. Bidder-class, SOMA and competitive fields begin
+on 2008-04-07, so earlier years would add rows whose demand metrics are all
+`NULL`.
+
+### D-0101 - The auction panel is stale after 3 business days (D-NEW-5)
+
+**Choice.** `data_as_of` is the newest `auction_date` stored. The panel shows a
+stale banner when that date is more than 3 business days (Mon–Fri) old. Owner
+ruling, 2026-10-08, at the Planner's default. Bills auction most weekdays, so 3
+business days without one is a broken feed, not a quiet week.
+
+### D-0102 - No colour highlight on auction z-scores until thresholds are ruled (D-NEW-6)
+
+**Choice.** z-scores are shown as numbers with no colour coding. Owner ruling,
+2026-10-08: none until ruled. An unruled threshold is not an alert.
+
+### D-0103 - A "term" is the bill's term, or the coupon's original term; TIPS, FRNs and CMBs are never charted
+
+**Choice.** The term group used by the z-score window and the term filter:
+- **Bills** (not cash-management bills): `security_term`. A 13-week reopening of
+  a 26-week bill is a 13-week auction.
+- **Nominal notes and bonds**: `original_security_term`, so a 10-year reopening
+  that `security_term` labels "9-Year 10-Month" is a 10-year auction.
+- **TIPS** (`inflation_index_security = Yes`), **FRNs** (`floating_rate = Yes`)
+  and **CMBs** (`cash_management_bill_cmb = Yes`): stored, with no term group,
+  and never charted or windowed.
+
+Charted in v1: 4W, 8W, 13W, 17W, 26W, 52W, 2Y, 5Y, 10Y, 30Y. Owner ruling,
+2026-10-08.
+
+**Rejected.** Literal `security_term`. 51 FRN auctions since 2008 are "Note,
+2-Year" and would sit inside the nominal 2-year window. Every 10- and 30-year
+reopening would form its own month-labelled group of a handful of points.
+
+*Amended by `D-0105`: TIPS and FRNs now form their own families. CMBs still
+have none.*
+
+### D-0104 - Bidder shares that do not sum to 1 are stored and flagged, never forced
+
+**Choice.** Shares are computed as `D-0097` defines them, whatever they sum
+to. `shares_check` is `ok` within ±1e-6 of 1.0, `gap` otherwise (with the
+dollar gap stored as `bidder_gap`), and `unverifiable` when an input is
+missing. A gap is reported in the ingest summary. Owner ruling, 2026-10-08.
+
+**Rejected.** Setting such a row's shares to `NULL`. That hides a published
+figure because it disagrees with another published figure. `b2c_check` treats
+disagreement the same way.
+
+**What forced the call.** `F-0112`.
+
+### D-0105 - TIPS and FRNs are their own term families, windowed but not charted
+
+**Choice.** Amends `D-0103`. TIPS and FRNs get a term group by original term,
+prefixed with their kind. A stored row is re-derived whenever the rules that
+derive it change.
+
+| Family | API `term` | Auctions since 2008 |
+|---|---|---|
+| TIPS 5-Year | `TIPS5Y` | 61 |
+| TIPS 10-Year | `TIPS10Y` | 108 |
+| TIPS 20-Year | `TIPS20Y` | 4 |
+| TIPS 30-Year | `TIPS30Y` | 42 |
+| FRN 2-Year | `FRN2Y` | 155 |
+
+- **Windowed:** each family has its own z-score window under `D-0099`. TIPS
+  20-Year has 4 auctions, so it reports `insufficient_history` until it has 8.
+- **Filterable:** `GET /api/auctions?term=` accepts the family labels.
+- **Not charted:** not on the panel and not in `/api/auctions/summary`,
+  because the order charts TIPS and FRNs in no v1 term.
+- **CMBs:** still no family (`no_term_family`). Their terms are irregular
+  by design (63-Day, 42-Day, …), so there is no series to compare against.
+
+**Re-derivation.** `treasury_auctions.PARSER_VERSION` is stored on every row
+as `parser_version`. The upsert rewrites a row when its source record changed
+or when it was derived by an older parser. Before this, only a change to the
+raw record caused a rewrite, so a change like this one would never have
+reached rows already stored. `PARSER_VERSION` is 2. The `D-0103` rules were
+never deployed.
+
+**Rejected.** (a) Leaving TIPS and FRNs ungrouped. They were stored but no
+query could compare one TIPS auction with the last. (b) Folding them into the
+nominal groups by original term, which is the trap `D-0103` exists to avoid:
+a TIPS clears on a real yield and an FRN on a discount margin. (c) Rebuilding
+the table to refresh derived columns, instead of versioning the parser. That
+works once, at the cost of a full re-fetch, and does nothing for the next rule
+change.
+
+**What forced the call.** Owner ruling, 2026-10-08. Floating-rate notes and
+inflation-protected bonds were filed as plain "Notes" and needed a proper
+home.
