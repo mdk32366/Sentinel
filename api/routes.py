@@ -1473,3 +1473,140 @@ async def get_latest_cds(country: str = Query(..., description="Country ISO code
         "coverage_10y": coverage_10y,
         "history": history,
     }
+
+# ── Treasury auction demand (ORDER auction-demand §6) ────────────────────────
+#
+# Read-only. z-scores are computed at read time over every stored auction
+# (D-0099): ~6,300 rows, and the window for any one auction needs the 26 before
+# it whatever filter the caller applied.
+
+from database.models import TreasuryAuction  # noqa: E402
+from pipelines import auction_demand  # noqa: E402
+from api.schemas import (  # noqa: E402
+    AuctionDetailResponse,
+    AuctionListResponse,
+    AuctionSummaryResponse,
+)
+
+_AUCTION_FLOATS = (
+    "offering_amt", "total_tendered", "total_accepted", "soma_tendered",
+    "soma_accepted", "comp_accepted", "b2c_reported", "b2c_recomputed",
+    "primary_dealer_share", "direct_bidder_share", "indirect_bidder_share",
+    "bidder_gap", "allocation_pct", "high_yield", "high_discnt_rate",
+    "high_investment_rate",
+)
+
+
+def _num(value):
+    return None if value is None else float(value)
+
+
+def _iso(value):
+    return value.isoformat() if value is not None else None
+
+
+def _auction_row(a: TreasuryAuction) -> dict:
+    row = {
+        "cusip": a.cusip,
+        "auction_date": a.auction_date,
+        "issue_date": _iso(a.issue_date),
+        "maturity_date": _iso(a.maturity_date),
+        "security_type": a.security_type,
+        "security_term": a.security_term,
+        "original_security_term": a.original_security_term,
+        "term_group": a.term_group,
+        "term": auction_demand.TERM_BY_GROUP.get(a.term_group),
+        "reopening": a.reopening,
+        "b2c_check": a.b2c_check,
+        "identity_check": a.identity_check,
+        "shares_check": a.shares_check,
+        "null_reasons": json.loads(a.null_reasons or "{}"),
+    }
+    for field in _AUCTION_FLOATS:
+        row[field] = getattr(a, field)
+    return row
+
+
+def _scored_auctions(db: Session):
+    """(scored rows oldest-first, data_as_of, {key: model}) for every stored auction."""
+    models = db.query(TreasuryAuction).order_by(
+        TreasuryAuction.auction_date, TreasuryAuction.cusip
+    ).all()
+    scored = auction_demand.attach_zscores([_auction_row(a) for a in models])
+    for row in scored:
+        row["auction_date"] = row["auction_date"].isoformat()
+        for field in _AUCTION_FLOATS:
+            row[field] = _num(row[field])
+    data_as_of = models[-1].auction_date.isoformat() if models else None
+    return scored, data_as_of, {(a.cusip, a.auction_date.isoformat()): a for a in models}
+
+
+@router.get("/auctions", response_model=AuctionListResponse)
+async def get_auctions(
+    term: Optional[str] = Query(None, description="Panel term label, e.g. 26W"),
+    type: Optional[str] = Query(None, description="Bill, Note or Bond"),
+    from_: Optional[str] = Query(None, alias="from", description="YYYY-MM-DD"),
+    to: Optional[str] = Query(None, description="YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+):
+    """Auction results with demand metrics and null reasons, newest first."""
+    if term is not None and term not in auction_demand.CHARTED_TERMS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"term must be one of {', '.join(auction_demand.CHARTED_TERMS)}",
+        )
+    scored, data_as_of, _ = _scored_auctions(db)
+    rows = [
+        r for r in reversed(scored)
+        if (term is None or r["term"] == term)
+        and (type is None or r["security_type"] == type)
+        and (from_ is None or r["auction_date"] >= from_)
+        and (to is None or r["auction_date"] <= to)
+    ]
+    return {"data_as_of": data_as_of, "count": len(rows), "auctions": rows}
+
+
+@router.get("/auctions/summary", response_model=AuctionSummaryResponse)
+async def get_auctions_summary(db: Session = Depends(get_db)):
+    """The latest auction for each charted term, with both z-scores."""
+    scored, data_as_of, _ = _scored_auctions(db)
+    latest = {}
+    for row in scored:  # oldest first, so the last write per term wins
+        if row["term"] is not None:
+            latest[row["term"]] = row
+    terms = [latest[t] for t in auction_demand.CHARTED_TERMS if t in latest]
+    return {
+        "data_as_of": data_as_of,
+        "window_n": auction_demand.WINDOW_N,
+        "min_observations": auction_demand.MIN_OBSERVATIONS,
+        "terms": terms,
+    }
+
+
+@router.get("/auctions/{cusip}/{auction_date}", response_model=AuctionDetailResponse)
+async def get_auction(cusip: str, auction_date: str, db: Session = Depends(get_db)):
+    """One auction, with the bidder breakdown and SOMA (excluded from B2C, §2)."""
+    scored, data_as_of, models = _scored_auctions(db)
+    a = models.get((cusip, auction_date))
+    if a is None:
+        raise HTTPException(status_code=404, detail=f"No auction {cusip} on {auction_date}")
+    row = next(r for r in scored if r["cusip"] == cusip and r["auction_date"] == auction_date)
+    row["bidders"] = {
+        name: {
+            "tendered": _num(getattr(a, f"{prefix}_tendered")),
+            "accepted": _num(getattr(a, f"{prefix}_accepted")),
+            "share": _num(getattr(a, f"{prefix}_share")),
+        }
+        for name, prefix in (("primary_dealer", "primary_dealer"),
+                             ("direct", "direct_bidder"),
+                             ("indirect", "indirect_bidder"))
+    }
+    row["soma"] = {
+        "tendered": _num(a.soma_tendered),
+        "accepted": _num(a.soma_accepted),
+        "excluded_from_b2c": True,
+    }
+    row["comp_tendered"] = _num(a.comp_tendered)
+    row["noncomp_accepted"] = _num(a.noncomp_accepted)
+    row["fima_noncomp_accepted"] = _num(a.fima_noncomp_accepted)
+    return {"data_as_of": data_as_of, "auction": row}

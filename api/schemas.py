@@ -398,3 +398,87 @@ class CompositeStressResponse(BaseModel):
     as_of: Optional[str] = None
     computed_at: Optional[str] = None
     served_from: Optional[str] = None
+
+
+# ── Treasury auction demand (ORDER auction-demand §6, D-0098..D-0104) ────────
+#
+# A filter, like every response_model here: a key the producer sends and the
+# model does not declare is dropped without error (F-0079 / F-0101). The
+# producer is api.routes._auction_row; tests/test_treasury_auctions.py holds
+# the two shut against each other.
+
+class AuctionRow(BaseModel):
+    cusip: str
+    auction_date: str
+    issue_date: Optional[str] = None
+    maturity_date: Optional[str] = None
+    security_type: str
+    security_term: str
+    original_security_term: Optional[str] = None
+    term_group: Optional[str] = None
+    term: Optional[str] = None  # panel label ("26W"); None = not charted
+    reopening: Optional[bool] = None
+    offering_amt: Optional[float] = None
+    total_tendered: Optional[float] = None
+    total_accepted: Optional[float] = None
+    soma_tendered: Optional[float] = None
+    soma_accepted: Optional[float] = None
+    comp_accepted: Optional[float] = None
+    b2c_reported: Optional[float] = None
+    b2c_recomputed: Optional[float] = None
+    b2c_check: str
+    identity_check: str
+    b2c_z: Optional[float] = None
+    b2c_z_window: int
+    b2c_z_reason: Optional[str] = None
+    primary_dealer_share: Optional[float] = None
+    direct_bidder_share: Optional[float] = None
+    indirect_bidder_share: Optional[float] = None
+    shares_check: str
+    bidder_gap: Optional[float] = None
+    dealer_z: Optional[float] = None
+    dealer_z_window: int
+    dealer_z_reason: Optional[str] = None
+    allocation_pct: Optional[float] = None
+    high_yield: Optional[float] = None
+    high_discnt_rate: Optional[float] = None
+    high_investment_rate: Optional[float] = None
+    null_reasons: dict
+
+
+class AuctionListResponse(BaseModel):
+    data_as_of: Optional[str] = None
+    count: int
+    auctions: List[AuctionRow]
+
+
+class AuctionSummaryResponse(BaseModel):
+    data_as_of: Optional[str] = None
+    window_n: int
+    min_observations: int
+    terms: List[AuctionRow]
+
+
+class AuctionBidderClass(BaseModel):
+    tendered: Optional[float] = None
+    accepted: Optional[float] = None
+    share: Optional[float] = None
+
+
+class AuctionSoma(BaseModel):
+    tendered: Optional[float] = None
+    accepted: Optional[float] = None
+    excluded_from_b2c: bool
+
+
+class AuctionDetail(AuctionRow):
+    bidders: dict[str, AuctionBidderClass]
+    soma: AuctionSoma
+    comp_tendered: Optional[float] = None
+    noncomp_accepted: Optional[float] = None
+    fima_noncomp_accepted: Optional[float] = None
+
+
+class AuctionDetailResponse(BaseModel):
+    data_as_of: Optional[str] = None
+    auction: AuctionDetail

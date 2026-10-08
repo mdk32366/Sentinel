@@ -426,6 +426,32 @@ class ApiContracts(unittest.TestCase):
         self.assertIn("XXXXXXXXX", r.json()["detail"])
 
 
+class ResponseModelsDeclareWhatIsSent(unittest.TestCase):
+    """F-0101: a response_model is a filter. A key the producer sends and the
+    model does not declare vanishes from the response with no error."""
+
+    def test_every_row_key_is_declared_and_every_declared_key_is_sent(self):
+        from api import schemas
+        from api.routes import _scored_auctions
+
+        db = session()
+        auctions.ingest_records(db, RECORDS)
+        scored, _, _ = _scored_auctions(db)
+        sent = set(scored[0])
+        declared = set(schemas.AuctionRow.model_fields)
+        self.assertEqual(sorted(sent - declared), [], "stripped from the response")
+        self.assertEqual(sorted(declared - sent), [], "declared but never sent")
+
+    def test_the_detail_adds_only_declared_keys(self):
+        from api import schemas
+
+        body = ApiContracts.client.get("/api/auctions/912797VH7/2026-06-15").json()
+        declared = set(schemas.AuctionDetail.model_fields)
+        self.assertEqual(sorted(set(body["auction"]) - declared), [])
+        for key in ("bidders", "soma", "comp_tendered", "noncomp_accepted"):
+            self.assertIn(key, body["auction"])
+
+
 class Scheduling(unittest.TestCase):
     """§5. Piggybacks on the existing scheduler, daily."""
 

@@ -107,6 +107,9 @@ def per_country_age_report(db: Session, now: datetime | None = None) -> dict:
 
     for check in CHECKS:
         patterns = check.get("patterns") or []
+        if not patterns:
+            # Not a per-country timeseries (treasury_auctions): no country age.
+            continue
         by_country_column = bool(set(patterns) & COUNTRY_COLUMN_PATTERNS)
 
         if by_country_column:
