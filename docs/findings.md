@@ -3717,3 +3717,19 @@ was issued. Voided 2026-10-08 under `D-0096`. Reserved permanently.
 
 **Guard.** D-0095 adds `us_m2` on `WM2NS` only (`period` week, `max_age_days` 55). CPI remains a sibling gap (out of scope unless Matt expands). Gates G4/G5/G-mut.
 
+### F-0111 - One auction's bidder classes do not add up to its competitive total
+
+**Claim.** In Treasury's auctions dataset, 13-week bill `912795L66` auctioned
+2009-01-26 has primary dealer + direct + indirect accepted = 26,385,980,500
+against `comp_accepted` = 26,395,980,500. That is $10,000,000 short, so the
+shares sum to 0.99962.
+
+**Artifact.** Fiscal Data `auctions_query`, all records with `auction_date` ≥
+2008-01-01, fetched 2026-10-08. Competitive results PDF `R_20090126_1.pdf`.
+
+**Sample size.** 6,263 records carry all four figures. This is the only one
+where the classes miss by more than 1e-6 of the total.
+
+**Consequence.** Asserting that shares sum to 1 would fail the ingest on a
+published figure. `D-0104` stores and flags it instead.
+

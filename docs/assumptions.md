@@ -812,3 +812,22 @@ exception and an `assert_source_fresh(newest, limit_days, source, refresh_url)`
 helper, with all three callers moved onto it in one pass and the existing tests
 kept as the proof nothing changed. Half a day, no behaviour change, and best
 done when one of the three next needs touching for another reason.
+
+### A-0025 - Fiscal Data's auction totals include SOMA whenever SOMA is reported
+
+**Relies on:** `total_tendered` and `total_accepted` in `auctions_query` being
+the release's grand total, with SOMA's add-on included, as in the 2026-06-15
+26-week bill (`D-0098`).
+
+**Falsified by:** a record where total − SOMA ≠ competitive + non-competitive
++ FIMA tendered. That identity holds on all 6,263 records since 2008 that carry
+the figures, so SOMA's inclusion is measured, not assumed, for every one of
+them.
+
+**Consequence if wrong:** subtracting SOMA from a total that already excludes
+it understates demand. The recomputed bid-to-cover would disagree with
+Treasury's reported figure, so `b2c_check` flags it as `mismatch` rather than
+letting it pass silently.
+
+**Status:** Holding. Checked on every ingested record. The ingest records an
+`identity_check` per row, and the summary counts failures.
