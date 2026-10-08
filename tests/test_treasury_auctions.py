@@ -386,7 +386,8 @@ class DemandSignal(unittest.TestCase):
     """D-0107. Weak demand is low cover AND dealers left holding the issue.
 
     Measured over 4,557 scored auctions in the ten charted terms, 2008-2026:
-    the alert (both) fired 1.9 times a year, the watch (either, stronger) 4.5.
+    the alert (both) fired 1.9 times a year, the watch (either, stronger, and
+    not an alert) 3.0.
     Either test alone at 2 sd fired 7 to 7.5 times a year."""
 
     def test_the_rulings_are_the_ones_logged(self):

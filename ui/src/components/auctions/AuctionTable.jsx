@@ -5,6 +5,12 @@ import {
 } from "../../lib/auctions";
 import { InfoTip } from "../InfoTip";
 
+/** D-0107. Colour is spent only on weak demand; strong demand stays neutral. */
+const SIGNAL = {
+  alert: { label: "ALERT", color: "#FF4444" },
+  watch: { label: "WATCH", color: "#E8C547" },
+};
+
 /**
  * Latest-auctions table (ORDER auction-demand §7).
  *
@@ -12,9 +18,8 @@ import { InfoTip } from "../InfoTip";
  *   both directions (§3). It never renders as zero.
  * - `b2c_check = mismatch` carries a visible marker: nothing is hidden because
  *   the two bid-to-cover paths disagree (§2).
- * - z-scores are plain numbers in one colour. Highlight thresholds are an
- *   owner ruling not yet made, and an unruled threshold is not an alert
- *   (D-0102).
+ * - Weak demand is flagged ALERT or WATCH by the server (D-0107), and only a
+ *   flagged row's z-scores take colour. Strong demand is never coloured.
  * - Hovering a row shows the bidder breakdown and SOMA, labelled as excluded
  *   from bid-to-cover.
  *
@@ -25,6 +30,8 @@ const NEUTRAL = "#8A9BAC";
 const MONO = { fontFamily: "monospace" };
 
 const COLUMNS = [
+  { key: "demand_signal", label: "Signal", align: "left", signal: true,
+    tip: "Weak demand, flagged by the server (D-0107). ALERT: bid-to-cover z at or below -2 AND dealer-share z at or above +2: low cover with dealers left holding the issue. WATCH: either one alone past 2.5. Over 2008-2026 the alert fired about twice a year across these ten terms, the watch about three times. Strong demand is never flagged, and a row whose two bid-to-cover paths disagree is not scored." },
   { key: "term", label: "Term", align: "left",
     tip: "The auction's term family (D-0103): a bill's own term, or a note's or bond's original term, so a 10-year reopening counts as 10Y." },
   { key: "auction_date", label: "Auction date", align: "left",
@@ -32,11 +39,11 @@ const COLUMNS = [
   { key: "b2c_recomputed", label: "B2C", fmt: fmtRatio,
     tip: "Bid-to-cover: dollars bid for every dollar sold. Recomputed from Treasury's totals with the Fed's SOMA rollover taken out of both sides, which is how Treasury defines its own figure (D-0098). Higher means more demand. ≠ marks a row where this differs from Treasury's reported figure by more than 0.01." },
   { key: "b2c_z", label: "Z (B2C)", fmt: fmtZ, reasonKey: "b2c_z_reason",
-    tip: "How unusual this bid-to-cover is against the previous 26 auctions of the same term, in standard deviations, needing at least 8 (D-0099). Negative means weaker demand than usual. Not colour-coded until alert thresholds are ruled (D-0102)." },
+    tip: "How unusual this bid-to-cover is against the previous 26 auctions of the same term, in standard deviations, needing at least 8 (D-0099). Negative means weaker demand than usual. Coloured only when the row is flagged (D-0107)." },
   { key: "primary_dealer_share", label: "Dealer share", fmt: fmtShare,
     tip: "Share of competitive accepted bids taken by primary dealers (D-0097). Dealers are expected to bid at every auction, so a high share means less outside demand took the securities." },
   { key: "dealer_z", label: "Z (dealer)", fmt: fmtZ, reasonKey: "dealer_z_reason",
-    tip: "How unusual the dealer share is against the same 26-auction window. Positive means dealers were left holding more than usual." },
+    tip: "How unusual the dealer share is against the same 26-auction window. Positive means dealers were left holding more than usual. Coloured only when the row is flagged (D-0107)." },
   { key: "indirect_bidder_share", label: "Indirect share", fmt: fmtShare,
     tip: "Share taken by indirect bidders: investors bidding through a dealer or the New York Fed, including foreign central banks and international accounts. A rough read on foreign demand." },
   { key: "allocation_pct", label: "% at high", fmt: fmtPct,
@@ -48,11 +55,28 @@ function reasonFor(row, column) {
   return reasonText(code);
 }
 
+function SignalCell({ row }) {
+  const s = SIGNAL[row.demand_signal];
+  return (
+    <td data-testid="cell-demand_signal" style={{ ...MONO, padding: "7px 14px", fontSize: 10 }}>
+      {s && (
+        <span aria-label={`demand ${row.demand_signal}`} style={{
+          color: s.color, background: `${s.color}18`, border: `1px solid ${s.color}55`,
+          borderRadius: 2, padding: "1px 6px", letterSpacing: "0.08em",
+        }}>{s.label}</span>
+      )}
+    </td>
+  );
+}
+
 function Cell({ row, column }) {
+  if (column.signal) return <SignalCell row={row} />;
   const raw = row[column.key];
   const shown = column.fmt ? column.fmt(raw) : raw;
   const missing = shown == null;
   const mismatch = column.key === "b2c_recomputed" && row.b2c_check === "mismatch";
+  const flagged = SIGNAL[row.demand_signal];
+  const isZ = column.key === "b2c_z" || column.key === "dealer_z";
 
   return (
     <td
@@ -61,7 +85,9 @@ function Cell({ row, column }) {
       style={{
         ...MONO, padding: "7px 14px", fontSize: 12,
         textAlign: column.align ?? "right",
-        color: missing ? "#3A4D5C" : column.key === "term" ? "#E8E0D0" : NEUTRAL,
+        color: missing ? "#3A4D5C"
+          : isZ && flagged ? flagged.color
+          : column.key === "term" ? "#E8E0D0" : NEUTRAL,
       }}
     >
       {missing ? "—" : shown}

@@ -96,6 +96,9 @@ def attach_zscores(rows):
                     out[f"{prefix}_z"] = z
                     out[f"{prefix}_z_window"] = used
                     out[f"{prefix}_z_reason"] = reason
+            out["demand_signal"], out["demand_signal_reason"] = demand_signal(
+                r.get("b2c_check"), out["b2c_z"], out["dealer_z"]
+            )
             scored[id(r)] = out
     return [scored[id(r)] for r in rows]
 
@@ -114,9 +117,35 @@ def is_stale(data_as_of: datetime.date, today: datetime.date) -> bool:
     return business_days_since(data_as_of, today) > STALE_BUSINESS_DAYS
 
 
-# D-0107. STUB - tests first.
-ALERT_B2C_Z = ALERT_DEALER_Z = WATCH_B2C_Z = WATCH_DEALER_Z = None
+# ── D-0107: when weak demand is flagged ─────────────────────────────────────
+#
+# Weak demand at an auction is two things at once: little cover, and dealers
+# left holding the issue because end investors did not take it. One without
+# the other is common - either test alone at 2 sd fired 7 to 7.5 times a year
+# across the ten charted terms, 2008-2026 - so the alert needs both:
+#
+#   alert   b2c_z <= -2.0 AND dealer_z >= +2.0      1.9 a year
+#   watch   b2c_z <= -2.5 OR  dealer_z >= +2.5      3.0 a year (alert first)
+#
+# Strong demand is never flagged: the signal is one-sided by design. A row
+# whose two bid-to-cover paths disagree (b2c_check != ok) is not scored at all,
+# because its z-score rests on a figure that is itself in question (§2).
+ALERT_B2C_Z = -2.0
+ALERT_DEALER_Z = 2.0
+WATCH_B2C_Z = -2.5
+WATCH_DEALER_Z = 2.5
 
 
 def demand_signal(b2c_check, b2c_z, dealer_z):
+    """(signal, reason): signal is "alert", "watch" or None (D-0107).
+
+    `reason` explains a row that could not be scored; None when it was."""
+    if b2c_check != "ok":
+        return None, f"b2c_check_{b2c_check}"
+    if b2c_z is None or dealer_z is None:
+        return None, "not_scored"
+    if b2c_z <= ALERT_B2C_Z and dealer_z >= ALERT_DEALER_Z:
+        return "alert", None
+    if b2c_z <= WATCH_B2C_Z or dealer_z >= WATCH_DEALER_Z:
+        return "watch", None
     return None, None
