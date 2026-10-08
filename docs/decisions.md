@@ -2969,6 +2969,9 @@ Charted in v1: 4W, 8W, 13W, 17W, 26W, 52W, 2Y, 5Y, 10Y, 30Y. Owner ruling,
 2-Year" and would sit inside the nominal 2-year window. Every 10- and 30-year
 reopening would form its own month-labelled group of a handful of points.
 
+*Amended by `D-0105`: TIPS and FRNs now form their own families. CMBs still
+have none.*
+
 ### D-0104 - Bidder shares that do not sum to 1 are stored and flagged, never forced
 
 **Choice.** Shares are computed as `D-0097` defines them, whatever they sum
@@ -2981,3 +2984,44 @@ figure because it disagrees with another published figure. `b2c_check` treats
 disagreement the same way.
 
 **What forced the call.** `F-0112`.
+
+### D-0105 - TIPS and FRNs are their own term families, windowed but not charted
+
+**Choice.** Amends `D-0103`. TIPS and FRNs get a term group by original term,
+prefixed with their kind. A stored row is re-derived whenever the rules that
+derive it change.
+
+| Family | API `term` | Auctions since 2008 |
+|---|---|---|
+| TIPS 5-Year | `TIPS5Y` | 61 |
+| TIPS 10-Year | `TIPS10Y` | 108 |
+| TIPS 20-Year | `TIPS20Y` | 4 |
+| TIPS 30-Year | `TIPS30Y` | 42 |
+| FRN 2-Year | `FRN2Y` | 155 |
+
+- **Windowed:** each family has its own z-score window under `D-0099`. TIPS
+  20-Year has 4 auctions, so it reports `insufficient_history` until it has 8.
+- **Filterable:** `GET /api/auctions?term=` accepts the family labels.
+- **Not charted:** not on the panel and not in `/api/auctions/summary`,
+  because the order charts TIPS and FRNs in no v1 term.
+- **CMBs:** still no family (`no_term_family`). Their terms are irregular
+  by design (63-Day, 42-Day, …), so there is no series to compare against.
+
+**Re-derivation.** `treasury_auctions.PARSER_VERSION` is stored on every row
+as `parser_version`. The upsert rewrites a row when its source record changed
+or when it was derived by an older parser. Before this, only a change to the
+raw record caused a rewrite, so a change like this one would never have
+reached rows already stored. `PARSER_VERSION` is 2. The `D-0103` rules were
+never deployed.
+
+**Rejected.** (a) Leaving TIPS and FRNs ungrouped. They were stored but no
+query could compare one TIPS auction with the last. (b) Folding them into the
+nominal groups by original term, which is the trap `D-0103` exists to avoid:
+a TIPS clears on a real yield and an FRN on a discount margin. (c) Rebuilding
+the table to refresh derived columns, instead of versioning the parser. That
+works once, at the cost of a full re-fetch, and does nothing for the next rule
+change.
+
+**What forced the call.** Owner ruling, 2026-10-08. Floating-rate notes and
+inflation-protected bonds were filed as plain "Notes" and needed a proper
+home.

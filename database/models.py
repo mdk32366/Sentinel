@@ -166,6 +166,8 @@ class TreasuryAuction(Base):
 
     null_reasons = Column(Text, nullable=False, default="{}")
     raw = Column(Text, nullable=False)
+    # treasury_auctions.PARSER_VERSION that derived this row (D-0105).
+    parser_version = Column(Integer, nullable=False, default=1)
     source_record_date = Column(Date)
     ingested_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

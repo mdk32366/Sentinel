@@ -416,7 +416,7 @@ class AuctionRow(BaseModel):
     security_term: str
     original_security_term: Optional[str] = None
     term_group: Optional[str] = None
-    term: Optional[str] = None  # panel label ("26W"); None = not charted
+    term: Optional[str] = None  # "26W", or a family such as "TIPS10Y" (D-0105); None = no family
     reopening: Optional[bool] = None
     offering_amt: Optional[float] = None
     total_tendered: Optional[float] = None

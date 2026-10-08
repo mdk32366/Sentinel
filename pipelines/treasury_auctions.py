@@ -59,6 +59,10 @@ from pipelines.fetch_failure import classify_fetch_error, format_failure
 logger = logging.getLogger(__name__)
 
 PIPELINE_NAME = "Treasury_Auctions"
+# Bump whenever parse_record derives a stored column differently, so rows
+# already stored are re-derived on the next run even though their source
+# record has not changed (D-0105). 2 = TIPS and FRN families.
+PARSER_VERSION = 2
 SOURCE_URL = (
     "https://api.fiscaldata.treasury.gov/services/api/fiscal_service/v1/"
     "accounting/od/auctions_query"
@@ -150,13 +154,18 @@ def _text(rec: dict, field: str):
 
 
 def term_group(security_type, security_term, original_term, *, tips, frn, cmb):
-    """D-0103. Returns (group, reason). Group None means never charted."""
+    """D-0103, D-0105. Returns (group, reason); group None means no family.
+
+    TIPS and FRNs are their own families by original term ("TIPS 10-Year",
+    "FRN 2-Year"), apart from the nominal windows they would otherwise join.
+    CMBs have no family: their terms are irregular by design.
+    """
     if cmb:
         return None, "cash_management_bill"
     if tips:
-        return None, "tips"
+        return f"TIPS {original_term or security_term}", None
     if frn:
-        return None, "frn"
+        return f"FRN {original_term or security_term}", None
     if security_type == "Bill":
         return security_term, None
     if security_type in ("Note", "Bond"):
@@ -212,6 +221,7 @@ def parse_record(rec: dict):
 
     row["null_reasons"] = reasons
     row["raw"] = json.dumps(rec, sort_keys=True)
+    row["parser_version"] = PARSER_VERSION
     return row
 
 
@@ -288,7 +298,8 @@ def _label(row) -> str:
 
 def ingest_records(db: Session, records) -> dict:
     """Idempotent upsert on (cusip, auction_date). A record whose raw source is
-    unchanged is left alone, so re-running a backfill writes nothing."""
+    unchanged and was derived by this PARSER_VERSION is left alone, so
+    re-running a backfill writes nothing."""
     summary = {
         "inserted": 0, "updated": 0, "unchanged": 0, "pending": 0,
         "mismatches": [], "unverifiable": 0, "share_gaps": [],
@@ -318,7 +329,7 @@ def ingest_records(db: Session, records) -> dict:
         if current is None:
             db.add(TreasuryAuction(**values))
             summary["inserted"] += 1
-        elif current.raw != values["raw"]:
+        elif current.raw != values["raw"] or current.parser_version != PARSER_VERSION:
             for column, value in values.items():
                 setattr(current, column, value)
             summary["updated"] += 1

@@ -231,10 +231,16 @@ class TermGroups(unittest.TestCase):
     def test_a_coupon_reopening_groups_by_its_original_term(self):
         self.assertEqual(self.group("912828JR2", "2009-01-08"), "10-Year")
 
-    def test_frn_tips_and_cmb_are_never_charted(self):
-        self.assertIsNone(self.group("912828WK2", "2014-01-29"))  # FRN, "Note 2-Year"
-        self.assertIsNone(self.group("912828HN3", "2008-01-10"))  # TIPS
-        self.assertIsNone(self.group("912795D81", "2008-02-13"))  # CMB
+    def test_tips_and_frns_are_their_own_families(self):
+        # D-0105. Filed by original term, apart from the nominal window.
+        self.assertEqual(self.group("912828WK2", "2014-01-29"), "FRN 2-Year")
+        self.assertEqual(self.group("912828HN3", "2008-01-10"), "TIPS 10-Year")
+
+    def test_the_families_are_never_charted(self):
+        charted = set(demand.CHARTED_TERMS.values())
+        for cusip, day in (("912828WK2", "2014-01-29"), ("912828HN3", "2008-01-10")):
+            self.assertNotIn(self.group(cusip, day), charted)
+        self.assertIsNone(self.group("912795D81", "2008-02-13"))  # CMB: no family
 
 
 class Idempotence(unittest.TestCase):
@@ -257,6 +263,27 @@ class Idempotence(unittest.TestCase):
         self.assertEqual(second["updated"], 0)
         self.assertEqual(len(again), len(snapshot))
         self.assertEqual(again, snapshot)
+
+
+class Rederivation(unittest.TestCase):
+    """D-0105. A change to how a row is derived must reach rows already
+    stored, even though the source record itself has not changed."""
+
+    def test_a_row_from_an_older_parser_is_rewritten(self):
+        db = session()
+        auctions.ingest_records(db, [GOLDEN])
+        row = db.query(TreasuryAuction).one()
+        row.term_group = "stale"
+        row.parser_version = getattr(auctions, "PARSER_VERSION", 1) - 1
+        db.commit()
+        result = auctions.ingest_records(db, [GOLDEN])
+        self.assertEqual(result["updated"], 1)
+        self.assertEqual(db.query(TreasuryAuction).one().term_group, "26-Week")
+
+    def test_a_current_row_is_left_alone(self):
+        db = session()
+        auctions.ingest_records(db, [GOLDEN])
+        self.assertEqual(auctions.ingest_records(db, [GOLDEN])["unchanged"], 1)
 
 
 class Reopenings(unittest.TestCase):
@@ -332,14 +359,15 @@ class ZScoreWindow(unittest.TestCase):
         self.assertEqual(rows[-1]["dealer_z_window"], rows[-1]["b2c_z_window"])
         self.assertIsNotNone(rows[-1]["dealer_z"])
 
-    def test_an_uncharted_row_gets_no_zscore(self):
+    def test_a_row_with_no_term_family_gets_no_zscore(self):
+        # Only cash-management bills have no family (D-0105).
         rows = demand.attach_zscores(series("13-Week", [2.0] * 3) + [dict(
-            term_group=None, auction_date=datetime.date(2020, 3, 1), cusip="FRN",
+            term_group=None, auction_date=datetime.date(2020, 3, 1), cusip="CMB",
             b2c_recomputed=Decimal("3"), primary_dealer_share=Decimal("0.3"),
         )])
-        frn = rows[-1]
-        self.assertIsNone(frn["b2c_z"])
-        self.assertEqual(frn["b2c_z_reason"], "not_charted")
+        cmb = rows[-1]
+        self.assertIsNone(cmb["b2c_z"])
+        self.assertEqual(cmb["b2c_z_reason"], "no_term_family")
 
 
 class Staleness(unittest.TestCase):
@@ -398,6 +426,12 @@ class ApiContracts(unittest.TestCase):
         june = self.get("/api/auctions?from=2026-06-10&to=2026-06-15")["auctions"]
         self.assertTrue(june)
         self.assertTrue(all("2026-06-10" <= r["auction_date"] <= "2026-06-15" for r in june))
+
+    def test_list_filters_to_a_tips_or_frn_family(self):
+        rows = self.get("/api/auctions?term=FRN2Y")["auctions"]
+        self.assertTrue(rows)
+        self.assertEqual({r["term_group"] for r in rows}, {"FRN 2-Year"})
+        self.assertEqual({r["term"] for r in rows}, {"FRN2Y"})
 
     def test_summary_is_latest_per_charted_term(self):
         body = self.get("/api/auctions/summary")

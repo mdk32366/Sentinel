@@ -1543,17 +1543,17 @@ def _scored_auctions(db: Session):
 
 @router.get("/auctions", response_model=AuctionListResponse)
 async def get_auctions(
-    term: Optional[str] = Query(None, description="Panel term label, e.g. 26W"),
+    term: Optional[str] = Query(None, description="Term label, e.g. 26W or TIPS10Y"),
     type: Optional[str] = Query(None, description="Bill, Note or Bond"),
     from_: Optional[str] = Query(None, alias="from", description="YYYY-MM-DD"),
     to: Optional[str] = Query(None, description="YYYY-MM-DD"),
     db: Session = Depends(get_db),
 ):
     """Auction results with demand metrics and null reasons, newest first."""
-    if term is not None and term not in auction_demand.CHARTED_TERMS:
+    if term is not None and term not in auction_demand.FILTER_TERMS:
         raise HTTPException(
             status_code=400,
-            detail=f"term must be one of {', '.join(auction_demand.CHARTED_TERMS)}",
+            detail=f"term must be one of {', '.join(auction_demand.FILTER_TERMS)}",
         )
     scored, data_as_of, _ = _scored_auctions(db)
     rows = [
@@ -1568,11 +1568,12 @@ async def get_auctions(
 
 @router.get("/auctions/summary", response_model=AuctionSummaryResponse)
 async def get_auctions_summary(db: Session = Depends(get_db)):
-    """The latest auction for each charted term, with both z-scores."""
+    """The latest auction for each charted term, with both z-scores. TIPS and
+    FRN families (D-0105) are not charted in v1 and are not summarised."""
     scored, data_as_of, _ = _scored_auctions(db)
     latest = {}
     for row in scored:  # oldest first, so the last write per term wins
-        if row["term"] is not None:
+        if row["term"] in auction_demand.CHARTED_TERMS:
             latest[row["term"]] = row
     terms = [latest[t] for t in auction_demand.CHARTED_TERMS if t in latest]
     return {

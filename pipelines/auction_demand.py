@@ -29,7 +29,16 @@ CHARTED_TERMS = {
     "10Y": "10-Year",
     "30Y": "30-Year",
 }
-TERM_BY_GROUP = {group: label for label, group in CHARTED_TERMS.items()}
+# D-0105. Filterable through the API and windowed, but not charted in v1.
+FAMILY_TERMS = {
+    "TIPS5Y": "TIPS 5-Year",
+    "TIPS10Y": "TIPS 10-Year",
+    "TIPS20Y": "TIPS 20-Year",
+    "TIPS30Y": "TIPS 30-Year",
+    "FRN2Y": "FRN 2-Year",
+}
+FILTER_TERMS = {**CHARTED_TERMS, **FAMILY_TERMS}
+TERM_BY_GROUP = {group: label for label, group in FILTER_TERMS.items()}
 
 
 def zscore(window, value):
@@ -65,7 +74,7 @@ def attach_zscores(rows):
                 for prefix in ("b2c", "dealer"):
                     out[f"{prefix}_z"] = None
                     out[f"{prefix}_z_window"] = 0
-                    out[f"{prefix}_z_reason"] = "not_charted"
+                    out[f"{prefix}_z_reason"] = "no_term_family"
             else:
                 before = members[max(0, i - WINDOW_N):i]
                 for prefix, field in (("b2c", "b2c_recomputed"),
