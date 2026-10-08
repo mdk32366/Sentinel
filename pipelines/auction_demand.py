@@ -41,17 +41,25 @@ FILTER_TERMS = {**CHARTED_TERMS, **FAMILY_TERMS}
 TERM_BY_GROUP = {group: label for label, group in FILTER_TERMS.items()}
 
 
+def window_stats(window):
+    """(mean, sd, used) of the trailing values, NULLs skipped. mean and sd are
+    None below MIN_OBSERVATIONS: a band on three points is not a band."""
+    used = [float(v) for v in window if v is not None]
+    if len(used) < MIN_OBSERVATIONS:
+        return None, None, len(used)
+    return statistics.fmean(used), statistics.stdev(used), len(used)
+
+
 def zscore(window, value):
     """(z, used, reason). `window` is the trailing values, NULLs included."""
-    used = [float(v) for v in window if v is not None]
+    mean, sd, used = window_stats(window)
     if value is None:
-        return None, len(used), "value_missing"
-    if len(used) < MIN_OBSERVATIONS:
-        return None, len(used), "insufficient_history"
-    sd = statistics.stdev(used)
+        return None, used, "value_missing"
+    if mean is None:
+        return None, used, "insufficient_history"
     if sd == 0:
-        return None, len(used), "zero_variance"
-    return (float(value) - statistics.fmean(used)) / sd, len(used), None
+        return None, used, "zero_variance"
+    return (float(value) - mean) / sd, used, None
 
 
 def attach_zscores(rows):
@@ -59,7 +67,9 @@ def attach_zscores(rows):
 
     Rows need term_group, auction_date, cusip, b2c_recomputed and
     primary_dealer_share. Windows are per term group, ordered by auction date,
-    and never include the auction being scored.
+    and never include the auction being scored. Each row also carries its
+    bid-to-cover window's mean and sd, which is the band the panel draws: one
+    window rule, here, rather than a second copy in JavaScript (F-0047).
     """
     by_group = {}
     for r in rows:
@@ -70,6 +80,7 @@ def attach_zscores(rows):
         members = sorted(members, key=lambda r: (r["auction_date"], r["cusip"]))
         for i, r in enumerate(members):
             out = dict(r)
+            out["b2c_window_mean"] = out["b2c_window_sd"] = None
             if group is None:
                 for prefix in ("b2c", "dealer"):
                     out[f"{prefix}_z"] = None
@@ -77,6 +88,8 @@ def attach_zscores(rows):
                     out[f"{prefix}_z_reason"] = "no_term_family"
             else:
                 before = members[max(0, i - WINDOW_N):i]
+                mean, sd, _ = window_stats([m["b2c_recomputed"] for m in before])
+                out["b2c_window_mean"], out["b2c_window_sd"] = mean, sd
                 for prefix, field in (("b2c", "b2c_recomputed"),
                                       ("dealer", "primary_dealer_share")):
                     z, used, reason = zscore([m[field] for m in before], r[field])

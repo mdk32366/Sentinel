@@ -25,6 +25,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AboutTab } from "./pages/AboutTab";
 import { AdminTab } from "./pages/AdminTab";
+import { AuctionsTab } from "./pages/AuctionsTab";
 import { CDSTab } from "./pages/CDSTab";
 import { CompositeTab } from "./pages/CompositeTab";
 import { CountryTab } from "./pages/CountryTab";
@@ -53,6 +54,9 @@ function stubResponse(url) {
   if (url.includes("/stress/composite")) {
     return { crisis: [], stressed: [], elevated: [], watch: [], summary: {},
              as_of: "2026-09-28" };
+  }
+  if (url.includes("/auctions/summary")) {
+    return { data_as_of: "2026-10-08", window_n: 26, min_observations: 8, terms: [] };
   }
   if (url.includes("/cds/coverage")) return { covered: 0, missing: [] };
   if (url.includes("/cds")) return [];
@@ -95,6 +99,7 @@ const TABS = [
   ["GOLD", GoldReservesTab, { onCountrySelect: () => {}, latestAll: {} }],
   ["COMPOSITE", CompositeTab, { onCountrySelect: () => {} }],
   ["CDS", CDSTab, { onCountrySelect: () => {} }],
+  ["AUCTIONS", AuctionsTab, {}],
   ["COUNTRY", CountryTab, { onCountrySelect: () => {}, latestAll: {} }],
   ["ADMIN", AdminTab, {}],
   ["ABOUT", AboutTab, {}],

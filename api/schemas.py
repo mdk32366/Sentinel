@@ -431,6 +431,8 @@ class AuctionRow(BaseModel):
     b2c_z: Optional[float] = None
     b2c_z_window: int
     b2c_z_reason: Optional[str] = None
+    b2c_window_mean: Optional[float] = None  # the chart's band (D-0099)
+    b2c_window_sd: Optional[float] = None
     primary_dealer_share: Optional[float] = None
     direct_bidder_share: Optional[float] = None
     indirect_bidder_share: Optional[float] = None

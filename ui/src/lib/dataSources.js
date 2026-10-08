@@ -95,6 +95,16 @@ export const SOURCES = [
     notes: "Runs at 21:00 UTC, after Treasury publishes and before FRED's 02:00 run, so the curve is current a business day earlier than FRED alone (D-0022). FRED overwrites with its revised value overnight; A-0001's contract test is what makes that safe.",
     manual: false,
   },
+  {
+    name: "Fiscal Data — Treasury Auction Results",
+    url: "https://fiscaldata.treasury.gov/datasets/treasury-securities-auctions-data/",
+    update: "Weekdays (auto)",
+    lag: "same day",
+    coverage: "Every marketable Treasury auction since 2008",
+    metrics: ["Bid-to-cover (recomputed, SOMA excluded)", "Primary dealer / direct / indirect shares", "% allotted at high"],
+    notes: "Runs at 22:00 UTC (D-0098). Treasury's totals include the Fed's SOMA add-on and its published bid-to-cover does not, so bid-to-cover is recomputed without SOMA and checked against Treasury's figure on every row; a disagreement is flagged, never resolved silently. Feeds the AUCTIONS tab only; not part of any composite score.",
+    manual: false,
+  },
 ];
 
 export const SIGNALS = [
