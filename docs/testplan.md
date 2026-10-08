@@ -487,6 +487,19 @@ watched fail is a guard nobody has tested.
 resolution rather than a syntax walk. The defect class it does cover is the one
 that actually occurred.
 
+### T-0096 - The register adds up, and each rule has been seen red
+
+`tests/test_register_integrity.py`, offline, in the gate. Each of the six
+checks in `tools/register.py` is fed a register that breaks it and must name
+the defect. The collision and `next` cases run in a scratch git repo with a
+fake `origin/master`, never this one. The live test then runs every check on the
+committed tree. Before `D-0096` closed the gaps it reported seven violations
+(`D-0072` x3, `F-0107` x3, `F-0108`), which are the defects the audit found by
+hand.
+
+**Proves:** `D-0096`. **Known limit:** the collision check is only as fresh as
+`origin/master`. In CI that is the base at the time of the run (see `D-0096`).
+
 ### T - What is NOT tested here, and why
 
 **The rescaled composite is not tested, because it does not exist.**

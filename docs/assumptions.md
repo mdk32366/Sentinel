@@ -2,6 +2,10 @@
 
 > What are we taking for granted? Each entry names what it relies on, what
 > would falsify it, the consequence if it is wrong, and its status.
+>
+> **Numbers are issued by `python tools/register.py next A` (`D-0096`)**, run
+> after `git fetch`, at the moment of append. CI fails a register with a gap, a
+> duplicate, or a citation with no heading.
 
 ---
 

@@ -2,6 +2,10 @@
 
 > How do we know? Every claim names the artefact it came from and carries its
 > sample size. If you cannot name the artefact, you are recording a belief.
+>
+> **Numbers are issued by `python tools/register.py next F` (`D-0096`)**, run
+> after `git fetch`, at the moment of append. CI fails a register with a gap, a
+> duplicate, or a citation with no heading.
 
 ---
 
@@ -3682,6 +3686,16 @@ the CDS row links with it. A token the map does not know comes back null and
 renders unlinked with a visible `?`, never guessed in the frontend.
 `tests/test_cds_all_iso3.py` pins the declaration, the 1:1 inverse, the fixture
 against the map, and the endpoint emitting the field through its response model.
+
+### F-0107 — VOID, NEVER ISSUED
+Named as a "candidate" in `D-0092` (the "T-Bill" label against all-Treasuries
+holdings) and never written. Voided 2026-10-08 under `D-0096`; `D-0092` now
+holds it unnumbered. If the candidate is filed it takes the next number.
+Reserved permanently.
+
+### F-0108 — VOID, NEVER ISSUED
+Number does not appear in any commit, file or comment. Skipped when `F-0109`
+was issued. Voided 2026-10-08 under `D-0096`. Reserved permanently.
 
 ### F-0109 - A failed run is invisible to the watchdog — the second time
 
