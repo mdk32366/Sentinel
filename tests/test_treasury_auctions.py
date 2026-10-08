@@ -382,6 +382,52 @@ class ZScoreWindow(unittest.TestCase):
         self.assertEqual(cmb["b2c_z_reason"], "no_term_family")
 
 
+class DemandSignal(unittest.TestCase):
+    """D-0107. Weak demand is low cover AND dealers left holding the issue.
+
+    Measured over 4,557 scored auctions in the ten charted terms, 2008-2026:
+    the alert (both) fired 1.9 times a year, the watch (either, stronger) 4.5.
+    Either test alone at 2 sd fired 7 to 7.5 times a year."""
+
+    def test_the_rulings_are_the_ones_logged(self):
+        self.assertEqual(demand.ALERT_B2C_Z, -2.0)
+        self.assertEqual(demand.ALERT_DEALER_Z, 2.0)
+        self.assertEqual(demand.WATCH_B2C_Z, -2.5)
+        self.assertEqual(demand.WATCH_DEALER_Z, 2.5)
+
+    def test_both_together_is_an_alert_inclusive_at_the_line(self):
+        self.assertEqual(demand.demand_signal("ok", -2.0, 2.0), ("alert", None))
+        self.assertEqual(demand.demand_signal("ok", -3.2, 3.8), ("alert", None))
+
+    def test_either_alone_past_the_wider_line_is_a_watch(self):
+        self.assertEqual(demand.demand_signal("ok", -2.5, 0.0), ("watch", None))
+        self.assertEqual(demand.demand_signal("ok", 0.0, 2.5), ("watch", None))
+
+    def test_one_side_at_two_sd_is_nothing(self):
+        self.assertEqual(demand.demand_signal("ok", -2.29, 0.46), (None, None))
+        self.assertEqual(demand.demand_signal("ok", -1.94, 2.14), (None, None))
+
+    def test_strong_demand_is_never_flagged(self):
+        self.assertEqual(demand.demand_signal("ok", 3.5, -3.5), (None, None))
+
+    def test_a_row_whose_paths_disagree_is_not_scored(self):
+        self.assertEqual(
+            demand.demand_signal("mismatch", -3.0, 3.0), (None, "b2c_check_mismatch")
+        )
+
+    def test_a_missing_z_is_not_scored(self):
+        self.assertEqual(demand.demand_signal("ok", None, 3.0), (None, "not_scored"))
+        self.assertEqual(demand.demand_signal("ok", -3.0, None), (None, "not_scored"))
+
+    def test_every_scored_row_carries_its_signal(self):
+        rows = series("13-Week", [2.6, 2.5, 2.7, 2.4, 2.6, 2.5, 2.7, 2.4, 2.6, 1.0])
+        for r in rows:
+            r["b2c_check"] = "ok"
+        last = demand.attach_zscores(rows)[-1]
+        self.assertEqual(last.get("demand_signal"), "watch")  # cover collapsed
+        self.assertIn("demand_signal_reason", last)
+
+
 class Staleness(unittest.TestCase):
     """D-0101. More than 3 business days old is stale."""
 

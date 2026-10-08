@@ -112,3 +112,11 @@ def business_days_since(data_as_of: datetime.date, today: datetime.date) -> int:
 
 def is_stale(data_as_of: datetime.date, today: datetime.date) -> bool:
     return business_days_since(data_as_of, today) > STALE_BUSINESS_DAYS
+
+
+# D-0107. STUB - tests first.
+ALERT_B2C_Z = ALERT_DEALER_Z = WATCH_B2C_Z = WATCH_DEALER_Z = None
+
+
+def demand_signal(b2c_check, b2c_z, dealer_z):
+    return None, None
