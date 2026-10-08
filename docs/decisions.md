@@ -2951,6 +2951,8 @@ business days without one is a broken feed, not a quiet week.
 **Choice.** z-scores are shown as numbers with no colour coding. Owner ruling,
 2026-10-08: none until ruled. An unruled threshold is not an alert.
 
+*Superseded by `D-0107`, which rules the thresholds.*
+
 ### D-0103 - A "term" is the bill's term, or the coupon's original term; TIPS, FRNs and CMBs are never charted
 
 **Choice.** The term group used by the z-score window and the term filter:
@@ -3051,3 +3053,44 @@ make a real small-holder exit invisible.
 
 **Reversal condition.** A measured case of a genuine exit by a country whose
 peak was under $1bn.
+
+### D-0107 - Auction weak-demand alerts: low cover AND dealers left holding
+
+**Choice.** Supersedes `D-0102`. The server flags each auction with
+`demand_signal`, computed in `pipelines/auction_demand.py` from the `D-0099`
+z-scores. The panel shows the flag, and only a flagged row's z-scores take
+colour.
+
+| Signal | Rule | Fired, 2008-2026 |
+|---|---|---|
+| **alert** | bid-to-cover z ≤ −2 **and** dealer-share z ≥ +2 | 34 of 4,557 scored auctions: 1.9 a year |
+| **watch** | bid-to-cover z ≤ −2.5 **or** dealer-share z ≥ +2.5, if not an alert | 55: 3.0 a year (4.9 a year with alerts) |
+| none | everything else, including all strong demand | |
+
+- **Unscored rows:** a row is not scored when `b2c_check` is not `ok`, or
+  when either z-score is missing (fewer than 8 in the window). The reason goes
+  in `demand_signal_reason`.
+- **Owner ruling,** 2026-10-08, on the recommendation below.
+
+**Rejected.**
+- **Either test alone at 2 sd.** Bid-to-cover z ≤ −2 fired 7.0 times a year
+  and dealer z ≥ +2 fired 7.5. Each happens often without the other, so an
+  alert on one alone would soon be ignored.
+- **A two-sided signal.** Unusually strong demand is not a stress signal.
+  Colouring it would spend the reader's attention on good news.
+- **Colouring the z-scores by magnitude.** That is a heat map, not an alert,
+  and it puts colour on most rows.
+
+**What forced the call.** `D-0102` held colour back until thresholds were
+ruled, and the owner asked for a recommendation that works. The backtest ran
+over every scored auction in the ten charted terms, 2008-2026:
+- **On coupons the alert fired 3 times in 18 years.** Two of them, the 30-year
+  auctions of 2011-08-11 (the week after the S&P downgrade) and 2018-11-07,
+  were widely reported weak auctions.
+- **Over the last twelve months:** 6 alerts and 8 watches.
+- **On 2026-10-08, nothing is flagged.** The 5-year auction of 2026-09-23 came
+  closest (−1.94, +2.14).
+
+**Reversal condition.** Re-run the backtest if either rate drifts far from the
+figures above, for example once a full year of alerts shows two or more a month
+across the panel, or if a widely reported weak auction goes unflagged.

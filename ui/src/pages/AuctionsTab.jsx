@@ -57,6 +57,8 @@ export function AuctionsTab({ today }) {
   const termRows = list.data?.auctions ?? [];
   const rows = term ? termRows.slice(0, TABLE_LIMIT) : summary.data.terms;
   const stale = isStale(dataAsOf, now);
+  const alerts = rows.filter((r) => r.demand_signal === "alert").length;
+  const watches = rows.filter((r) => r.demand_signal === "watch").length;
 
   return (
     <div>
@@ -85,6 +87,9 @@ export function AuctionsTab({ today }) {
       <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "16px 0" }}>
         <div style={{ ...MONO, padding: "0 16px 12px", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
           {term ? `${term} AUCTIONS · MOST RECENT ${Math.min(TABLE_LIMIT, termRows.length)}` : "LATEST AUCTION PER TERM"}
+          <span data-testid="signal-count" style={{ marginLeft: 10, color: alerts ? "#FF4444" : watches ? "#E8C547" : "#3A4D5C" }}>
+            {alerts} alert{alerts === 1 ? "" : "s"} · {watches} watch{watches === 1 ? "" : "es"}
+          </span>
           <span style={{ marginLeft: 10, fontSize: 10, color: "#3A4D5C" }}>
             B2C excludes SOMA · z against the previous {summary.data.window_n} auctions of the same term (at least {summary.data.min_observations}) · hover a row for bidders
           </span>

@@ -27,6 +27,7 @@ function row(term, group, auction_date, over = {}) {
     dealer_z: 0.3, dealer_z_window: 26, dealer_z_reason: null,
     allocation_pct: 14.0, high_yield: null, high_discnt_rate: 3.68, high_investment_rate: 3.802,
     null_reasons: {},
+    demand_signal: null, demand_signal_reason: null,
     ...over,
   };
 }
@@ -37,8 +38,8 @@ const SUMMARY = {
   min_observations: 8,
   terms: [
     row("4W", "4-Week", "2026-10-08", { b2c_z: -2.29 }),
-    row("13W", "13-Week", "2026-10-05"),
-    row("26W", "26-Week", "2026-10-05"),
+    row("13W", "13-Week", "2026-10-05", { b2c_z: -2.4, dealer_z: 2.5, demand_signal: "alert" }),
+    row("26W", "26-Week", "2026-10-05", { dealer_z: 2.7, demand_signal: "watch" }),
     row("2Y", "2-Year", "2026-09-22", {
       b2c_recomputed: null, b2c_check: "unverifiable", b2c_z: null, b2c_z_reason: "value_missing",
       null_reasons: { b2c_recomputed: "soma_not_reported", b2c_check: "soma_not_reported" },
@@ -143,13 +144,21 @@ describe("the user can", () => {
     expect(screen.queryByTestId("stale-banner")).toBeNull();
   });
 
-  it("7. see no colour-coded alert while z-score thresholds are unruled (D-0102)", async () => {
+  it("7. see ALERT and WATCH on weak demand, and no colour on strong demand (D-0107)", async () => {
+    // D-0107 is the ruling D-0102 waited for: §8b-7 asked for no colour while
+    // thresholds were unruled, and now they are ruled.
     const rows = await open();
-    const z = (term) => within(rows.find((r) => r.dataset.term === term)).getByTestId("cell-b2c_z");
-    expect(z("4W").textContent).toContain("-2.29");
-    expect(z("10Y").textContent).toContain("+2.28");
-    expect(z("4W").style.color).toBe(z("10Y").style.color);
-    expect(z("4W").style.color).toBe(z("13W").style.color);
+    const byTerm = (term) => rows.find((r) => r.dataset.term === term);
+    expect(within(byTerm("13W")).getByLabelText(/demand alert/i).textContent).toMatch(/ALERT/);
+    expect(within(byTerm("26W")).getByLabelText(/demand watch/i).textContent).toMatch(/WATCH/);
+    for (const term of ["4W", "10Y", "2Y"]) {
+      expect(within(byTerm(term)).queryByLabelText(/demand (alert|watch)/i)).toBeNull();
+    }
+    const z = (term) => within(byTerm(term)).getByTestId("cell-b2c_z");
+    expect(z("4W").textContent).toContain("-2.29");      // one side at 2 sd: not flagged
+    expect(z("10Y").style.color).toBe(z("4W").style.color);   // strong demand: neutral
+    expect(z("13W").style.color).not.toBe(z("4W").style.color); // the alert's own z is coloured
+    expect(screen.getByTestId("signal-count").textContent).toMatch(/1 alert · 1 watch/);
     expect(screen.queryByRole("alert")).toBeNull();
   });
 });

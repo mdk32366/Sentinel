@@ -443,6 +443,8 @@ class AuctionRow(BaseModel):
     dealer_z: Optional[float] = None
     dealer_z_window: int
     dealer_z_reason: Optional[str] = None
+    demand_signal: Optional[str] = None  # "alert" | "watch" | None (D-0107)
+    demand_signal_reason: Optional[str] = None
     allocation_pct: Optional[float] = None
     high_yield: Optional[float] = None
     high_discnt_rate: Optional[float] = None
