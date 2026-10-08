@@ -3814,5 +3814,9 @@ almost certainly wrong in Treasury's file.
 
 **Consequence.** `SLV` has no current rows and a last holding of $93.8bn, so
 it is `below_threshold`. It is scored as nothing, and the coverage note says
-it "last reported $93.8bn". The figure is unsupported. Whether to delete the
-rows is an owner decision; not done.
+it "last reported $93.8bn". The figure is unsupported.
+
+**Fixed.** Owner ruling, 2026-10-08: delete. The 12 rows were removed from
+production that day, behind a precondition that refused anything but exactly
+those 12 (`docs/ddl/2026-10-08-remove-slv-tic-rows.sql`, which holds the
+backup). SLV is now `no_data`, which is what Table 3 says.
