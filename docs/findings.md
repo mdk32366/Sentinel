@@ -3717,3 +3717,35 @@ was issued. Voided 2026-10-08 under `D-0096`. Reserved permanently.
 
 **Guard.** D-0095 adds `us_m2` on `WM2NS` only (`period` week, `max_age_days` 55). CPI remains a sibling gap (out of scope unless Matt expands). Gates G4/G5/G-mut.
 
+### F-0111 - `mark_disposable` could not mark a fresh Postgres database, or run as documented
+
+**Claim.** `tools/mark_disposable.py` failed on every database that needed it.
+Two defects:
+1. It probed for the canary with `SELECT marker FROM canary` and swallowed the
+   error when the table was absent. Postgres aborts the transaction on any
+   error, so the `CREATE TABLE` that followed raised "current transaction is
+   aborted". Only a database that already had a canary could get past it.
+2. `python tools/mark_disposable.py`, the command in its own docstring, raised
+   `ModuleNotFoundError: No module named 'config'`. A script's `sys.path`
+   starts at `tools/`. `check_schema_drift.py` inserts the repo root and this
+   did not.
+
+**Artifact.** Run on 2026-10-08 against a new local Postgres 18 database,
+`sentinel_auction_backfill`, for the auction-demand backfill. Defect 2 hit
+first, then defect 1 with `PYTHONPATH=.` set. Traceback:
+`psycopg2.errors.InFailedSqlTransaction` on `CREATE TABLE IF NOT EXISTS canary`.
+
+**Sample size.** One database, and every fresh database by construction.
+
+**Why nothing caught it.** The suite runs on SQLite, which does not abort a
+transaction on error, so the swallowed probe was harmless there. Nothing in
+the suite ran the script.
+
+**Fixed.** The canary is read with `inspect(conn).has_table()`, which issues
+no statement that can fail, and the script inserts the repo root on `sys.path`.
+`tests/test_mark_disposable.py` runs the tool against SQLite made to refuse
+every statement after an error until rollback, as Postgres does, and runs the
+documented command as a subprocess. Before the fix: 4 of 5 red, with the same
+"current transaction is aborted" message. After: green, and the fixed tool
+marked `sentinel_auction_backfill` on real Postgres.
+
