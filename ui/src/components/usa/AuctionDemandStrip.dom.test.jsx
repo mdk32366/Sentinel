@@ -14,10 +14,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuctionDemandStrip } from "./AuctionDemandStrip";
 
 let payload;
+let regime;
 
 beforeEach(() => {
-  vi.stubGlobal("fetch", vi.fn(() => Promise.resolve({
-    ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(payload),
+  regime = { data_as_of: "2026-10-08", frequency: { count: 14, alerts: 6, watches: 8, band: "high",
+    window_days: 365, elevated_at: 8, high_at: 11, max_before: 11, record: true, history: [] }, drift: [] };
+  vi.stubGlobal("fetch", vi.fn((url) => Promise.resolve({
+    ok: true, status: 200, statusText: "OK",
+    json: () => Promise.resolve(String(url).includes("/auctions/regime") ? regime : payload),
   })));
 });
 
@@ -42,7 +46,7 @@ describe("the USA card shows auction demand", () => {
     payload = FLAGGED;
     render(<AuctionDemandStrip />);
     await screen.findByTestId("usa-auction-demand");
-    expect(String(fetch.mock.calls[0][0])).toContain("/auctions/signals?days=90");
+    expect(fetch.mock.calls.map((c) => String(c[0])).some((u) => u.includes("/auctions/signals?days=90"))).toBe(true);
   });
 
   it("counts alerts and watches and names the most recent signal", async () => {

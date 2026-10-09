@@ -202,3 +202,22 @@ def signal_board(rows, since):
         "by_term": by_term,
         "signals": flagged,
     }
+
+
+# D-0109 / D-0110. STUB - tests first.
+FREQUENCY_WINDOW_DAYS = FREQUENCY_ELEVATED = FREQUENCY_HIGH = None
+DRIFT_RATIO = DRIFT_RECENT_DAYS = DRIFT_BASELINE_DAYS = None
+
+
+def frequency_band(count):
+    return None
+
+
+def signal_frequency(rows, as_of):
+    return {"count": None, "alerts": None, "watches": None, "history": [{"month": None, "count": None}],
+            "max_before": None, "record": None}
+
+
+def cover_drift(rows):
+    return [{"term": None, "ratio": None, "median_52w": None, "median_5y": None,
+             "drifting": None, "reason": None}]

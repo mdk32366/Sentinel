@@ -74,6 +74,20 @@ const SIGNALS = {
   ],
 };
 
+const REGIME = {
+  data_as_of: "2026-10-08",
+  frequency: {
+    count: 14, alerts: 6, watches: 8, band: "high", window_days: 365,
+    elevated_at: 8, high_at: 11, max_before: 11, record: true,
+    history: [{ month: "2026-08", count: 13 }, { month: "2026-09", count: 14 }, { month: "2026-10", count: 14 }],
+  },
+  drift: ["4W", "8W", "13W", "17W", "26W", "52W", "2Y", "5Y", "10Y", "30Y"].map((term) => ({
+    term, ratio: term === "17W" ? null : term === "5Y" ? 0.84 : 1.0,
+    median_52w: 2.5, median_5y: 2.5, drifting: term === "5Y",
+    reason: term === "17W" ? "insufficient_history" : null,
+  })),
+};
+
 let requested;
 
 beforeEach(() => {
@@ -85,6 +99,7 @@ beforeEach(() => {
     if (u.includes("/auctions/summary")) body = SUMMARY;
     else if (u.includes("/auctions?term=26W")) body = LIST_26W;
     else if (u.includes("/auctions/signals")) body = { ...SIGNALS, days: Number(u.split("days=")[1]) };
+    else if (u.includes("/auctions/regime")) body = REGIME;
     else if (u.includes("/freshness")) body = { counts: {}, sources: [] };
     return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(body) });
   }));
@@ -219,3 +234,32 @@ describe("the user can also (D-0108)", () => {
     await waitFor(() => expect(requested.some((u) => u.includes("/auctions/signals?days=1095"))).toBe(true));
   });
 });
+
+describe("the user can read the regime (D-0109, D-0110)", () => {
+  it("11. see the 12-month signal count, its band, and that it is a record", async () => {
+    await open();
+    const panel = await screen.findByTestId("signal-frequency");
+    expect(within(panel).getByTestId("frequency-count").textContent).toBe("14");
+    expect(within(panel).getByTestId("frequency-band").textContent).toMatch(/HIGH/);
+    expect(panel.textContent).toMatch(/6 alerts · 8 watches/);
+    expect(panel.textContent).toMatch(/highest/i);
+  });
+
+  it("12. see which terms' cover is drifting below their five-year level", async () => {
+    await open();
+    await screen.findByTestId("signal-frequency");
+    expect(screen.getByTestId("drift-5Y").textContent).toMatch(/84%/);
+    expect(within(screen.getByTestId("drift-5Y")).getByLabelText(/drifting/i)).toBeTruthy();
+    expect(within(screen.getByTestId("drift-13W")).queryByLabelText(/drifting/i)).toBeNull();
+    expect(screen.getByTestId("drift-17W").textContent).toMatch(/—/);
+  });
+});
+
+describe("a link can open the Signals view (D-0109)", () => {
+  it("13. arrive from the USA card straight on Signals", async () => {
+    render(<AuctionsTab today={FRESH} initialView="signals" />);
+    await waitFor(() => expect(requested.some((u) => u.includes("/auctions/signals?days=365"))).toBe(true));
+    expect(screen.getByRole("button", { name: "Signals" }).style.color).toBe("rgb(200, 169, 110)");
+  });
+});
+

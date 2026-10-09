@@ -26,6 +26,18 @@ describe("G2: a missing or non-ISO key has no address", () => {
   }
 });
 
+describe("a view inside a tab (D-0109)", () => {
+  it("opens the Signals view on AUCTIONS", () => {
+    expect(parseRoute("#/auctions/signals")).toEqual({ tab: "AUCTIONS", iso: null, view: "signals" });
+  });
+
+  it("ignores a view the tab does not have", () => {
+    expect(parseRoute("#/auctions/bogus").view).toBeUndefined();
+    expect(parseRoute("#/holdings/signals").view).toBeUndefined();
+    expect(parseRoute("#/auctions").view).toBeUndefined();
+  });
+});
+
 describe("tabHref", () => {
   it("lower-cases the tab into a hash", () => {
     expect(tabHref("HOLDINGS")).toBe("#/holdings");
