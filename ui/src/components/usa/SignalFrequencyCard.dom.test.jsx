@@ -6,7 +6,7 @@
  * as its own card with a tool tip and a reference to the auctions signals UI
  * surface." The number of signals is the signal; this card carries it.
  */
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SignalFrequencyCard } from "./SignalFrequencyCard";
@@ -76,6 +76,33 @@ describe("the signal-frequency card", () => {
     const card = await screen.findByTestId("usa-signal-frequency");
     expect(card.querySelector("svg [data-series='count']")).not.toBeNull();
     expect(card.querySelectorAll("svg [data-band-line]")).toHaveLength(2);
+  });
+
+  it("explains each band line on hover", async () => {
+    regime = HIGH;
+    render(<SignalFrequencyCard />);
+    const card = await screen.findByTestId("usa-signal-frequency");
+    for (const [band, label, at] of [["elevated", "ELEVATED", "8"], ["high", "HIGH", "11"]]) {
+      const target = card.querySelector(`[data-band-tip='${band}']`);
+      expect(target, `${band} line has no hover target`).not.toBeNull();
+      expect(target.dataset.tip).toBe("yes");
+      fireEvent.mouseEnter(target);
+      const tip = await screen.findByRole("tooltip");
+      expect(tip.textContent).toContain(label);
+      expect(tip.textContent).toContain(`${at} signals`);
+      expect(tip.textContent).toMatch(/today: 14/i);
+      fireEvent.mouseLeave(target);
+    }
+  });
+
+  it("says which years reached the high line, from the history", async () => {
+    regime = HIGH;
+    render(<SignalFrequencyCard />);
+    const card = await screen.findByTestId("usa-signal-frequency");
+    fireEvent.mouseEnter(card.querySelector("[data-band-tip='high']"));
+    const tip = await screen.findByRole("tooltip");
+    expect(tip.textContent).toMatch(/2 months/);   // 2026-06 (12) and 2026-10 (14)
+    expect(tip.textContent).toContain("2026");
   });
 
   it("says plainly when the count is normal, and claims no record", async () => {
