@@ -151,10 +151,54 @@ def demand_signal(b2c_check, b2c_z, dealer_z):
     return None, None
 
 
-# D-0108. STUB - tests first.
+# ── D-0108: the signal leaderboard ──────────────────────────────────────────
+
 def weakness(b2c_z, dealer_z):
-    return 0.0
+    """How far both z-scores went the weak way: -(b2c z) + (dealer z).
+
+    The two quantities D-0107 already tests, added, so the ranking cannot
+    disagree with the alert about what "weak" means. None if either is missing.
+    """
+    if b2c_z is None or dealer_z is None:
+        return None
+    return round(-b2c_z + dealer_z, 2)
 
 
 def signal_board(rows, since):
-    return {"counts": {}, "by_term": [], "signals": []}
+    """Every flagged auction in a charted term since `since` (ISO date, or
+    None for all history): alerts first, then weakest first, then newest.
+
+    `rows` are scored rows (attach_zscores output, with `term`). Returns
+    counts, a per-term tally in display order, and the ranked signals.
+    """
+    flagged = [
+        dict(r, weakness=weakness(r.get("b2c_z"), r.get("dealer_z")))
+        for r in rows
+        if r.get("term") in CHARTED_TERMS
+        and r.get("demand_signal")
+        and (since is None or str(r["auction_date"]) >= since)
+    ]
+    flagged.sort(key=lambda r: str(r["auction_date"]), reverse=True)
+    flagged.sort(key=lambda r: (
+        0 if r["demand_signal"] == "alert" else 1,
+        -(r["weakness"] if r["weakness"] is not None else float("-inf")),
+    ))
+
+    by_term = []
+    for term in CHARTED_TERMS:
+        mine = [r for r in flagged if r["term"] == term]
+        by_term.append({
+            "term": term,
+            "alerts": sum(r["demand_signal"] == "alert" for r in mine),
+            "watches": sum(r["demand_signal"] == "watch" for r in mine),
+            "last_signal_date": max((str(r["auction_date"]) for r in mine), default=None),
+        })
+
+    return {
+        "counts": {
+            "alert": sum(r["demand_signal"] == "alert" for r in flagged),
+            "watch": sum(r["demand_signal"] == "watch" for r in flagged),
+        },
+        "by_term": by_term,
+        "signals": flagged,
+    }

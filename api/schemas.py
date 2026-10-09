@@ -452,6 +452,26 @@ class AuctionRow(BaseModel):
     null_reasons: dict
 
 
+class AuctionSignalRow(AuctionRow):
+    weakness: Optional[float] = None  # -(b2c z) + (dealer z), D-0108
+
+
+class AuctionTermTally(BaseModel):
+    term: str
+    alerts: int
+    watches: int
+    last_signal_date: Optional[str] = None
+
+
+class AuctionSignalsResponse(BaseModel):
+    data_as_of: Optional[str] = None
+    days: int
+    since: Optional[str] = None
+    counts: dict
+    by_term: List[AuctionTermTally]
+    signals: List[AuctionSignalRow]
+
+
 class AuctionListResponse(BaseModel):
     data_as_of: Optional[str] = None
     count: int

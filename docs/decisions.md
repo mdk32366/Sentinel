@@ -3094,3 +3094,34 @@ over every scored auction in the ten charted terms, 2008-2026:
 **Reversal condition.** Re-run the backtest if either rate drifts far from the
 figures above, for example once a full year of alerts shows two or more a month
 across the panel, or if a widely reported weak auction goes unflagged.
+
+### D-0108 - A weak-demand leaderboard on AUCTIONS, and the same signal shown on the USA card
+
+**Choice.** Owner request, 2026-10-08: "an alert leaderboard sort of surface
+on Auctions", and should it "reflect itself on the United States baseball
+card".
+
+- **Leaderboard.** A Signals view on AUCTIONS lists every auction `D-0107`
+  flagged in a window: 90 days, 1 year, 3 years, or since 2008. It ranks
+  alerts first, then weakest first, then newest, with a per-term tally above
+  it. Served by `GET /api/auctions/signals?days=`.
+- **Weakness.** `weakness = -(bid-to-cover z) + (dealer-share z)`: the same
+  two quantities the alert tests, added, so the ranking cannot disagree with
+  the alert about what "weak" means. The server ranks; the panel keeps that
+  order until the reader sorts a column.
+- **USA card.** A strip next to the Foreign Official strip: the last 90 days'
+  alerts and watches, the most recent signal, and a link to AUCTIONS.
+  **Shown, not scored.** The composite excludes the US, and whether auction
+  demand feeds any score is an owner ruling not made (ORDER auction-demand §11).
+
+**Rejected.** (a) Ranking by date alone. A leaderboard should put the worst
+auction at the top, not the latest. (b) Ranking by bid-to-cover z alone. That
+is one half of the alert, and it would rank a cover miss the dealers absorbed
+easily above a joint failure. (c) Putting the signal into the USA composite
+score now, which §11 reserves for the owner.
+
+**What forced the call.** Production backfill, 2026-10-08: 34 alerts and 55
+watches since 2008; 6 and 8 in the last year; 1 and 1 in the last 90 days
+(8W 2026-07-23 alert, 4W 2026-09-24 watch). The worst since 2008 is the 26W
+of 2025-12-29 (weakness 7.77: bid-to-cover z -3.01, dealer z +4.76).
+

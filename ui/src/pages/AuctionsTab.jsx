@@ -5,6 +5,7 @@ import { AuctionChart } from "../components/auctions/AuctionChart";
 import { AuctionTable } from "../components/auctions/AuctionTable";
 import { DataAsOf } from "../components/DataAsOf";
 import { DataConfidence } from "../components/DataConfidence";
+import { InfoTip } from "../components/InfoTip";
 import { LoadFailure } from "../components/LoadFailure";
 import { CHARTED_TERMS, STALE_BUSINESS_DAYS, businessDaysSince, isStale } from "../lib/auctions";
 
@@ -38,12 +39,49 @@ function TermButton({ label, active, onClick }) {
   );
 }
 
+// D-0108. Leaderboard windows: label -> days (0 = all history since 2008).
+const WINDOWS = [["90D", 90], ["1Y", 365], ["3Y", 1095], ["Since 2008", 0]];
+
+function SignalTally({ byTerm }) {
+  const tiles = byTerm.map((t) => ({
+    label: t.term,
+    val: t.alerts || t.watches
+      ? [t.alerts ? `${t.alerts} alert${t.alerts === 1 ? "" : "s"}` : null,
+         t.watches ? `${t.watches} watch${t.watches === 1 ? "" : "es"}` : null].filter(Boolean).join(" · ")
+      : "none",
+    tip: t.last_signal_date
+      ? `Weak-demand signals at ${t.term} auctions in this window. The most recent was on ${t.last_signal_date}.`
+      : `No ${t.term} auction was flagged in this window.`,
+    color: t.alerts ? "#FF4444" : t.watches ? "#E8C547" : "#3A4D5C",
+  }));
+  return (
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+      {tiles.map((s) => (
+        <div key={s.label} data-testid={`tally-${s.label}`} style={{
+          ...MONO, flex: "1 1 90px", background: "#0F1923", border: "1px solid #1A2530",
+          borderTop: `2px solid ${s.color}`, borderRadius: 2, padding: "8px 12px",
+        }}>
+          <InfoTip as="div" title={s.label} tip={s.tip} placement="below" style={{ fontSize: 10, color: "#5A6878", marginBottom: 4 }}>
+            <span style={{ borderBottom: "1px dashed #2A3D50" }}>{s.label}</span>
+          </InfoTip>
+          <div style={{ fontSize: 12, color: s.color === "#3A4D5C" ? "#3A4D5C" : s.color }}>{s.val}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function AuctionsTab({ today }) {
   const now = today ?? new Date();
-  const [term, setTerm] = useState(null);
+  // view: "latest", a charted term label ("26W"), or "signals" (D-0108).
+  const [view, setView] = useState("latest");
+  const [days, setDays] = useState(365);
+  const term = CHARTED_TERMS.includes(view) ? view : null;
+  const signals = view === "signals";
 
   const summary = useApiResource("/auctions/summary");
   const list = useApiResource(term ? `/auctions?term=${term}` : null, { enabled: Boolean(term) });
+  const board = useApiResource(signals ? `/auctions/signals?days=${days}` : null, { enabled: signals });
 
   if (summary.loading) {
     return <div style={{ ...MONO, display: "flex", alignItems: "center", justifyContent: "center", height: 300, fontSize: 13, color: "#3A4D5C" }}>loading auctions...</div>;
@@ -55,10 +93,17 @@ export function AuctionsTab({ today }) {
 
   const dataAsOf = summary.data.data_as_of;
   const termRows = list.data?.auctions ?? [];
-  const rows = term ? termRows.slice(0, TABLE_LIMIT) : summary.data.terms;
+  const rows = signals ? (board.data?.signals ?? [])
+    : term ? termRows.slice(0, TABLE_LIMIT) : summary.data.terms;
   const stale = isStale(dataAsOf, now);
   const alerts = rows.filter((r) => r.demand_signal === "alert").length;
   const watches = rows.filter((r) => r.demand_signal === "watch").length;
+  const loading = (term && list.loading) || (signals && board.loading);
+  const windowLabel = WINDOWS.find(([, d]) => d === days)?.[0];
+
+  const heading = signals
+    ? `WEAK-DEMAND SIGNALS · ${windowLabel === "Since 2008" ? "SINCE 2008" : `LAST ${windowLabel}`} · ALERTS FIRST, WEAKEST FIRST`
+    : term ? `${term} AUCTIONS · MOST RECENT ${Math.min(TABLE_LIMIT, termRows.length)}` : "LATEST AUCTION PER TERM";
 
   return (
     <div>
@@ -75,18 +120,30 @@ export function AuctionsTab({ today }) {
       )}
 
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
-        <TermButton label="Latest" active={term === null} onClick={() => setTerm(null)} />
+        <TermButton label="Latest" active={view === "latest"} onClick={() => setView("latest")} />
+        <TermButton label="Signals" active={signals} onClick={() => setView("signals")} />
+        <span style={{ width: 8 }} />
         {CHARTED_TERMS.map((t) => (
-          <TermButton key={t} label={t} active={term === t} onClick={() => setTerm(t)} />
+          <TermButton key={t} label={t} active={view === t} onClick={() => setView(t)} />
         ))}
       </div>
+
+      {signals && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+          {WINDOWS.map(([label, d]) => (
+            <TermButton key={label} label={label} active={days === d} onClick={() => setDays(d)} />
+          ))}
+        </div>
+      )}
+      {signals && board.error && <LoadFailure what="auction signals" error={board.error} />}
+      {signals && board.data && <SignalTally byTerm={board.data.by_term} />}
 
       {term && list.error && <LoadFailure what={`${term} auctions`} error={list.error} />}
       {term && !list.loading && !list.error && <AuctionChart term={term} rows={termRows} />}
 
       <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "16px 0" }}>
         <div style={{ ...MONO, padding: "0 16px 12px", fontSize: 12, color: "#8A9BAC", letterSpacing: "0.1em" }}>
-          {term ? `${term} AUCTIONS · MOST RECENT ${Math.min(TABLE_LIMIT, termRows.length)}` : "LATEST AUCTION PER TERM"}
+          {heading}
           <span data-testid="signal-count" style={{ marginLeft: 10, color: alerts ? "#FF4444" : watches ? "#E8C547" : "#3A4D5C" }}>
             {alerts} alert{alerts === 1 ? "" : "s"} · {watches} watch{watches === 1 ? "" : "es"}
           </span>
@@ -94,9 +151,11 @@ export function AuctionsTab({ today }) {
             B2C excludes SOMA · z against the previous {summary.data.window_n} auctions of the same term (at least {summary.data.min_observations}) · hover a row for bidders
           </span>
         </div>
-        {term && list.loading
-          ? <div style={{ ...MONO, padding: 16, fontSize: 12, color: "#3A4D5C" }}>loading {term}...</div>
-          : <AuctionTable rows={rows} />}
+        {loading
+          ? <div style={{ ...MONO, padding: 16, fontSize: 12, color: "#3A4D5C" }}>loading...</div>
+          : signals && rows.length === 0
+            ? <div style={{ ...MONO, padding: 16, fontSize: 12, color: "#5A6878" }}>No auction was flagged in this window.</div>
+            : <AuctionTable key={view} rows={rows} withWeakness={signals} initialSort={signals ? { key: null } : undefined} />}
       </div>
 
       <DataAsOf asOf={dataAsOf} label="Latest auction" source="US Treasury, Fiscal Data auctions_query" />

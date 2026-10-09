@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import { useApiResource } from "../hooks/useApiResource";
 import { ForeignOfficialStrip } from "../components/ForeignOfficialStrip";
+import { AuctionDemandStrip } from "../components/usa/AuctionDemandStrip";
 
 import { latestValue, yoyPercent, yoySeries } from "../lib/usaSeries";
 import { buildYieldSeries } from "../lib/yieldSeries";
@@ -61,6 +62,10 @@ export function USADashboard() {
       {/* D-0086. The evidence for the sentence above: it is the issuer's page,
           and whether central banks are still financing it is the question. */}
       <ForeignOfficialStrip signal={composite?.summary?.foreign_official} />
+
+      {/* D-0108. The same question from the primary market: is demand at
+          Treasury's own auctions holding up? Shown, not scored. */}
+      <AuctionDemandStrip />
 
       {/* Range */}
       <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>

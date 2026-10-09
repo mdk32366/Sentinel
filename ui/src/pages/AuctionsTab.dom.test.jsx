@@ -84,6 +84,7 @@ beforeEach(() => {
     let body = {};
     if (u.includes("/auctions/summary")) body = SUMMARY;
     else if (u.includes("/auctions?term=26W")) body = LIST_26W;
+    else if (u.includes("/auctions/signals")) body = { ...SIGNALS, days: Number(u.split("days=")[1]) };
     else if (u.includes("/freshness")) body = { counts: {}, sources: [] };
     return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(body) });
   }));
