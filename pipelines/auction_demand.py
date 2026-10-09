@@ -149,3 +149,12 @@ def demand_signal(b2c_check, b2c_z, dealer_z):
     if b2c_z <= WATCH_B2C_Z or dealer_z >= WATCH_DEALER_Z:
         return "watch", None
     return None, None
+
+
+# D-0108. STUB - tests first.
+def weakness(b2c_z, dealer_z):
+    return 0.0
+
+
+def signal_board(rows, since):
+    return {"counts": {}, "by_term": [], "signals": []}
