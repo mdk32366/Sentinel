@@ -9,6 +9,7 @@ Read time rather than stored: ~6,300 rows, and a stored z-score is stale the
 moment a result is revised. The recomputed bid-to-cover is the input, not the
 reported one, so the derivation is ours and auditable (§2).
 """
+import bisect
 import datetime
 import statistics
 
@@ -202,3 +203,126 @@ def signal_board(rows, since):
         "by_term": by_term,
         "signals": flagged,
     }
+
+
+# ── D-0109: the number of signals is the signal ─────────────────────────────
+#
+# One weak auction is noise; a run of them is a regime. The trailing 12-month
+# count of D-0107 alerts and watches across the ten charted terms, banded
+# against its own history. Measured over 209 month-ends, 2009-06 to 2026-10:
+# median 4, 80th percentile 8, 95th percentile 10, maximum 14.
+FREQUENCY_WINDOW_DAYS = 365
+FREQUENCY_ELEVATED = 8   # top 20% of month-ends
+FREQUENCY_HIGH = 11      # top 3%: only the 2019 repo-stress peak and 2026
+
+
+def frequency_band(count):
+    if count >= FREQUENCY_HIGH:
+        return "high"
+    if count >= FREQUENCY_ELEVATED:
+        return "elevated"
+    return "normal"
+
+
+def _day(value):
+    return value if isinstance(value, datetime.date) else datetime.date.fromisoformat(str(value)[:10])
+
+
+def _month_end(year, month):
+    nxt = datetime.date(year + (month == 12), month % 12 + 1, 1)
+    return nxt - datetime.timedelta(days=1)
+
+
+def signal_frequency(rows, as_of):
+    """The trailing 12-month signal count at `as_of`, its band, its monthly
+    history, and whether it beats every month-end before this window began.
+
+    `rows` are scored rows (with `term`). History starts one full window
+    after the first auction that could be scored, so every point counts a
+    whole year."""
+    as_of = _day(as_of)
+    charted = [r for r in rows if r.get("term") in CHARTED_TERMS]
+    scorable = [_day(r["auction_date"]) for r in charted
+                if r.get("b2c_z") is not None and r.get("dealer_z") is not None]
+    flagged = sorted((_day(r["auction_date"]), r["demand_signal"])
+                     for r in charted if r.get("demand_signal"))
+    days = [d for d, _ in flagged]
+    window = datetime.timedelta(days=FREQUENCY_WINDOW_DAYS)
+
+    def count_at(end):
+        return bisect.bisect_right(days, end) - bisect.bisect_right(days, end - window)
+
+    current = [s for d, s in flagged if as_of - window < d <= as_of]
+    history = []
+    if scorable:
+        start = min(scorable) + window
+        y, m = start.year, start.month
+        while (y, m) <= (as_of.year, as_of.month):
+            end = min(_month_end(y, m), as_of)
+            history.append({"month": f"{y}-{m:02d}", "count": count_at(end), "end": end})
+            m += 1
+            if m == 13:
+                y, m = y + 1, 1
+    earlier = [h["count"] for h in history if h["end"] <= as_of - window]
+    max_before = max(earlier) if earlier else None
+    count = len(current)
+    return {
+        "count": count,
+        "alerts": current.count("alert"),
+        "watches": current.count("watch"),
+        "band": frequency_band(count),
+        "window_days": FREQUENCY_WINDOW_DAYS,
+        "elevated_at": FREQUENCY_ELEVATED,
+        "high_at": FREQUENCY_HIGH,
+        "max_before": max_before,
+        "record": max_before is not None and count > max_before,
+        "history": [{"month": h["month"], "count": h["count"]} for h in history],
+    }
+
+
+# ── D-0110: the slow drift the 26-auction window cannot see ─────────────────
+#
+# Each auction is scored against the 26 before it, so a decline that takes
+# years becomes the baseline and never trips D-0107. This compares each
+# term's 52-week median cover with its own 5-year median. At 85% or less -
+# about the 10th percentile of that ratio's history - the term is drifting.
+# Historically it flagged the 2015-2018 slide in bill cover as QE ended.
+DRIFT_RATIO = 0.85
+DRIFT_RECENT_DAYS = 364
+DRIFT_BASELINE_DAYS = 5 * 365
+DRIFT_MIN_RECENT = 6
+
+
+def cover_drift(rows):
+    """Per charted term, in display order: the 52-week and 5-year median of
+    Treasury's reported bid-to-cover at its latest auction, their ratio, and
+    whether it is drifting. A term without the history gets no ratio."""
+    by_term = {}
+    for r in rows:
+        if r.get("term") in CHARTED_TERMS and r.get("b2c_reported") is not None:
+            by_term.setdefault(r["term"], []).append((_day(r["auction_date"]), float(r["b2c_reported"])))
+    out = []
+    for term in CHARTED_TERMS:
+        series = sorted(by_term.get(term, []))
+        row = {"term": term, "ratio": None, "median_52w": None, "median_5y": None,
+               "drifting": False, "reason": None}
+        if not series:
+            row["reason"] = "no_auctions"
+            out.append(row)
+            continue
+        last = series[-1][0]
+        if series[0][0] > last - datetime.timedelta(days=DRIFT_BASELINE_DAYS):
+            row["reason"] = "insufficient_history"
+            out.append(row)
+            continue
+        recent = [b for d, b in series if d > last - datetime.timedelta(days=DRIFT_RECENT_DAYS)]
+        base = [b for d, b in series if d > last - datetime.timedelta(days=DRIFT_BASELINE_DAYS)]
+        if len(recent) < DRIFT_MIN_RECENT:
+            row["reason"] = "insufficient_recent"
+            out.append(row)
+            continue
+        m52, m5 = statistics.median(recent), statistics.median(base)
+        ratio = m52 / m5
+        row.update(median_52w=m52, median_5y=m5, ratio=ratio, drifting=ratio <= DRIFT_RATIO)
+        out.append(row)
+    return out

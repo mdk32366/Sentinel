@@ -3,6 +3,8 @@ import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
 import { AuctionChart } from "../components/auctions/AuctionChart";
 import { AuctionTable } from "../components/auctions/AuctionTable";
+import { FrequencyChart } from "../components/auctions/FrequencyChart";
+import { BAND, frequencyContext } from "../lib/auctions";
 import { DataAsOf } from "../components/DataAsOf";
 import { DataConfidence } from "../components/DataConfidence";
 import { InfoTip } from "../components/InfoTip";
@@ -74,10 +76,66 @@ function SignalTally({ byTerm }) {
   );
 }
 
-export function AuctionsTab({ today }) {
+const fmtRatio = (r) => (r == null ? "—" : `${Math.round(r * 100)}%`);
+
+function RegimePanel() {
+  const { data } = useApiResource("/auctions/regime");
+  if (!data?.frequency) return null;
+  const f = data.frequency;
+  const band = BAND[f.band] ?? BAND.normal;
+  const drift = (data.drift ?? []).map((d) => ({
+    label: d.term,
+    val: fmtRatio(d.ratio),
+    drifting: d.drifting,
+    tip: d.ratio == null
+      ? `No ratio: ${d.term} does not yet have five years of auctions.`
+      : `${d.term}: median bid-to-cover over the last 52 weeks is ${d.median_52w.toFixed(2)}, against ${d.median_5y.toFixed(2)} over five years. Drifting at 85% or less (D-0110).`,
+  }));
+  return (
+    <div data-testid="signal-frequency" style={{
+      ...MONO, background: "#0A1520", border: "1px solid #1A2530", borderLeft: `3px solid ${band.color}`,
+      borderRadius: 2, padding: "14px 18px", marginBottom: 16, display: "grid", gap: 10,
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 14, flexWrap: "wrap" }}>
+        <InfoTip as="span" title="Signal frequency" placement="below"
+          tip={`D-0109: weak-demand signals (D-0107 alerts and watches) across the ten charted terms in the last ${f.window_days} days. One weak auction is noise; a run of them is a regime. ELEVATED at ${f.elevated_at} or more, the top fifth of months since 2009; HIGH at ${f.high_at} or more, the top 3%.`}
+          style={{ fontSize: 11, color: "#8A9BAC", letterSpacing: "0.1em" }}>
+          <span style={{ borderBottom: "1px dashed #2A3D50" }}>SIGNAL FREQUENCY · 12 MONTHS</span>
+        </InfoTip>
+        <span data-testid="frequency-count" style={{ fontSize: 28, fontWeight: 700, color: band.color }}>{f.count}</span>
+        <span data-testid="frequency-band" style={{
+          fontSize: 10, color: band.color, border: `1px solid ${band.color}66`, background: `${band.color}14`,
+          borderRadius: 2, padding: "1px 6px", letterSpacing: "0.08em",
+        }}>{band.label}</span>
+        <span style={{ fontSize: 11, color: "#8A9BAC" }}>
+          {f.alerts} alert{f.alerts === 1 ? "" : "s"} · {f.watches} watch{f.watches === 1 ? "" : "es"}
+        </span>
+        <span style={{ fontSize: 11, color: "#5A6878" }}>{frequencyContext(f)}</span>
+      </div>
+      <FrequencyChart frequency={f} />
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(10, minmax(0, 1fr))", gap: 6 }}>
+        {drift.map((d) => (
+          <div key={d.label} data-testid={`drift-${d.label}`} style={{ minWidth: 0, fontSize: 11 }}>
+            <InfoTip as="div" title={`${d.label} cover drift`} tip={d.tip} placement="below" style={{ color: "#5A6878", fontSize: 10 }}>
+              <span style={{ borderBottom: "1px dashed #2A3D50" }}>{d.label}</span>
+            </InfoTip>
+            <span style={{ color: d.drifting ? "#E8C547" : "#8A9BAC" }}>{d.val}</span>
+            {d.drifting && <span aria-label="drifting" style={{ marginLeft: 4, color: "#E8C547" }}>↓</span>}
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 10, color: "#3A4D5C" }}>
+        Row above: each term&apos;s 52-week median cover as a share of its 5-year median (D-0110). The z-scores cannot see a slow decline; this can.
+      </div>
+    </div>
+  );
+}
+
+export function AuctionsTab({ today, initialView }) {
   const now = today ?? new Date();
   // view: "latest", a charted term label ("26W"), or "signals" (D-0108).
-  const [view, setView] = useState("latest");
+  // `initialView` comes from the address: #/auctions/signals (D-0109).
+  const [view, setView] = useState(initialView === "signals" ? "signals" : "latest");
   const [days, setDays] = useState(365);
   const term = CHARTED_TERMS.includes(view) ? view : null;
   const signals = view === "signals";
@@ -111,6 +169,7 @@ export function AuctionsTab({ today }) {
   return (
     <div>
       <DataConfidence sourceKeys={["treasury_auctions"]} />
+      <RegimePanel />
 
       {stale && (
         <div data-testid="stale-banner" style={{

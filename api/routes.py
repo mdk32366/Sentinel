@@ -1492,6 +1492,7 @@ from pipelines import auction_demand  # noqa: E402
 from api.schemas import (  # noqa: E402
     AuctionDetailResponse,
     AuctionListResponse,
+    AuctionRegimeResponse,
     AuctionSignalsResponse,
     AuctionSummaryResponse,
 )
@@ -1609,6 +1610,19 @@ async def get_auction_signals(days: int = Query(365), db: Session = Depends(get_
         since = (datetime.fromisoformat(data_as_of) - timedelta(days=days)).date().isoformat()
     board = auction_demand.signal_board(scored, since)
     return {"data_as_of": data_as_of, "days": days, "since": since, **board}
+
+
+@router.get("/auctions/regime", response_model=AuctionRegimeResponse)
+async def get_auction_regime(db: Session = Depends(get_db)):
+    """The number of signals is the signal (D-0109), and the slow drift the
+    z-scores cannot see (D-0110)."""
+    scored, data_as_of, _ = _scored_auctions(db)
+    as_of = data_as_of or datetime.utcnow().date().isoformat()
+    return {
+        "data_as_of": data_as_of,
+        "frequency": auction_demand.signal_frequency(scored, as_of),
+        "drift": auction_demand.cover_drift(scored),
+    }
 
 
 @router.get("/auctions/{cusip}/{auction_date}", response_model=AuctionDetailResponse)

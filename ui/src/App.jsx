@@ -32,7 +32,7 @@ export default function App() {
   // D-0091: the open tab and the country card live in the URL hash
   // (`#/holdings`, `#/country/RUS`), so a card has an address that can be
   // linked, refreshed, opened in a new tab and walked with Back.
-  const { tab, iso: countryIso } = useHashRoute();
+  const { tab, iso: countryIso, view } = useHashRoute();
   const [activeMetrics, setActiveMetrics] = useState(["DGS10", "DGS2", "DFF", "DCOILWTICO"]);
   const [range, setRange] = useState(RANGES[1]);
   const [normalized, setNormalized] = useState(false);
@@ -179,7 +179,7 @@ export default function App() {
         {tab === "GOLD" && <GoldReservesTab latestAll={latest} />}
         {tab === "COMPOSITE" && <CompositeTab />}
         {tab === "CDS" && <CDSTab />}
-        {tab === "AUCTIONS" && <AuctionsTab />}
+        {tab === "AUCTIONS" && <AuctionsTab key={view ?? "latest"} initialView={view} />}
         {tab === "COUNTRY" && (
           <CountryTab initialIso={countryIso} latestAll={latest} />
         )}

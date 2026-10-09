@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useApiResource } from "../hooks/useApiResource";
 import { ForeignOfficialStrip } from "../components/ForeignOfficialStrip";
 import { AuctionDemandStrip } from "../components/usa/AuctionDemandStrip";
+import { SignalFrequencyCard } from "../components/usa/SignalFrequencyCard";
 
 import { latestValue, yoyPercent, yoySeries } from "../lib/usaSeries";
 import { buildYieldSeries } from "../lib/yieldSeries";
@@ -66,6 +67,10 @@ export function USADashboard() {
       {/* D-0108. The same question from the primary market: is demand at
           Treasury's own auctions holding up? Shown, not scored. */}
       <AuctionDemandStrip />
+
+      {/* D-0109. Spikes in that signal, as a card of their own: the count is
+          the signal. Links to AUCTIONS -> Signals. Shown, not scored. */}
+      <SignalFrequencyCard />
 
       {/* Range */}
       <div style={{ display: "flex", gap: 6, marginBottom: 20 }}>

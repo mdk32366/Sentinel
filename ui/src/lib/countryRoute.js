@@ -50,6 +50,15 @@ export function tabHref(tab) {
  * rather than an empty card. The route segment is the one place input is
  * upper-cased: it is typed by people, not produced by a payload.
  */
+// D-0109. Views a tab can be opened on directly: `#/auctions/signals` is the
+// address the USA card's signal-frequency card links to.
+const TAB_VIEWS = { AUCTIONS: ["signals"] };
+
+/** `#/<tab>/<view>` for a view a tab supports. */
+export function viewHref(tab, view) {
+  return `${tabHref(tab)}/${view}`;
+}
+
 export function parseRoute(hash) {
   const path = String(hash ?? "").replace(/^#\/?/, "");
   const [head = "", rest = ""] = path.split("/");
@@ -59,7 +68,11 @@ export function parseRoute(hash) {
     const candidate = safeDecode(rest).toUpperCase();
     return { tab: "COUNTRY", iso: isCountryKey(candidate) ? candidate : null };
   }
-  if (TABS.includes(segment)) return { tab: segment, iso: null };
+  if (TABS.includes(segment)) {
+    const candidate = safeDecode(rest).toLowerCase();
+    const view = TAB_VIEWS[segment]?.includes(candidate) ? candidate : undefined;
+    return { tab: segment, iso: null, view };
+  }
   return { tab: "MARKETS", iso: null };
 }
 

@@ -3125,3 +3125,57 @@ watches since 2008; 6 and 8 in the last year; 1 and 1 in the last 90 days
 (8W 2026-07-23 alert, 4W 2026-09-24 watch). The worst since 2008 is the 26W
 of 2025-12-29 (weakness 7.77: bid-to-cover z -3.01, dealer z +4.76).
 
+### D-0109 - The number of signals is the signal: a 12-month count of weak auctions, banded, on AUCTIONS and on the USA card
+
+**Choice.** Owner ruling, 2026-10-08: "The number of signals is the signal."
+- **The measure.** `auction_demand.signal_frequency`: D-0107 alerts and
+  watches across the ten charted terms in the trailing 365 days, with its
+  month-end history.
+- **The bands,** set from that history: **normal** below 8, **elevated** at 8
+  or more (the top 20% of month-ends since 2009), **high** at 11 or more (the
+  top 3%).
+- **The record test.** The count is a **record** when it beats every month-end
+  that ended before the current window began, so a run is compared with
+  earlier episodes and not with its own build-up.
+- **Where it shows.** Served by `GET /api/auctions/regime`, and shown as a
+  panel at the top of AUCTIONS. On the USA card it is a card of its own, with
+  a tooltip and a link to `#/auctions/signals` (owner, 2026-10-08), which
+  opens AUCTIONS on Signals. Shown, not scored (ORDER auction-demand §11).
+
+**Rejected.** (a) More single-auction alerts at lower thresholds: noisier, and
+still blind to a run. (b) Weighting alerts above watches. The count as it
+stands already separates the regimes; weighting adds a parameter with no
+measured gain. (c) Calendar-year counts, which reset every January and hide a
+run that spans the turn of the year.
+
+**What forced the call.** The 2001-2026 analysis: monthly signal counts are
+overdispersed 1.63x against random arrival (chi-square about 8.8 sd), so
+signals come in runs. Over 209 month-ends, 2009-06 to 2026-10, the 12-month
+count had a median of 4, an 80th percentile of 8, a 95th percentile of 10 and a
+maximum of 14. On 2026-10-08 it is **14, high, a record** over the 2019
+repo-stress peak of 11. The only other months at 11 or more were in 2019.
+
+### D-0110 - Cover drift: each term's 52-week median bid-to-cover against its own five years
+
+**Choice.** `auction_demand.cover_drift`: for each charted term at its latest
+auction, the median of Treasury's reported bid-to-cover over the last 52 weeks
+divided by its median over 5 years. At **85% or less** the term is
+**drifting**. That is about the 10th percentile of the ratio's history since
+2013. A term with less than five years of auctions, or fewer than 6 in the
+last year, gets no ratio, with the reason. Served with D-0109 by
+`/api/auctions/regime` and shown as a row under the frequency panel on
+AUCTIONS.
+
+**Rejected.** (a) Lengthening the D-0099 window. That would blunt the
+single-auction alert it exists for. (b) A fixed cover level, such as 2.0.
+Terms differ too much (bills ran near 4.6 while coupons ran near 2.5), so one
+line would be wrong for most of them.
+
+**What forced the call.** The D-0099 window scores each auction against the 26
+before it, so a decline over years becomes the baseline and never trips D-0107.
+Historically the 85% line flagged the 2015-2018 slide in bill cover as QE
+ended, and the 2016-2017 2-year. On 2026-10-08 no term is drifting: every
+ratio is 98-109%, and 17W, auctioned since 2022, has no ratio yet. The two
+measures disagree today on purpose. Levels are steady, while the number of
+weak auctions is the highest on record.
+

@@ -524,6 +524,139 @@ class SignalBoardEndpoint(unittest.TestCase):
         self.assertEqual(self.client.get("/api/auctions/signals?days=17").status_code, 400)
 
 
+def signal_rows(dates, signal="alert", term="13W", group="13-Week"):
+    return [
+        {"term": term, "term_group": group, "auction_date": d, "cusip": f"{term}{d}",
+         "demand_signal": signal, "b2c_z": -2.5, "dealer_z": 2.5, "b2c_reported": 2.5}
+        for d in dates
+    ]
+
+
+def quiet_rows(start, end, term="13W", group="13-Week", b2c=2.5, step=7):
+    out, d = [], datetime.date.fromisoformat(start)
+    stop = datetime.date.fromisoformat(end)
+    while d <= stop:
+        out.append({"term": term, "term_group": group, "auction_date": d.isoformat(),
+                    "cusip": f"{term}{d}", "demand_signal": None, "b2c_z": 0.0,
+                    "dealer_z": 0.0, "b2c_reported": b2c})
+        d += datetime.timedelta(days=step)
+    return out
+
+
+class SignalFrequency(unittest.TestCase):
+    """D-0109. The number of signals is the signal: the trailing 12-month
+    count of D-0107 alerts and watches, banded against its own history.
+
+    Measured 2009-06 to 2026-10 over 209 month-ends: median 4, 80th
+    percentile 8, 95th percentile 10, maximum 14 (2026-09 and 2026-10)."""
+
+    def test_the_rulings_are_the_ones_logged(self):
+        self.assertEqual(demand.FREQUENCY_WINDOW_DAYS, 365)
+        self.assertEqual(demand.FREQUENCY_ELEVATED, 8)
+        self.assertEqual(demand.FREQUENCY_HIGH, 11)
+
+    def test_it_counts_alerts_and_watches_in_the_trailing_year(self):
+        rows = (quiet_rows("2020-01-06", "2026-10-05")
+                + signal_rows(["2025-10-01"])                     # 372 days before: out
+                + signal_rows(["2025-11-03", "2026-02-02"])
+                + signal_rows(["2026-06-01"], signal="watch"))
+        f = demand.signal_frequency(rows, "2026-10-08")
+        self.assertEqual((f["count"], f["alerts"], f["watches"]), (3, 2, 1))
+
+    def test_the_bands(self):
+        self.assertEqual(demand.frequency_band(7), "normal")
+        self.assertEqual(demand.frequency_band(8), "elevated")
+        self.assertEqual(demand.frequency_band(10), "elevated")
+        self.assertEqual(demand.frequency_band(11), "high")
+
+    def test_uncharted_rows_do_not_count(self):
+        rows = quiet_rows("2020-01-06", "2026-10-05") + signal_rows(
+            ["2026-05-01"], term=None, group="TIPS 10-Year")
+        self.assertEqual(demand.signal_frequency(rows, "2026-10-08")["count"], 0)
+
+    def test_history_is_the_month_end_count_and_says_where_today_sits(self):
+        rows = (quiet_rows("2018-01-01", "2026-10-05")
+                + signal_rows(["2019-03-04", "2019-05-06"])          # a past peak of 2
+                + signal_rows(["2026-01-05", "2026-04-06", "2026-08-03"]))  # today: 3
+        f = demand.signal_frequency(rows, "2026-10-08")
+        months = [h["month"] for h in f["history"]]
+        self.assertEqual(months[0], "2019-01")                     # one full year after data begins
+        self.assertEqual(months[-1], "2026-10")
+        self.assertEqual(f["history"][-1]["count"], 3)
+        self.assertEqual(f["max_before"], 2)                       # the most any earlier month saw
+        self.assertTrue(f["record"])
+
+    def test_a_count_below_an_earlier_peak_is_not_a_record(self):
+        rows = (quiet_rows("2018-01-01", "2026-10-05")
+                + signal_rows(["2019-03-04", "2019-05-06", "2019-06-03"])
+                + signal_rows(["2026-08-03"]))
+        f = demand.signal_frequency(rows, "2026-10-08")
+        self.assertFalse(f["record"])
+        self.assertEqual(f["max_before"], 3)
+
+
+class CoverDrift(unittest.TestCase):
+    """D-0110. The 26-auction window absorbs a slow decline, so each term's
+    52-week median cover is also compared with its own 5-year median.
+    Drifting at 85% or less: about the 10th percentile of the history, and
+    what flagged the 2015-2018 slide in bill cover as QE ended."""
+
+    def test_the_rulings_are_the_ones_logged(self):
+        self.assertEqual(demand.DRIFT_RATIO, 0.85)
+        self.assertEqual(demand.DRIFT_RECENT_DAYS, 364)
+        self.assertEqual(demand.DRIFT_BASELINE_DAYS, 5 * 365)
+
+    def test_a_steady_term_is_not_drifting(self):
+        d = demand.cover_drift(quiet_rows("2020-01-06", "2026-10-05"))
+        row = next(x for x in d if x["term"] == "13W")
+        self.assertAlmostEqual(row["ratio"], 1.0)
+        self.assertFalse(row["drifting"])
+
+    def test_a_year_of_weaker_cover_against_five_is_drifting(self):
+        rows = (quiet_rows("2020-01-06", "2025-10-06", b2c=3.0)
+                + quiet_rows("2025-10-13", "2026-10-05", b2c=2.4))
+        row = next(x for x in demand.cover_drift(rows) if x["term"] == "13W")
+        self.assertAlmostEqual(row["median_52w"], 2.4)
+        self.assertAlmostEqual(row["median_5y"], 3.0)
+        self.assertAlmostEqual(row["ratio"], 0.8)
+        self.assertTrue(row["drifting"])
+
+    def test_a_term_without_five_years_has_no_ratio(self):
+        row = next(x for x in demand.cover_drift(quiet_rows("2023-01-02", "2026-10-05"))
+                   if x["term"] == "13W")
+        self.assertIsNone(row["ratio"])
+        self.assertEqual(row["reason"], "insufficient_history")
+
+    def test_every_charted_term_is_listed_in_order(self):
+        terms = [x["term"] for x in demand.cover_drift(quiet_rows("2020-01-06", "2026-10-05"))]
+        self.assertEqual(terms, list(demand.CHARTED_TERMS))
+
+
+class RegimeEndpoint(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from api.routes import router
+
+        db = session()
+        auctions.ingest_records(db, RECORDS)
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_db] = lambda: db
+        cls.client = TestClient(app)
+
+    def test_the_contract(self):
+        r = self.client.get("/api/auctions/regime")
+        self.assertEqual(r.status_code, 200, r.text[:200])
+        body = r.json()
+        self.assertEqual(body["data_as_of"], "2026-09-14")
+        for key in ("count", "alerts", "watches", "band", "max_before", "record", "history",
+                    "window_days", "elevated_at", "high_at"):
+            self.assertIn(key, body["frequency"])
+        self.assertEqual([d["term"] for d in body["drift"]], list(demand.CHARTED_TERMS))
+        for key in ("ratio", "median_52w", "median_5y", "drifting", "reason"):
+            self.assertIn(key, body["drift"][0])
+
+
 class Staleness(unittest.TestCase):
     """D-0101. More than 3 business days old is stale."""
 
