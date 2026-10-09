@@ -201,6 +201,16 @@ describe("the user can also (D-0108)", () => {
     expect(screen.getByTestId("tally-4W").textContent).toMatch(/none/i);
   });
 
+  it("9b. see all ten terms on one row, so none wraps alone and stretches", async () => {
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Signals" }));
+    const tally = await screen.findByTestId("tally-26W");
+    const grid = tally.parentElement;
+    expect(grid.style.display).toBe("grid");
+    expect(grid.style.gridTemplateColumns).toBe("repeat(10, minmax(0, 1fr))");
+    expect(grid.children).toHaveLength(10);
+  });
+
   it("10. widen the window to three years", async () => {
     await open();
     fireEvent.click(screen.getByRole("button", { name: "Signals" }));
