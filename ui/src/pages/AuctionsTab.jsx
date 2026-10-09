@@ -54,11 +54,14 @@ function SignalTally({ byTerm }) {
       : `No ${t.term} auction was flagged in this window.`,
     color: t.alerts ? "#FF4444" : t.watches ? "#E8C547" : "#3A4D5C",
   }));
+  // One fixed row of ten. flex-wrap left the tenth tile (30Y) alone on a
+  // second line, stretched across the page; minmax(0, 1fr) lets a long value
+  // ("1 alert · 1 watch") wrap inside its own tile instead.
   return (
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 16 }}>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(10, minmax(0, 1fr))", gap: 8, marginBottom: 16 }}>
       {tiles.map((s) => (
         <div key={s.label} data-testid={`tally-${s.label}`} style={{
-          ...MONO, flex: "1 1 90px", background: "#0F1923", border: "1px solid #1A2530",
+          ...MONO, minWidth: 0, background: "#0F1923", border: "1px solid #1A2530",
           borderTop: `2px solid ${s.color}`, borderRadius: 2, padding: "8px 12px",
         }}>
           <InfoTip as="div" title={s.label} tip={s.tip} placement="below" style={{ fontSize: 10, color: "#5A6878", marginBottom: 4 }}>
