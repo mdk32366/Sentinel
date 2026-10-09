@@ -1492,8 +1492,12 @@ from pipelines import auction_demand  # noqa: E402
 from api.schemas import (  # noqa: E402
     AuctionDetailResponse,
     AuctionListResponse,
+    AuctionSignalsResponse,
     AuctionSummaryResponse,
 )
+
+# D-0108. The leaderboard's windows, in days; 0 is all history since 2008.
+SIGNAL_WINDOWS = (90, 365, 1095, 0)
 
 _AUCTION_FLOATS = (
     "offering_amt", "total_tendered", "total_accepted", "soma_tendered",
@@ -1589,6 +1593,22 @@ async def get_auctions_summary(db: Session = Depends(get_db)):
         "min_observations": auction_demand.MIN_OBSERVATIONS,
         "terms": terms,
     }
+
+
+@router.get("/auctions/signals", response_model=AuctionSignalsResponse)
+async def get_auction_signals(days: int = Query(365), db: Session = Depends(get_db)):
+    """Every flagged auction in the window, alerts first then weakest (D-0108)."""
+    if days not in SIGNAL_WINDOWS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"days must be one of {', '.join(map(str, SIGNAL_WINDOWS))}",
+        )
+    scored, data_as_of, _ = _scored_auctions(db)
+    since = None
+    if days and data_as_of:
+        since = (datetime.fromisoformat(data_as_of) - timedelta(days=days)).date().isoformat()
+    board = auction_demand.signal_board(scored, since)
+    return {"data_as_of": data_as_of, "days": days, "since": since, **board}
 
 
 @router.get("/auctions/{cusip}/{auction_date}", response_model=AuctionDetailResponse)

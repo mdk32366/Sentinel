@@ -132,11 +132,22 @@ function Breakdown({ row }) {
   );
 }
 
-export function AuctionTable({ rows }) {
-  const [sort, setSort] = useState({ key: "auction_date", dir: "desc" });
+const WEAKNESS = {
+  key: "weakness", label: "Weakness", fmt: (v) => (v == null ? null : v.toFixed(2)),
+  tip: "How far both z-scores went the weak way: minus the bid-to-cover z, plus the dealer-share z (D-0108). The same two numbers the alert tests, added, so the ranking and the alert agree on what weak means. Higher is weaker.",
+};
+
+/**
+ * `withWeakness` adds the D-0108 ranking column. `initialSort` of
+ * `{ key: null }` keeps the rows in the order given - the server's ranking -
+ * until the reader clicks a header.
+ */
+export function AuctionTable({ rows, withWeakness = false, initialSort }) {
+  const [sort, setSort] = useState(initialSort ?? { key: "auction_date", dir: "desc" });
+  const columns = withWeakness ? [COLUMNS[0], WEAKNESS, ...COLUMNS.slice(1)] : COLUMNS;
   const [hovered, setHovered] = useState(null);
 
-  const sorted = sortRows(rows, sort.key, sort.dir);
+  const sorted = sort.key ? sortRows(rows, sort.key, sort.dir) : rows;
   const toggle = (key) => setSort((s) => (
     s.key === key ? { key, dir: s.dir === "desc" ? "asc" : "desc" } : { key, dir: "desc" }
   ));
@@ -147,7 +158,7 @@ export function AuctionTable({ rows }) {
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead>
             <tr>
-              {COLUMNS.map((c) => (
+              {columns.map((c) => (
                 <InfoTip as="th" key={c.key} title={c.label} tip={c.tip} placement="above" align={c.align === "left" ? "left" : "right"}
                   style={{ padding: "6px 14px", textAlign: c.align ?? "right", borderBottom: "1px solid #1A2530" }}>
                   <button type="button" onClick={() => toggle(c.key)} style={{
@@ -173,7 +184,7 @@ export function AuctionTable({ rows }) {
                 onMouseLeave={() => setHovered(null)}
                 style={{ borderBottom: "1px solid #0F1923", background: hovered === r ? "#0D1820" : "transparent" }}
               >
-                {COLUMNS.map((c) => <Cell key={c.key} row={r} column={c} />)}
+                {columns.map((c) => <Cell key={c.key} row={r} column={c} />)}
               </tr>
             ))}
           </tbody>

@@ -429,6 +429,101 @@ class DemandSignal(unittest.TestCase):
         self.assertIn("demand_signal_reason", last)
 
 
+def flagged(term, group, day, signal, b2c_z, dealer_z):
+    return {
+        "term": term, "term_group": group, "auction_date": day, "cusip": f"{term}{day}",
+        "demand_signal": signal, "b2c_z": b2c_z, "dealer_z": dealer_z,
+    }
+
+
+BOARD_ROWS = [
+    flagged("26W", "26-Week", "2026-03-16", "alert", -2.40, 2.46),
+    flagged("26W", "26-Week", "2025-12-29", "alert", -3.01, 4.76),
+    flagged("8W", "8-Week", "2026-07-23", "alert", -3.19, 3.80),
+    flagged("17W", "17-Week", "2026-06-24", "watch", -3.11, 0.61),
+    flagged("2Y", "2-Year", "2026-03-24", "watch", -1.86, 4.19),
+    flagged("4W", "4-Week", "2026-10-08", None, -2.29, 0.46),            # not flagged
+    flagged("30Y", "30-Year", "2011-08-11", "alert", -2.60, 3.27),       # outside a 1y window
+    {"term": None, "term_group": "TIPS 10-Year", "auction_date": "2026-05-01",
+     "cusip": "TIPS", "demand_signal": "alert", "b2c_z": -3.0, "dealer_z": 3.0},  # not charted
+]
+
+
+class SignalBoard(unittest.TestCase):
+    """D-0108. The leaderboard: every flagged auction in a window, worst first."""
+
+    def board(self, since="2025-10-08"):
+        return demand.signal_board(BOARD_ROWS, since)
+
+    def test_weakness_is_both_z_scores_in_the_weak_direction(self):
+        self.assertAlmostEqual(demand.weakness(-2.40, 2.46), 4.86)
+        self.assertIsNone(demand.weakness(None, 2.0))
+
+    def test_alerts_rank_above_watches_then_by_weakness(self):
+        order = [(r["term"], r["auction_date"]) for r in self.board()["signals"]]
+        self.assertEqual(order, [
+            ("26W", "2025-12-29"),   # alert, weakness 7.77
+            ("8W", "2026-07-23"),    # alert, 6.99
+            ("26W", "2026-03-16"),   # alert, 4.86
+            ("2Y", "2026-03-24"),    # watch, 6.05
+            ("17W", "2026-06-24"),   # watch, 3.72
+        ])
+
+    def test_each_row_carries_its_weakness(self):
+        signals = self.board()["signals"]
+        self.assertTrue(signals, "the board is empty")
+        top = signals[0]
+        self.assertAlmostEqual(top["weakness"], 7.77)
+
+    def test_the_window_and_the_charted_terms_bound_it(self):
+        terms = {r["term"] for r in self.board()["signals"]}
+        self.assertNotIn("30Y", terms)          # 2011, before the window
+        self.assertNotIn(None, terms)           # TIPS: a family, not charted
+        everything = demand.signal_board(BOARD_ROWS, None)["signals"]
+        self.assertIn("30Y", {r["term"] for r in everything})
+
+    def test_counts_and_the_per_term_tally(self):
+        b = self.board()
+        self.assertEqual(b["counts"], {"alert": 3, "watch": 2})
+        tally = {t["term"]: t for t in b["by_term"]}
+        self.assertEqual(tally["26W"]["alerts"], 2)
+        self.assertEqual(tally["26W"]["last_signal_date"], "2026-03-16")
+        self.assertEqual(tally["2Y"]["watches"], 1)
+        # Every charted term appears, flagged or not, in display order.
+        self.assertEqual([t["term"] for t in b["by_term"]], list(demand.CHARTED_TERMS))
+        self.assertEqual(tally["4W"]["alerts"] + tally["4W"]["watches"], 0)
+
+
+class SignalBoardEndpoint(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        from api.routes import router
+
+        db = session()
+        auctions.ingest_records(db, RECORDS)
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_db] = lambda: db
+        cls.client = TestClient(app)
+
+    def test_the_contract(self):
+        r = self.client.get("/api/auctions/signals?days=365")
+        self.assertEqual(r.status_code, 200, r.text[:200])
+        body = r.json()
+        for key in ("data_as_of", "days", "since", "counts", "by_term", "signals"):
+            self.assertIn(key, body)
+        self.assertEqual(body["days"], 365)
+        self.assertEqual(body["since"], "2025-09-14")   # 365 days before data_as_of
+
+    def test_all_history_has_no_since(self):
+        r = self.client.get("/api/auctions/signals?days=0")
+        self.assertEqual(r.status_code, 200)
+        self.assertIsNone(r.json()["since"])
+
+    def test_an_unoffered_window_is_refused(self):
+        self.assertEqual(self.client.get("/api/auctions/signals?days=17").status_code, 400)
+
+
 class Staleness(unittest.TestCase):
     """D-0101. More than 3 business days old is stale."""
 

@@ -58,6 +58,22 @@ const LIST_26W = {
   ],
 };
 
+const SIGNALS = {
+  data_as_of: "2026-10-08", days: 365, since: "2025-10-08",
+  counts: { alert: 2, watch: 1 },
+  by_term: ["4W", "8W", "13W", "17W", "26W", "52W", "2Y", "5Y", "10Y", "30Y"].map((term) => ({
+    term,
+    alerts: term === "26W" ? 2 : 0,
+    watches: term === "2Y" ? 1 : 0,
+    last_signal_date: term === "26W" ? "2026-03-16" : term === "2Y" ? "2026-03-24" : null,
+  })),
+  signals: [
+    row("26W", "26-Week", "2025-12-29", { demand_signal: "alert", b2c_z: -3.01, dealer_z: 4.76, weakness: 7.77 }),
+    row("26W", "26-Week", "2026-03-16", { demand_signal: "alert", b2c_z: -2.40, dealer_z: 2.46, weakness: 4.86 }),
+    row("2Y", "2-Year", "2026-03-24", { demand_signal: "watch", b2c_z: -1.86, dealer_z: 4.19, weakness: 6.05 }),
+  ],
+};
+
 let requested;
 
 beforeEach(() => {
@@ -68,6 +84,7 @@ beforeEach(() => {
     let body = {};
     if (u.includes("/auctions/summary")) body = SUMMARY;
     else if (u.includes("/auctions?term=26W")) body = LIST_26W;
+    else if (u.includes("/auctions/signals")) body = { ...SIGNALS, days: Number(u.split("days=")[1]) };
     else if (u.includes("/freshness")) body = { counts: {}, sources: [] };
     return Promise.resolve({ ok: true, status: 200, statusText: "OK", json: () => Promise.resolve(body) });
   }));
@@ -160,5 +177,35 @@ describe("the user can", () => {
     expect(z("13W").style.color).not.toBe(z("4W").style.color); // the alert's own z is coloured
     expect(screen.getByTestId("signal-count").textContent).toMatch(/1 alert · 1 watch/);
     expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+
+describe("the user can also (D-0108)", () => {
+  it("8. open Signals and see every flagged auction, alerts first and worst first", async () => {
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Signals" }));
+    await waitFor(() => expect(requested.some((u) => u.includes("/auctions/signals?days=365"))).toBe(true));
+    await waitFor(() => expect(screen.getAllByTestId("auction-row")).toHaveLength(3));
+    const rows = screen.getAllByTestId("auction-row");
+    expect(rows.map((r) => r.dataset.date)).toEqual(["2025-12-29", "2026-03-16", "2026-03-24"]);
+    expect(within(rows[0]).getByTestId("cell-weakness").textContent).toContain("7.77");
+    expect(within(rows[2]).getByLabelText(/demand watch/i)).toBeTruthy();
+  });
+
+  it("9. see how many alerts and watches each term had in the window", async () => {
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Signals" }));
+    const tally = await screen.findByTestId("tally-26W");
+    expect(tally.textContent).toMatch(/2 alerts?/);
+    expect(screen.getByTestId("tally-2Y").textContent).toMatch(/1 watch/);
+    expect(screen.getByTestId("tally-4W").textContent).toMatch(/none/i);
+  });
+
+  it("10. widen the window to three years", async () => {
+    await open();
+    fireEvent.click(screen.getByRole("button", { name: "Signals" }));
+    await screen.findByTestId("tally-26W");
+    fireEvent.click(screen.getByRole("button", { name: "3Y" }));
+    await waitFor(() => expect(requested.some((u) => u.includes("/auctions/signals?days=1095"))).toBe(true));
   });
 });
