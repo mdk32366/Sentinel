@@ -472,6 +472,39 @@ class AuctionSignalsResponse(BaseModel):
     signals: List[AuctionSignalRow]
 
 
+class AuctionFrequencyPoint(BaseModel):
+    month: str
+    count: int
+
+
+class AuctionSignalFrequency(BaseModel):
+    count: int
+    alerts: int
+    watches: int
+    band: str  # normal | elevated | high (D-0109)
+    window_days: int
+    elevated_at: int
+    high_at: int
+    max_before: Optional[int] = None
+    record: bool
+    history: List[AuctionFrequencyPoint]
+
+
+class AuctionCoverDrift(BaseModel):
+    term: str
+    ratio: Optional[float] = None  # 52-week median / 5-year median (D-0110)
+    median_52w: Optional[float] = None
+    median_5y: Optional[float] = None
+    drifting: bool
+    reason: Optional[str] = None
+
+
+class AuctionRegimeResponse(BaseModel):
+    data_as_of: Optional[str] = None
+    frequency: AuctionSignalFrequency
+    drift: List[AuctionCoverDrift]
+
+
 class AuctionListResponse(BaseModel):
     data_as_of: Optional[str] = None
     count: int

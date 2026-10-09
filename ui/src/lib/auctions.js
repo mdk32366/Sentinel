@@ -89,3 +89,16 @@ export const fmtShare = (v) => (v == null ? null : `${(v * 100).toFixed(1)}%`);
 export const fmtPct = (v) => (v == null ? null : `${v.toFixed(1)}%`);
 export const fmtZ = (v) => (v == null ? null : `${v > 0 ? "+" : ""}${v.toFixed(2)}`);
 export const fmtBn = (v) => (v == null ? null : `$${(v / 1e9).toFixed(1)}bn`);
+
+// D-0109. The signal-frequency bands and the sentence that places today's count.
+export const BAND = {
+  high: { label: "HIGH", color: "#FF4444" },
+  elevated: { label: "ELEVATED", color: "#E8C547" },
+  normal: { label: "NORMAL", color: "#5DB87A" },
+};
+
+export function frequencyContext(f) {
+  if (f.record) return `Highest since 2008, when this data begins · previous peak ${f.max_before}`;
+  if (f.max_before != null) return `Previous peak ${f.max_before}`;
+  return "";
+}
