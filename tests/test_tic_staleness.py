@@ -118,13 +118,24 @@ class TestTicStaleness(unittest.TestCase):
         self.assertGreater(int(match.group(1)), MAX_SOURCE_AGE_DAYS)
 
     def test_boundary_sits_where_the_constant_says(self):
-        # Red: the unchanged assertions on a frozen 2026-10-21 (inside the
-        # 19th-23rd window where CI failed on 2026-10-21, Sentinel PR #97).
-        now = datetime.datetime(2026, 10, 21, 12, 0, 0)
-        self.assertEqual(self._run(days_ago=MAX_SOURCE_AGE_DAYS - 25, now=now)["status"],
-                         "success")
-        self.assertEqual(self._run(days_ago=MAX_SOURCE_AGE_DAYS + 40, now=now)["status"],
-                         "failed")
+        """F-0115. The fixture's newest row is a first-of-month, so its age is
+        the day offset PLUS up to 30 snap days. The old offsets (MAX-25 must
+        succeed) broke whenever the snap exceeded 25, around the 19th-23rd of
+        a month. Pin the clock instead and put the newest row exactly MAX and
+        MAX+1 days old, for a month start in every calendar month of three
+        years, so the edge is the constant on any day."""
+        for year in (2025, 2026, 2027):
+            for month in range(1, 13):
+                newest = datetime.datetime(year, month, 1)
+                at_limit = newest + datetime.timedelta(days=MAX_SOURCE_AGE_DAYS, hours=12)
+                past_limit = at_limit + datetime.timedelta(days=1)
+                with self.subTest(newest=newest.date()):
+                    self.assertEqual(
+                        self._run(days_ago=MAX_SOURCE_AGE_DAYS, now=at_limit)["status"],
+                        "success")
+                    self.assertEqual(
+                        self._run(days_ago=MAX_SOURCE_AGE_DAYS + 1, now=past_limit)["status"],
+                        "failed")
 
     def test_the_limit_accommodates_a_real_publication_cycle(self):
         """A limit that fires on a healthy source is the decoration D-0024
