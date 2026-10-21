@@ -46,8 +46,20 @@ def tic_text(months):
     )
 
 
-def months_ending(days_ago, count=3):
-    newest = datetime.datetime.utcnow() - datetime.timedelta(days=days_ago)
+def frozen_utcnow(now):
+    """Pin the pipeline's clock: treasury_holdings does `from datetime import
+    datetime` and ages the source with `datetime.utcnow()`. Only utcnow
+    changes; construction, strptime etc. are the real class."""
+    class _Frozen(datetime.datetime):
+        @classmethod
+        def utcnow(cls):
+            return now
+    return mock.patch.object(treasury_holdings, "datetime", _Frozen)
+
+
+def months_ending(days_ago, count=3, now=None):
+    now = now or datetime.datetime.utcnow()
+    newest = now - datetime.timedelta(days=days_ago)
     newest = newest.replace(day=1)
     out = []
     for i in range(count):
@@ -67,11 +79,14 @@ class TestTicStaleness(unittest.TestCase):
         self.db = sessionmaker(bind=self.engine)()
         self.addCleanup(self.db.close)
 
-    def _run(self, days_ago):
-        text = tic_text(months_ending(days_ago))
+    def _run(self, days_ago, now=None):
+        text = tic_text(months_ending(days_ago, now=now))
         with mock.patch.object(treasury_holdings, "fetch_tic_mfh_data",
                                return_value=text):
-            return run_treasury_holdings_fetch(self.db)
+            if now is None:
+                return run_treasury_holdings_fetch(self.db)
+            with frozen_utcnow(now):
+                return run_treasury_holdings_fetch(self.db)
 
     def test_a_current_source_succeeds(self):
         """Clause (c): correct and incorrect must differ. A guard that failed
@@ -103,9 +118,12 @@ class TestTicStaleness(unittest.TestCase):
         self.assertGreater(int(match.group(1)), MAX_SOURCE_AGE_DAYS)
 
     def test_boundary_sits_where_the_constant_says(self):
-        self.assertEqual(self._run(days_ago=MAX_SOURCE_AGE_DAYS - 25)["status"],
+        # Red: the unchanged assertions on a frozen 2026-10-21 (inside the
+        # 19th-23rd window where CI failed on 2026-10-21, Sentinel PR #97).
+        now = datetime.datetime(2026, 10, 21, 12, 0, 0)
+        self.assertEqual(self._run(days_ago=MAX_SOURCE_AGE_DAYS - 25, now=now)["status"],
                          "success")
-        self.assertEqual(self._run(days_ago=MAX_SOURCE_AGE_DAYS + 40)["status"],
+        self.assertEqual(self._run(days_ago=MAX_SOURCE_AGE_DAYS + 40, now=now)["status"],
                          "failed")
 
     def test_the_limit_accommodates_a_real_publication_cycle(self):
