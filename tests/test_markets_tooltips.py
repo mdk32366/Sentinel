@@ -289,3 +289,40 @@ class M2IsTheWeeklySeries(unittest.TestCase):
         # place.
         tip = parse_metrics()["WM2NS"]["tip"].lower()
         self.assertIn("once a month", tip)
+
+
+class ForeignBondsAreNotScored(unittest.TestCase):
+    """Sentinel D-0111 (vault:D-0057) AC-4. The same guard, extended to the
+    FOREIGN-BONDS cells: every one says it is not scored, and neither scorer
+    names any of its codes or its category."""
+
+    @staticmethod
+    def parse_foreign_bonds():
+        source = CONSTANTS.read_text(encoding="utf-8")
+        block = source[source.index("export const FOREIGN_BOND_METRICS = ["):]
+        return block[: block.index("\n];")]
+
+    def test_every_foreign_bond_cell_is_marked_not_scored(self):
+        block = self.parse_foreign_bonds()
+        self.assertNotIn("scored: true", block)
+        # Two literal entries (FR 10Y, FR NO SOURCE) plus the generated DE/GB/JP one.
+        self.assertEqual(block.count("scored: false"), 3)
+
+    def test_neither_scorer_reads_a_foreign_bond(self):
+        codes = [f"FB_{c}_{t:02d}Y" for c in ("DE", "GB", "JP") for t in (2, 5, 7, 10, 30)]
+        for path in (V2_SCORER, COMPOSITE_SCORER):
+            text = path.read_text(encoding="utf-8")
+            with self.subTest(scorer=path.name):
+                self.assertNotIn("FB_", text)
+                self.assertNotIn("foreign_bond", text)
+                for code in codes:
+                    self.assertFalse(reads_code(path, code), code)
+
+    def test_the_french_10y_is_the_existing_monthly_series(self):
+        # Option A: no new French code. The card reads IRLTLT01FRM156N, which
+        # composite D4 already scores; this tab does not change that.
+        block = self.parse_foreign_bonds()
+        self.assertIn('code: "IRLTLT01FRM156N"', block)
+        self.assertIn('badge: "MONTHLY"', block)
+        self.assertNotIn("FB_FR", CONSTANTS.read_text(encoding="utf-8"))
+

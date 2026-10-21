@@ -30,6 +30,7 @@ import { CDSTab } from "./pages/CDSTab";
 import { CompositeTab } from "./pages/CompositeTab";
 import { CountryTab } from "./pages/CountryTab";
 import { CrossAssetTab } from "./pages/CrossAssetTab";
+import { ForeignBondsTab } from "./pages/ForeignBondsTab";
 import { GoldReservesTab } from "./pages/GoldReservesTab";
 import { HoldingsTab } from "./pages/HoldingsTab";
 import { USADashboard } from "./pages/USADashboard";
@@ -94,6 +95,8 @@ const TABS = [
   // USADashboard is the USA country view rendered inside COUNTRY, not the
   // MARKETS tab - MARKETS is composed inline in App.jsx from METRICS.
   ["USADashboard (inside COUNTRY)", USADashboard, {}],
+  // D-0111: MARKETS' layout reused (pages/MarketsTab.jsx) for foreign bonds.
+  ["FOREIGN-BONDS", ForeignBondsTab, {}],
   ["HOLDINGS", HoldingsTab, { onCountrySelect: () => {}, latestAll: {} }],
   ["CROSS-ASSET", CrossAssetTab, {}],
   ["GOLD", GoldReservesTab, { onCountrySelect: () => {}, latestAll: {} }],
