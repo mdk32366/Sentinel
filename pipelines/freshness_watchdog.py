@@ -235,6 +235,38 @@ CHECKS = [
         "pipelines": ["FRED"],
         "note": "Feeds composite dimension 4.",
     },
+    # Sentinel D-0111 (vault:D-0057): Foreign Bonds, display only. Windows are
+    # Trinity's judgment from the lags observed on 2026-10-21 (ESTIMATE), not
+    # measured over a year: a weekend plus the source's own lag plus slack.
+    # A holiday that trips one is a STALE badge, not an outage. France stays
+    # on `sovereign_yields` above (monthly OECD, 70 d).
+    {
+        "key": "foreign_bonds_de",
+        "period": "day",
+        "label": "German Bund yields (Bundesbank)",
+        "patterns": ["FB\\_DE\\_%"],
+        "max_age_days": 4,       # same-day publication + weekend + 1
+        "pipelines": ["Bundesbank_Yields"],
+        "note": "Svensson fitted zero-coupon yields, 2/5/7/10/30Y, business-daily. Display only (Sentinel D-0111).",
+    },
+    {
+        "key": "foreign_bonds_gb",
+        "period": "day",
+        "label": "UK gilt yields (Bank of England)",
+        "patterns": ["FB\\_GB\\_%"],
+        "max_age_days": 5,       # one-day publication lag + weekend + 1
+        "pipelines": ["BoE_Yields"],
+        "note": "GLC nominal fitted spot curve, 2/5/7/10/30Y, published one business day late. Display only (Sentinel D-0111).",
+    },
+    {
+        "key": "foreign_bonds_jp",
+        "period": "day",
+        "label": "Japan JGB yields (Ministry of Finance)",
+        "patterns": ["FB\\_JP\\_%"],
+        "max_age_days": 7,       # Golden Week / New Year closures
+        "pipelines": ["MOF_JGB"],
+        "note": "Constant-maturity par yields, 2/5/7/10/30Y, business-daily. Display only (Sentinel D-0111).",
+    },
     {
         "key": "reserves_ex_gold",
         "period": "month",

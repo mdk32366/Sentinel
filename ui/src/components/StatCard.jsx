@@ -13,7 +13,7 @@ import { InfoTip } from "./InfoTip";
  * colours make everywhere else here, where grey means "nothing to report"
  * rather than "something is wrong".
  */
-export function StatCard({ label, value, unit, change, color, tip, stressRole, scored }) {
+export function StatCard({ label, value, unit, change, color, tip, stressRole, scored, badge }) {
   const up = (change?.value ?? 0) >= 0;
 
   return (
@@ -39,6 +39,9 @@ export function StatCard({ label, value, unit, change, color, tip, stressRole, s
     >
       <div style={{ fontSize: 11, letterSpacing: "0.12em", color: "#5A6878", textTransform: "uppercase", marginBottom: 8, fontFamily: "monospace" }}>
         <span style={tip ? { borderBottom: "1px dashed #2A3D50", paddingBottom: 1 } : undefined}>{label}</span>
+        {/* Sentinel D-0111: a cadence badge (FOREIGN-BONDS' monthly French
+            10Y). Absent on every MARKETS card, so their bytes are unchanged. */}
+        {badge && <span style={{ marginLeft: 8, fontSize: 9, color: "#E8C547", border: "1px solid #E8C54766", borderRadius: 2, padding: "0 4px" }}>{badge}</span>}
       </div>
       <div style={{ fontSize: 26, fontWeight: 700, color: "#E8E0D0", fontFamily: "monospace", lineHeight: 1 }}>
         {value != null ? formatValue(value, unit) : <span style={{ color: "#2A3540" }}>—</span>}

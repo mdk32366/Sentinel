@@ -214,16 +214,19 @@ ui/src/
     format.js          formatValue, tierColor, spreadBasisPoints
     yieldSeries.js     the date-keyed yield join (F-0007)
     rateScenarios.js   the four modelled rate paths
-    constants.js       METRICS, TABS, RANGES, the FRED code maps
+    constants.js       METRICS, TABS, RANGES, the FRED code maps,
+                       FOREIGN_BOND_METRICS and the two spread strips (D-0111)
   hooks/               everything that talks to the API
     useApiResource     one JSON resource, with reload() (F-0063)
     useAsyncAction     a keyed write, per-key progress and outcome
-    useMarketSeries    the ticker's latest and ~30d-prior values
+    useMarketSeries    the ticker's latest and ~30d-prior values;
+                       useSeries(codes) is the same for any code list (D-0111)
     useChartSeries     the MARKETS chart rows (F-0065)
     useCountryDetail   the four requests behind the country panel
     useCountryNarrative  the analyst brief for one country
     useUSASeries       every USA series for the selected window
-  pages/               one per tab, nine of them
+  pages/               one per tab, plus MarketsTab.jsx: the MARKETS layout as
+                       a component, rendered by MARKETS and FOREIGN-BONDS (D-0111)
   components/          shared presentation
     country/           the country panel's pieces
     usa/               the USA dashboard's pieces
@@ -246,3 +249,45 @@ property a refactor threatens, and it caught `F-0069`.
 correctly or that a COMPOSITE tier is right. The scorers behind those numbers
 are Python and are covered there; the join between the two is not covered
 anywhere.
+
+## Foreign Bonds (D-0111)
+
+The FOREIGN-BONDS tab (`#/foreign-bonds`, after MARKETS) shows government
+bond yields for Germany, the UK and Japan at 2/5/7/10/30Y, and France's
+monthly 10Y. It is display only: nothing here feeds a score.
+
+**Fetchers.** One module per source in `pipelines/`. Each has
+`fetch_*() -> bytes`, a pure `parse_*(bytes) -> [(code, date, Decimal)]`
+and `run_*(db, backfill=False) -> dict`:
+
+| Module | UpdateLog name | Source | Codes | Cron (UTC, weekdays) | Stale after |
+|---|---|---|---|---|---|
+| `bundesbank_yields.py` | `Bundesbank_Yields` | Bundesbank SDMX CSV, Svensson fitted | `FB_DE_{02,05,07,10,30}Y` | 18:00 | 4 d |
+| `boe_yields.py` | `BoE_Yields` | BoE GLC nominal spot, sheet `4. spot curve` | `FB_GB_…` | 18:30 | 5 d |
+| `mof_jgb.py` | `MOF_JGB` | MOF `jgbcm.csv`, Shift-JIS, era dates | `FB_JP_…` | 10:00 | 7 d |
+
+The shared plumbing is in `foreign_bond_common.py`. Transport: timeout
+30 s, 3 attempts, back-off 4 s x 2^(n-1), no retry on a 4xx except 429, and
+`fetch_failure` classifies every error (D-0094). Writes go through
+`fred_fetcher.upsert_observations` (F-0073), and there is one UpdateLog row
+per run. The metrics sit in category `foreign_bond` with `country_id`
+NULL. No migration.
+
+**Fail-closed.** A source writes all its rows in one transaction or none.
+`SchemaDrift` (missing column, bad date, value outside [-2, 15] %) and a
+0-row parse both mean `failed`. A Bundesbank 200 with only a header is
+retried, then `failed` (F-0116). The first run against an empty series
+backfills five years from the archives (F-0115).
+
+**Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb` and
+`_jp` (patterns `FB\_DE\_%` etc.). France stays on `sovereign_yields`.
+
+**UI.** `pages/ForeignBondsTab.jsx` renders `pages/MarketsTab.jsx` with
+`FOREIGN_BOND_METRICS` in a 5-column grid (20 cells; the four French gaps
+are NO SOURCE cells), DataConfidence on the four sources, and the
+`foreignBondSpreads` strip. A spread whose leg is stale is hidden. Data
+comes from `useSeries(FOREIGN_BOND_CODES)` through the existing
+`/api/timeseries`, with no new endpoint. MARKETS renders through the same
+component and is byte-identical to master `be64218`
+(`marketsDefault.ac1.dom.test.jsx`).
+

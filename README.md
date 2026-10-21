@@ -12,6 +12,8 @@ Does pull/display DGS30. Does not use DGS30 or 30Y–10Y in stress_score_v2.
 
 **Phase 3 (Pending):** Gold reserves by country
 
+**Foreign Bonds:** the FOREIGN-BONDS tab shows German, UK and Japanese government bond yields, and France's monthly 10Y.
+
 ## Architecture
 
 - **Database:** PostgreSQL (local)
