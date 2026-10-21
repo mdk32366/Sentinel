@@ -1,10 +1,10 @@
-import { useState } from "react";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
 
 import { RANGES } from "../lib/constants";
 import { formatDate } from "../lib/format";
 import { changeBetween, changeSuffix, changeWindowLabel } from "../lib/series";
 import { useChartSeries } from "../hooks/useChartSeries";
+import { useChartView } from "../hooks/useChartView";
 import { CustomTooltip } from "../components/CustomTooltip";
 import { DataConfidence } from "../components/DataConfidence";
 import { InfoTip } from "../components/InfoTip";
@@ -31,14 +31,16 @@ import { StatCard } from "../components/StatCard";
  *   lastDataPoint date for the footer, or null
  *   columns       grid columns (MARKETS 6, FOREIGN-BONDS 5)
  *   latest/prior  from useSeries / useMarketSeries
+ *   view          optional, from useChartView() in a parent that outlives the
+ *                 tab. Given, the chart state is controlled and survives the
+ *                 tab unmounting (MARKETS, as on master); omitted, it is local.
  */
 export function MarketsTab({
   metrics, sourceKeys, spreads, defaultActive, sourceNote, lastDataPoint,
-  columns = 6, latest, prior,
+  columns = 6, latest, prior, view,
 }) {
-  const [activeMetrics, setActiveMetrics] = useState(defaultActive);
-  const [range, setRange] = useState(RANGES[1]);
-  const [normalized, setNormalized] = useState(false);
+  const local = useChartView(defaultActive);
+  const { activeMetrics, setActiveMetrics, range, setRange, normalized, setNormalized } = view ?? local;
 
   const { rows: chartData, loading } = useChartSeries({ activeMetrics, range, normalized });
 

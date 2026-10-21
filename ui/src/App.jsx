@@ -17,8 +17,11 @@ import { ForeignBondsTab } from "./pages/ForeignBondsTab";
 import { GoldReservesTab } from "./pages/GoldReservesTab";
 import { HoldingsTab } from "./pages/HoldingsTab";
 import { MarketsTab } from "./pages/MarketsTab";
+import { useChartView } from "./hooks/useChartView";
 
 
+
+const MARKETS_DEFAULT_ACTIVE = ["DGS10", "DGS2", "DFF", "DCOILWTICO"];
 
 export default function App() {
   // D-0091: the open tab and the country card live in the URL hash
@@ -26,6 +29,9 @@ export default function App() {
   // linked, refreshed, opened in a new tab and walked with Back.
   const { tab, iso: countryIso, view } = useHashRoute();
   const { latest, prior } = useMarketSeries();
+  // D-0111 review: MARKETS' chart state lives here, as on master be64218, so
+  // the series selection, range and % CHANGE survive a visit to another tab.
+  const marketsView = useChartView(MARKETS_DEFAULT_ACTIVE);
   const { data: stats } = useApiResource(`/stats`);
   const { data: health } = useApiResource(`/health`);
 
@@ -73,11 +79,12 @@ export default function App() {
             metrics={METRICS}
             sourceKeys={["treasury_yields", "oil", "dollar_index", "gold_price"]}
             spreads={US_SPREADS}
-            defaultActive={["DGS10", "DGS2", "DFF", "DCOILWTICO"]}
+            defaultActive={MARKETS_DEFAULT_ACTIVE}
             sourceNote="Source: FRED / Federal Reserve Bank of St. Louis"
             lastDataPoint={stats?.data_latest}
             latest={latest}
             prior={prior}
+            view={marketsView}
           />
         )}
         {tab === "FOREIGN-BONDS" && <ForeignBondsTab />}
