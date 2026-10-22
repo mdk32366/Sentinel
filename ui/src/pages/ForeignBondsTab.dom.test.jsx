@@ -8,9 +8,11 @@
  * AC-5: FIT / CMT / MON named in the tips.
  * §7.7: a spread with a stale leg is hidden, not quoted.
  * D-0112: 20 cards, all daily: France from the Banque de France TEC replaces
- *       the four NO SOURCE cells. With no daily French 10Y the FR 10Y card
- *       falls back to the monthly OECD series, badged MONTHLY and labelled a
- *       fallback; the footer reads "Source: Banque de France, updated <date>".
+ *       the four NO SOURCE cells; the footer reads "Source: Banque de France,
+ *       updated <date>".
+ * D-0112 amendment 1 (T-0113): the monthly OECD FR 10Y (FRED) is gone from
+ *       this surface - no fallback card, no monthly OAT-Bund spread, and the
+ *       tab does not request it. TEC10 is the only FR 10Y here.
  *
  * Every network call is stubbed.
  */
@@ -18,8 +20,9 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
+import * as constants from "../lib/constants";
 import {
-  FOREIGN_BOND_METRICS, FR_10Y_MONTHLY_FALLBACK, SOVEREIGN_YIELD_CODES, TABS, foreignBondCells,
+  FOREIGN_BOND_CODES, FOREIGN_BOND_METRICS, SOVEREIGN_YIELD_CODES, TABS, foreignBondSpreads,
 } from "../lib/constants";
 import { parseRoute } from "../lib/countryRoute";
 import { ForeignBondsTab } from "./ForeignBondsTab";
@@ -130,7 +133,7 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     expect(container.textContent).toContain("Source: Banque de France, updated 2026-10-20");
   });
 
-  it("with no daily French 10Y, FR 10Y falls back to the monthly OECD series, labelled", async () => {
+  it("with no daily French data, every FR cell is \u2014 and nothing monthly stands in", async () => {
     omit = new Set(FR_DAILY);
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
@@ -139,24 +142,26 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     expect(cards.length).toBe(20);
     const fr = cards.slice(15);
     expect(fr[3].querySelector("span").textContent).toBe("FR 10Y");
-    expect(fr[3].textContent).toContain("MONTHLY");
-    expect(fr[3].textContent).toContain("4.44%");
-    expect(cards.filter((c) => c.textContent.includes("MONTHLY")).length).toBe(1);
-    // The other four French cells have no fallback: "—", never a monthly number.
-    expect(fr.filter((c) => c.textContent.includes("—")).length).toBe(4);
-    expect(container.textContent).not.toContain("Source: Banque de France, updated");
+    expect(fr.filter((c) => c.textContent.includes("\u2014")).length).toBe(5);
+    expect(container.textContent).not.toContain("MONTHLY");
+    expect(container.textContent).not.toContain("4.44%");
     expect(container.textContent).toContain("Source: Banque de France, not yet available");
   });
 
-  it("the fallback is only the 10Y, and only while the daily 10Y is missing", () => {
-    expect(foreignBondCells({ FB_FR_10Y: 3.35 }).find((m) => m.label === "FR 10Y").code).toBe("FB_FR_10Y");
-    const fb = foreignBondCells({}).find((m) => m.label === "FR 10Y");
-    expect(fb).toBe(FR_10Y_MONTHLY_FALLBACK);
-    expect(fb.code).toBe(FRA);
-    expect(fb.badge).toBe("MONTHLY");
-    expect(fb.tip).toMatch(/^FALLBACK\./);
-    expect(foreignBondCells({}).filter((m) => m.code === FRA).length).toBe(1);
-    expect(foreignBondCells({}).length).toBe(20);
+  it("T-0113: the monthly OECD FR 10Y is not on this surface at all", () => {
+    expect(constants.FR_10Y_MONTHLY_FALLBACK).toBeUndefined();
+    expect(FOREIGN_BOND_CODES).not.toContain(FRA);
+    expect(FOREIGN_BOND_METRICS.filter((m) => m.label === "FR 10Y").map((m) => m.code)).toEqual(["FB_FR_10Y"]);
+    const labels = foreignBondSpreads({ [FRA]: 4.44, [DEU]: 3.5, FB_FR_10Y: 3.35, FB_DE_10Y: 3.47 }).map((s) => s.label);
+    expect(labels).toEqual(["OAT\u2013Bund 10Y"]);
+  });
+
+  it("T-0113: the tab never requests the monthly FR series", async () => {
+    const { container } = render(<ForeignBondsTab />);
+    await settle(container);
+    const urls = fetch.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("/timeseries"));
+    expect(urls.length).toBeGreaterThan(0);
+    for (const u of urls) expect(decodeURIComponent(u)).not.toContain(FRA);
   });
 
   it("every tip names what the number is and where it comes from", () => {
@@ -178,9 +183,6 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
         expect(m.tip).toMatch(/FM\.D\.FR\.EUR\.FR2\.BB\.FRMOYTEC\d+\.HSTA/);
       }
     }
-    expect(FR_10Y_MONTHLY_FALLBACK.kind).toBe("MON");
-    expect(FR_10Y_MONTHLY_FALLBACK.scored).toBe(false);
-    expect(FR_10Y_MONTHLY_FALLBACK.tip).toContain(FRA);
   });
 
   it("every cell has a chart toggle", async () => {
@@ -198,13 +200,14 @@ describe("§7.7: the spread strip", () => {
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
     for (const label of ["Bund–UST 10Y", "Gilt–UST 10Y", "JGB–UST 10Y", "Gilt–Bund 10Y",
-      "Gilt–Bund 2Y", "DE 10Y–2Y", "GB 10Y–2Y", "JP 30Y–10Y", "OAT–Bund 10Y", "OAT–Bund 10Y (monthly)"]) {
+      "Gilt–Bund 2Y", "DE 10Y–2Y", "GB 10Y–2Y", "JP 30Y–10Y", "OAT–Bund 10Y"]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
+    expect(screen.queryByText("OAT–Bund 10Y (monthly)")).toBeNull();
     // FB_DE_10Y 3.47 - DGS10 4.10
     expect(container.textContent).toContain("-0.63pp");
-    // OAT-Bund monthly: 4.44 - 3.50
-    expect(container.textContent).toContain("+0.94pp");
+    // No monthly OAT-Bund (4.44 - 3.50) any more (D-0112 amendment 1).
+    expect(container.textContent).not.toContain("+0.94pp");
     // OAT-Bund daily (D-0112): FB_FR_10Y 3.35 - FB_DE_10Y 3.47
     expect(container.textContent).toContain("-0.12pp");
   });

@@ -306,12 +306,9 @@ class ForeignBondsAreNotScored(unittest.TestCase):
         block = self.parse_foreign_bonds()
         self.assertNotIn("scored: true", block)
         # Sentinel D-0112: one generated entry covers DE, GB, JP and FR. The
-        # monthly French fallback is its own literal, checked the same way.
+        # monthly French fallback literal is gone (D-0112 amendment 1).
         self.assertEqual(block.count("scored: false"), 1)
         self.assertIn('["DE", "GB", "JP", "FR"]', block)
-        fallback = self.parse_fr_fallback()
-        self.assertNotIn("scored: true", fallback)
-        self.assertEqual(fallback.count("scored: false"), 1)
 
     def test_neither_scorer_reads_a_foreign_bond(self):
         codes = [f"FB_{c}_{t:02d}Y" for c in ("DE", "GB", "JP", "FR") for t in (2, 5, 7, 10, 30)]
@@ -323,23 +320,18 @@ class ForeignBondsAreNotScored(unittest.TestCase):
                 for code in codes:
                     self.assertFalse(reads_code(path, code), code)
 
-    @staticmethod
-    def parse_fr_fallback():
+    def test_the_french_monthly_10y_is_off_the_foreign_bonds_surface(self):
+        # Sentinel D-0112 amendment 1 (T-0113): TEC10 daily is the only FR 10Y
+        # on FOREIGN-BONDS. The monthly IRLTLT01FRM156N is not a fallback card,
+        # not a spread leg and not requested by the tab. It stays in FRED's
+        # fetch list and the DB, and composite D4 still scores it.
         source = CONSTANTS.read_text(encoding="utf-8")
-        block = source[source.index("export const FR_10Y_MONTHLY_FALLBACK = {"):]
-        return block[: block.index("\n};")]
-
-    def test_the_french_monthly_10y_is_the_labelled_fallback(self):
-        # Sentinel D-0112 replaces D-0111 option A: the French cells are the
-        # Banque de France daily TEC (generated FB_FR_ codes). The monthly
-        # IRLTLT01FRM156N stays, read-only, as the FR 10Y fallback, badged
-        # MONTHLY and saying it is a fallback. Composite D4 still scores that
-        # monthly series; nothing here changes it.
-        block = self.parse_foreign_bonds()
-        self.assertNotIn("IRLTLT01FRM156N", block)
-        self.assertNotIn('kind: "NONE"', block)
-        fallback = self.parse_fr_fallback()
-        self.assertIn('code: "IRLTLT01FRM156N"', fallback)
-        self.assertIn('badge: "MONTHLY"', fallback)
-        self.assertIn("FALLBACK", fallback)
+        surface = source[source.index("const FB_COUNTRY = {"):source.index("// \u2500\u2500 Shared UI")]
+        self.assertNotIn("IRLTLT01FRM156N", surface)
+        self.assertNotIn("FR_10Y_MONTHLY_FALLBACK", source)
+        self.assertNotIn('kind: "NONE"', self.parse_foreign_bonds())
+        tab = (CONSTANTS.parent.parent / "pages" / "ForeignBondsTab.jsx").read_text(encoding="utf-8")
+        self.assertNotIn("fallback", tab.lower())
+        fred = (ROOT / "pipelines" / "fred_fetcher.py").read_text(encoding="utf-8")
+        self.assertIn('"code": "IRLTLT01FRM156N"', fred)
 
