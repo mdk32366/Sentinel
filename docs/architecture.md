@@ -288,6 +288,15 @@ from a `time_period_start>=date'…'` filter.
 `_jp` and `_fr` (patterns `FB\_DE\_%` etc.). The monthly French 10Y
 fallback stays on `sovereign_yields`.
 
+**Country cards (D-0113).** `CountryDetail` for DEU/GBR/JPN/FRA makes one more
+request, `useSeries(fbCardCodes(iso))` (empty, so no request, elsewhere), and
+`countryBond()` in `constants.js` turns it into the card's 10Y (daily, or the
+monthly fallback badged MONTHLY past `FB_MAX_AGE_DAYS`), the curve row and the
+2s10s / 10s30s slopes. `country/CountryBondCurve.jsx` renders the row and the
+chart through `pages/MarketsChartPanel.jsx`, the panel MarketsTab also uses,
+with its own `useChartView` so the card's state is per country and never
+MARKETS'. Display only.
+
 **Manual trigger and startup fill.** `POST /api/fetch/foreign-bonds/{source}`
 (`api/routes.py`) runs one source now through the same wrapper the cron uses,
 `scheduler._scheduled_foreign_bonds`, and answers `{status, inserted,

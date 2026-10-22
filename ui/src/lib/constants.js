@@ -177,8 +177,9 @@ export function US_SPREADS(latest) {
  *
  * Every entry is `scored: false`. `tests/test_markets_tooltips.py` holds that
  * shut against both scorers, as it does for METRICS. The `FB_` codes are in
- * no ticker, no country card and no scorer; `IRLTLT01FRM156N` is read here and
- * changed nowhere.
+ * no ticker and no scorer; since Sentinel D-0113 the DEU/GBR/JPN/FRA country
+ * cards display them (display only, `countryBond` below). `IRLTLT01FRM156N` is
+ * read here and changed nowhere.
  */
 const FB_COUNTRY = {
   DE: { kind: "FIT", colors: ["#8A7448", "#A38A57", "#B89A60", "#C8A96E", "#E0C690"] },
@@ -306,6 +307,85 @@ export function foreignBondSpreads(latest, fresh = () => true) {
     { label: "OAT–Bund 10Y (monthly)", val: pp(leg("IRLTLT01FRM156N"), leg("IRLTLT01DEM156N")),
       tip: "France minus Germany 10Y, monthly, OECD (IRLTLT01FRM156N − IRLTLT01DEM156N). Monthly averages, not a daily spread; kept beside the daily OAT–Bund for the longer OECD history (Sentinel D-0112)." },
   ].filter((s) => s.val != null);
+}
+
+/**
+ * Sentinel D-0113 (amends D-0111's card clause, display only): the country
+ * cards for the four FB countries show the daily FB curve. ISO3 -> FB code.
+ */
+export const FB_CARD_COUNTRY = { DEU: "DE", GBR: "GB", JPN: "JP", FRA: "FR" };
+
+/** The five FB codes a country card reads, or [] for every other country. */
+export function fbCardCodes(iso) {
+  const cc = FB_CARD_COUNTRY[iso];
+  return cc ? FB_TENORS.map((t) => `FB_${cc}_${String(t).padStart(2, "0")}Y`) : [];
+}
+
+/** The FB tab's chart metrics for one country, for the card's embedded chart. */
+export function fbCardMetrics(iso) {
+  const codes = new Set(fbCardCodes(iso));
+  return FOREIGN_BOND_METRICS.filter((m) => codes.has(m.code));
+}
+
+/**
+ * Per-source staleness limits, in days. A mirror of `max_age_days` for
+ * foreign_bonds_{de,gb,jp,fr} in pipelines/freshness_watchdog.py, the rule the
+ * Foreign Bonds tab's spreads already follow; tests/test_d0113_card_freshness.py
+ * fails if the two disagree.
+ */
+export const FB_MAX_AGE_DAYS = { DE: 4, GB: 5, JP: 7, FR: 4 };
+
+const FB_CARD_SOURCE = {
+  DE: "FIT: Deutsche Bundesbank Svensson fitted zero-coupon curve, daily",
+  GB: "FIT: Bank of England GLC fitted spot curve, daily",
+  JP: "CMT: Ministry of Finance constant-maturity par yield, daily",
+  FR: "CMT: Banque de France TEC constant-maturity, daily",
+};
+
+const DAY = 86400000;
+function ageDays(date, now) {
+  if (!date) return null;
+  return Math.floor((now.getTime() - Date.parse(`${String(date).slice(0, 10)}T00:00:00Z`)) / DAY);
+}
+
+/**
+ * What a country card shows from the FB curve (Sentinel D-0113), or null for a
+ * non-FB country. `latest` is the flat `{code: value}` map (FB codes plus the
+ * SOVEREIGN_YIELD_CODES fallback), `dates` the newest observation date per code.
+ *
+ * tenYear: the daily FB 10Y while fresh; otherwise the monthly OECD series,
+ *   badged MONTHLY. slopes: 2s10s and 10s30s in bp, null ("—") when a leg is
+ *   missing, stale beyond FB_MAX_AGE_DAYS, or dated differently from the other.
+ */
+export function countryBond(iso, latest = {}, dates = {}, now = new Date()) {
+  const cc = FB_CARD_COUNTRY[iso];
+  if (!cc) return null;
+  const limit = FB_MAX_AGE_DAYS[cc];
+  const curve = fbCardCodes(iso).map((code, i) => {
+    const value = latest[code] ?? null;
+    const date = value != null && dates[code] ? String(dates[code]).slice(0, 10) : null;
+    const age = ageDays(date, now);
+    return { tenor: FB_TENORS[i], label: `${FB_TENORS[i]}Y`, code, value, date,
+      stale: value == null || age == null || age > limit };
+  });
+  const leg = (t) => curve.find((c) => c.tenor === t);
+  const slope = (label, a, b) => {
+    const s = leg(a), l = leg(b);
+    const ok = !s.stale && !l.stale && s.date === l.date;
+    return { label, bp: ok ? Math.round((l.value - s.value) * 10000) / 100 : null };
+  };
+  const ten = leg(10);
+  const monthlyCode = SOVEREIGN_YIELD_CODES[iso];
+  const tenYear = !ten.stale
+    ? { value: ten.value, daily: true, code: ten.code, badge: null, kind: FB_COUNTRY[cc].kind,
+        tip: `Source: ${ten.code}, ${FB_CARD_SOURCE[cc]} (as of ${ten.date}). Display only (Sentinel D-0113).` }
+    : { value: latest[monthlyCode] ?? null, daily: false, code: monthlyCode, badge: "MONTHLY", kind: "MON",
+        tip: `Source: monthly OECD average via FRED ${monthlyCode}, the FALLBACK: no daily ${ten.code} within ${limit} days. It can sit weeks behind (Sentinel D-0113).` };
+  return {
+    tenYear,
+    curve,
+    slopes: [slope("2s10s", 2, 10), slope("10s30s", 10, 30)],
+  };
 }
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
