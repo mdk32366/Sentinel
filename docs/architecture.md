@@ -253,8 +253,8 @@ anywhere.
 ## Foreign Bonds (D-0111)
 
 The FOREIGN-BONDS tab (`#/foreign-bonds`, after MARKETS) shows government
-bond yields for Germany, the UK and Japan at 2/5/7/10/30Y, and France's
-monthly 10Y. It is display only: nothing here feeds a score.
+bond yields for Germany, the UK, Japan and France at 2/5/7/10/30Y (France
+since D-0112). It is display only: nothing here feeds a score.
 
 **Fetchers.** One module per source in `pipelines/`. Each has
 `fetch_*() -> bytes`, a pure `parse_*(bytes) -> [(code, date, Decimal)]`
@@ -265,6 +265,7 @@ and `run_*(db, backfill=False) -> dict`:
 | `bundesbank_yields.py` | `Bundesbank_Yields` | Bundesbank SDMX CSV, Svensson fitted | `FB_DE_{02,05,07,10,30}Y` | 18:00 | 4 d |
 | `boe_yields.py` | `BoE_Yields` | BoE GLC nominal spot, sheet `4. spot curve` | `FB_GB_…` | 18:30 | 5 d |
 | `mof_jgb.py` | `MOF_JGB` | MOF `jgbcm.csv`, Shift-JIS, era dates | `FB_JP_…` | 10:00 | 7 d |
+| `bdf_tec.py` (D-0112) | `BdF_TEC` | Banque de France Webstat `observations/exports/csv`, TEC constant-maturity, `Authorization: Apikey $WEBSTAT_API_KEY` | `FB_FR_…` | 10:00 | 4 d |
 
 The shared plumbing is in `foreign_bond_common.py`. Transport: timeout
 30 s, 3 attempts, back-off 4 s x 2^(n-1), no retry on a 4xx except 429, and
@@ -276,16 +277,23 @@ NULL. No migration.
 **Fail-closed.** A source writes all its rows in one transaction or none.
 `SchemaDrift` (missing column, bad date, value outside [-2, 15] %) and a
 0-row parse both mean `failed`. A Bundesbank 200 with only a header is
-retried, then `failed` (F-0117). The first run against an empty series
-backfills five years from the archives (F-0116).
+retried, then `failed` (F-0117), and so is a Webstat one. A Webstat 404 or
+401 is a rejected key: `failed` at once, naming `WEBSTAT_API_KEY` (F-0118).
+With no `WEBSTAT_API_KEY` set, `BdF_TEC` logs a warning and returns
+`skipped`, with no request and no write. The first run against an empty
+series backfills five years from the archives (F-0116), or, for Webstat,
+from a `time_period_start>=date'…'` filter.
 
-**Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb` and
-`_jp` (patterns `FB\_DE\_%` etc.). France stays on `sovereign_yields`.
+**Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb`,
+`_jp` and `_fr` (patterns `FB\_DE\_%` etc.). The monthly French 10Y
+fallback stays on `sovereign_yields`.
 
 **UI.** `pages/ForeignBondsTab.jsx` renders `pages/MarketsTab.jsx` with
-`FOREIGN_BOND_METRICS` in a 5-column grid (20 cells; the four French gaps
-are NO SOURCE cells), DataConfidence on the four sources, and the
-`foreignBondSpreads` strip. A spread whose leg is stale is hidden. Data
+`foreignBondCells(latest)` in a 5-column grid (20 daily cells; FR 10Y swaps to
+`FR_10Y_MONTHLY_FALLBACK`, the monthly OECD series badged MONTHLY, while no
+daily French 10Y is stored), DataConfidence on the five sources, the
+`foreignBondSpreads` strip, and a footer ending
+"Source: Banque de France, updated <date>" (`bdfAttribution`). A spread whose leg is stale is hidden. Data
 comes from `useSeries(FOREIGN_BOND_CODES)` through the existing
 `/api/timeseries`, with no new endpoint. MARKETS renders through the same
 component and is byte-identical to master `be64218`

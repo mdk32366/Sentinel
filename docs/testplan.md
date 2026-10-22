@@ -569,3 +569,53 @@ the tab, and Back returns to MARKETS.
 watchdog, not in CI. The scheduler's first-run backfill decision is not
 exercised against a database. The live fetch is a manual `python -m
 pipelines.<module> [--backfill]`, never run in CI.
+
+### T-0112 - France daily from the Banque de France: no key skips, a bad key or an empty answer fails closed
+
+Proves `D-0112`. **Red first:** two test-only commits came before the code.
+The first had the fetcher, the UI and the wiring tests (836 Python tests, 9
+failures + 23 errors; 7 of 11 FOREIGN-BONDS UI tests failing). The second added
+the measured 401 (`F-0118`), which failed against the first implementation
+because its error did not name the key. No network: the CSV fixtures are
+**synthetic-from-docs** (`A-0029`, PROVENANCE.md); the 404 and 401 bodies are
+real captures.
+
+`tests/test_bdf_tec.py`
+- **Parse**: the fixture gives 40 rows, five `FB_FR_` codes, and 10Y
+  2026-10-21 = 3.35. An empty `obs_value` is skipped, not read as zero. A series
+  not asked for (TEC15), a series missing (TEC30) and a renamed `obs_value`
+  are each `SchemaDrift`.
+- **Request**: the documented `exports/csv` URL; `where=series_key in (…)`
+  names all five keys plus `time_period_start>=date'…'`; `order_by`; no
+  `apikey` in the URL; the header is `Authorization: Apikey <key>`; the daily
+  window is 7-21 days and the backfill is 1825 days.
+- **No key** (`""`, blanks, `None`): `skipped`, 0 requests, 0 rows, 0
+  UpdateLog rows, and a WARNING naming `WEBSTAT_API_KEY`. The positive twin
+  reads the key from settings. `Settings` accepts `WEBSTAT_API_KEY`. The
+  scheduled job with no key raises nothing and sends nothing.
+- **Fail closed**: the 404 and the 401 each give `failed` after 1 request, no
+  sleep, 0 rows, an UpdateLog row with `http=404`/`http=401` and
+  `WEBSTAT_API_KEY`, and never the key itself. A header-only 200 every time
+  gives `failed` after 3 requests, sleeps [4, 8], 0 rows; header-only then
+  data gives `success`. A missing series writes nothing.
+- **Run**: `success, 40, 0, 2026-10-21`; a second run is `0, 40`; five
+  `foreign_bond` metrics.
+- **Wiring**: job `bdf_tec` weekdays 10:00 UTC; `BdF_TEC` declared and
+  scanned; the first run against an empty series asks for a backfill. Watchdog
+  `foreign_bonds_fr`: `FB\_FR\_%`, 4 d, 3 days ok, 5 stale.
+
+Extended, not loosened: the isolation guards in `test_foreign_bonds.py` and
+`test_markets_tooltips.py` now cover all 20 `FB_` codes. The watchdog pins
+(`test_foreign_bonds.py`, `test_coverage_end.py`) and `test_scheduler_jobs.py`
+add the French source and job. The D-0111 option-A assertions (no `FB_FR`,
+four NO SOURCE cells, 16 toggles) are replaced by D-0112's: 20 daily cells,
+20 toggles, the labelled MONTHLY fallback for FR 10Y only (asserted both when
+it shows and when it must not), the "Source: Banque de France, updated
+<date>" footer, and the daily OAT–Bund spread.
+
+AC-1 (`marketsDefault.ac1.dom.test.jsx`) is unchanged and passes: the default
+dashboard is byte-identical. Neither scorer file changes (`git diff --stat`
+against `a0479c0` names neither).
+
+**Known limits.** The CSV shape is the guide's, not a measured one (`A-0029`).
+The manual trigger and startup fill for `bdf` wait for #99.
