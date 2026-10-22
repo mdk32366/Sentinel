@@ -1,0 +1,29 @@
+{
+ "terms": {
+  "url": "synthetic"
+ },
+ "seriesDetail": {
+  "BD.CDN.2YR.DQ.YLD": {
+   "label": "2YR"
+  },
+  "BD.CDN.3YR.DQ.YLD": {
+   "label": "3YR"
+  },
+  "BD.CDN.5YR.DQ.YLD": {
+   "label": "5YR"
+  },
+  "BD.CDN.7YR.DQ.YLD": {
+   "label": "7YR"
+  },
+  "BD.CDN.10YR.DQ.YLD": {
+   "label": "10YR"
+  },
+  "BD.CDN.LONG.DQ.YLD": {
+   "label": "LONG"
+  },
+  "BD.CDN.RRB.DQ.YLD": {
+   "label": "RRB"
+  }
+ },
+ "observations": []
+}

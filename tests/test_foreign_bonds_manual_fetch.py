@@ -95,18 +95,62 @@ class Auth(Base_):
         job.assert_not_called()
 
 
+class Batch2aRoutes(Base_):
+    """T-0117 (Sentinel D-0115): the manual route accepts each new source and
+    a proof cookie is still 403 on it."""
+
+    NEW = ("boc", "riksbank", "rba", "norges", "bde", "ecb")
+
+    async def test_each_new_source_is_accepted(self):
+        self.assertRouteExists()
+        for src in self.NEW:
+            with self.subTest(source=src), \
+                    mock.patch("pipelines.scheduler._scheduled_foreign_bonds",
+                               return_value={"status": "success", "inserted": 0,
+                                             "updated": 0, "latest_date": None}) as job:
+                response = await _send("POST", f"/api/fetch/foreign-bonds/{src}", headers=_basic())
+                self.assertEqual(response.status_code, 200, response.text)
+                job.assert_called_once()
+
+    async def test_a_proof_cookie_post_is_403_on_new_sources(self):
+        self.assertRouteExists()
+        proof_access._reset_lockout()
+        self.addCleanup(proof_access._reset_lockout)
+        token = _new_token()
+        expires = _iso(_utcnow() + timedelta(hours=1))
+        with mock.patch.object(settings, "sentinel_proof_token_sha256", _sha(token)), \
+                mock.patch.object(settings, "sentinel_proof_expires_at", expires):
+            transport = httpx.ASGITransport(app=app, raise_app_exceptions=False)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+                grant = await client.post("/__proof", content=f"token={token}", headers={
+                    "Fly-Forwarded-Proto": "https",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                })
+            cookie = grant.headers["set-cookie"].split(";", 1)[0]
+            for src in self.NEW:
+                with self.subTest(source=src), \
+                        mock.patch("pipelines.scheduler._scheduled_foreign_bonds") as job:
+                    response = await _send("POST", f"/api/fetch/foreign-bonds/{src}",
+                                           headers={"Cookie": cookie})
+                    self.assertEqual(response.status_code, 403)
+                    job.assert_not_called()
+
+
 class Routing(Base_):
     async def test_an_unknown_source_is_404(self):
         self.assertRouteExists()
         with mock.patch("pipelines.scheduler._scheduled_foreign_bonds") as job:
-            response = await _send("POST", "/api/fetch/foreign-bonds/ecb", headers=_basic())
+            response = await _send("POST", "/api/fetch/foreign-bonds/ecb_irs", headers=_basic())
         self.assertEqual(response.status_code, 404)
         job.assert_not_called()
 
     async def test_every_registered_source_is_one_line_in_the_table(self):
         self.assertRouteExists()
         from pipelines.scheduler import FOREIGN_BOND_JOBS
-        self.assertEqual(set(FOREIGN_BOND_JOBS), {"bundesbank", "boe", "mof", "bdf"})
+        # T-0117 (Sentinel D-0115, amended): exactly ten sources.
+        self.assertEqual(set(FOREIGN_BOND_JOBS), {"bundesbank", "boe", "mof", "bdf",
+                                                  "boc", "riksbank", "rba", "norges", "bde", "ecb"})
+        self.assertEqual(len(FOREIGN_BOND_JOBS), 10)
 
 
 class FailsClosed(Base_):
