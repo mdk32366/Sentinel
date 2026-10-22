@@ -3924,3 +3924,43 @@ no retry, `failed`, and an error naming `WEBSTAT_API_KEY` but never its value.
 Both bodies are kept as real fixtures (`bdf_tec_404.json`,
 `bdf_tec_401.json`), and `T-0112` covers both. The selfhost egress allowlist
 names `webstat.banque-france.fr`, not the legacy host.
+
+### F-0119 - D-0114 follow-up: coverage still counts 165, so FB countries' available points are understated by 20
+
+**Claim.** `D-0114` (judgment call 5) left `DIMENSION_MAX` and
+`available_points()` in `pipelines/composite_stress.py` unchanged: five keys,
+no `dim4_score`, maximum 165. For DEU, GBR, JPN and FRA dimension 4 now
+scores (0-20), so for those four `available_points` is 20 lower than the
+points they can actually earn, and `score_pct_of_available` is overstated.
+France in the prod shadow (2026-10-22) earns 20.0 from dim 4 against an
+availability figure that does not include it. Every other country is correct,
+since dim 4 earns them nothing.
+
+**Consequence if unhandled.** "Measured on N of 165" and the percentage-of-
+available figure are wrong for exactly the four countries `D-0114` touched,
+in the direction that flatters the score. `ui/src/lib/coverage.js` mirrors the
+same table, and the parity tests keep the two consistent with each other, not
+with the scorer.
+
+**Handled.** Not in `D-0114`. This was deliberate, to keep the PR's non-FB
+payloads byte-identical to master and its diff limited to dim 4. Follow-up:
+add `dim4_score: 20` to `DIMENSION_MAX` (and to `coverage.js`), counted only
+when `dim4_source` is set for the country, with a parity test on both sides.
+
+### F-0120 - D-0114 follow-up: the UI's model maximum moved from 165 to 185
+
+**Claim.** `D-0114` (judgment call 6) put `dim4_score` back into
+`STRESS_DIMENSIONS` in `ui/src/lib/dimensions.js` with max 20. The methodology
+panel's raw maximum therefore reads 185, which is the pre-`D-0066` figure,
+while the scorer's `DIMENSION_MAX` and every "of 165" sentence in
+`docs/decisions.md` (`D-0066` onward) still say 165. Both numbers are true for
+different countries: 185 for the four FB countries and 165 for everyone else.
+
+**Consequence if unhandled.** A reader sees 185 on the panel and 165 in the
+coverage line on the same screen. That is the reconciliation failure `F-0076`
+was opened to remove.
+
+**Handled.** Not in `D-0114`. The panel must list every summed term
+(`tests/test_composite_dimensions.py`), so dim 4 has to appear there.
+Follow-up, together with `F-0119`: label the dim-4 row "DEU/GBR/JPN/FRA only",
+and state the maximum as 185 for those four and 165 elsewhere.
