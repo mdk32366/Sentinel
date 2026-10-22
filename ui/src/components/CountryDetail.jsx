@@ -132,7 +132,7 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           footnote="The market's own price for insuring this sovereign's default · dimension 7 of the composite score"
         />
         <SeriesChart
-          title="TOTAL RESERVES EX-GOLD ($M) — non-dollar reserve diversification"
+          title="TOTAL RESERVES EX-GOLD ($B) — non-dollar reserve diversification"
           rows={reservesRows}
           dataKey="value"
           stroke="#7EB8C9"
