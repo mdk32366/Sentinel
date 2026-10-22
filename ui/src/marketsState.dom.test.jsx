@@ -104,3 +104,24 @@ describe("MARKETS keeps series, range and % CHANGE across a tab change", () => {
     expect(controls()).toBe(chosen);
   });
 });
+
+describe("D-0113: opening and closing a country card does not reset MARKETS (#97 class)", () => {
+  it("toggle MARKETS state, open DEU's card, come back: unchanged", async () => {
+    render(<App />);
+    await waitFor(() => expect(screen.getByText("% CHANGE")).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "30Y Treasury" }));
+    fireEvent.click(screen.getByText("% CHANGE"));
+    const chosen = controls();
+
+    await act(async () => {
+      window.location.hash = "#/country/DEU";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+    await waitFor(() => expect(screen.getByText("COUNTRY DETAIL")).toBeTruthy());
+    await waitFor(() => expect(screen.getByTestId("country-bond-chart")).toBeTruthy());
+
+    await act(async () => { fireEvent.click(tabButton("MARKETS")); });
+    await waitFor(() => expect(screen.getByRole("button", { name: "30Y Treasury" })).toBeTruthy());
+    expect(controls()).toBe(chosen);
+  });
+});

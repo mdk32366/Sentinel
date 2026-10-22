@@ -209,20 +209,41 @@ describe("§7.7: the spread strip", () => {
     expect(container.textContent).toContain("-0.63pp");
     // No monthly OAT-Bund (4.44 - 3.50) any more (D-0112 amendment 1).
     expect(container.textContent).not.toContain("+0.94pp");
-    // OAT-Bund daily in bp (D-0112 amendment 2): FB_FR_10Y 3.35 - FB_DE_10Y 3.47
-    expect(container.textContent).toContain("-12bp");
+    // OAT-Bund daily, in pp like the rest of the strip (D-0113 follow-up):
+    // FB_FR_10Y 3.35 - FB_DE_10Y 3.47
+    expect(container.textContent).toContain("-0.12pp");
+    expect(container.textContent).not.toMatch(/\dbp/);
   });
 
-  it("hides a spread whose leg is stale, and keeps the rest", async () => {
+  // D-0113 follow-up (Trinity): a stale leg keeps the spread in place and
+  // shows "—", as the OAT–Bund already did; it no longer disappears.
+  it("shows — for a spread whose leg is stale, and keeps the rest", async () => {
     freshness = allFresh();
     freshness.sources.find((s) => s.key === "foreign_bonds_gb").status = "stale";
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
-    await waitFor(() => expect(screen.queryByText("Gilt–UST 10Y")).toBeNull());
-    expect(screen.queryByText("Gilt–Bund 10Y")).toBeNull();
-    expect(screen.queryByText("GB 10Y–2Y")).toBeNull();
-    expect(screen.getByText("Bund–UST 10Y")).toBeTruthy();
-    expect(screen.getByText("JP 30Y–10Y")).toBeTruthy();
+    // One strip entry: the strip's direct child that carries this label.
+    const strip = () => [...container.querySelectorAll("div")].find((d) => d.textContent.startsWith("SPREAD") && d.children.length > 1);
+    const cell = (label) => [...strip().children].find((c) => c.textContent.startsWith(label));
+    await waitFor(() => expect(cell("Gilt–UST 10Y").textContent).toContain("—"));
+    for (const label of ["Gilt–UST 10Y", "Gilt–Bund 10Y", "Gilt–Bund 2Y", "GB 10Y–2Y"]) {
+      expect(cell(label).textContent).toContain("—");
+      expect(cell(label).textContent).not.toMatch(/pp/);
+    }
+    expect(cell("Bund–UST 10Y").textContent).toContain("-0.63pp");
+    expect(cell("JP 30Y–10Y").textContent).toMatch(/pp/);
+  });
+
+  it("foreignBondSpreads: a stale leg gives val null and display — for every spread", () => {
+    const latest = { FB_DE_10Y: 3.47, FB_DE_02Y: 2.0, FB_GB_10Y: 4.4, FB_GB_02Y: 4.0, FB_JP_10Y: 1.6, FB_JP_30Y: 3.2, DGS10: 4.1 };
+    const out = foreignBondSpreads(latest, (c) => c !== "DGS10", {});
+    for (const label of ["Bund–UST 10Y", "Gilt–UST 10Y", "JGB–UST 10Y"]) {
+      const s = out.find((x) => x.label === label);
+      expect(s).toBeTruthy();
+      expect(s.val).toBeNull();
+      expect(s.display).toBe("—");
+    }
+    expect(out.find((x) => x.label === "Gilt–Bund 10Y").val).toBeCloseTo(0.93, 6);
   });
 });
 
@@ -330,8 +351,12 @@ describe("D-0112 amendment 2 (T-0112 addendum 2): the daily OAT–Bund spread", 
     };
     const s = foreignBondSpreads({ FB_FR_10Y: 3.35, FB_DE_10Y: 3.45 }, () => true, series)
       .find((x) => x.label === OAT_BUND);
-    expect(s.unit).toBe("bp");
-    expect(s.val).toBeCloseTo(-15, 6);
+    // D-0113 follow-up: pp like the rest of the strip; the meaning is the same.
+    expect(s.unit).not.toBe("bp");
+    expect(s.val).toBeCloseTo(-0.15, 6);
+    expect(s.label).toBe(OAT_BUND);
+    expect(s.tip).toMatch(/percentage points/);
+    expect(s.tip).not.toMatch(/basis points/);
   });
 
   it("a stale leg shows a dash, not a number", () => {
@@ -346,12 +371,12 @@ describe("D-0112 amendment 2 (T-0112 addendum 2): the daily OAT–Bund spread", 
     }
   });
 
-  it("on the tab: -12bp when fresh, — when the French leg is stale", async () => {
+  it("on the tab: -0.12pp when fresh, — when the French leg is stale", async () => {
     const view = render(<ForeignBondsTab />);
     await settle(view.container);
     await waitFor(() => expect(screen.getByText(OAT_BUND)).toBeTruthy());
     const cell = () => screen.getByText(OAT_BUND).closest("div[style]").parentElement;
-    await waitFor(() => expect(cell().textContent).toContain("-12bp"));
+    await waitFor(() => expect(cell().textContent).toContain("-0.12pp"));
     cleanup();
 
     freshness = allFresh();
@@ -359,7 +384,7 @@ describe("D-0112 amendment 2 (T-0112 addendum 2): the daily OAT–Bund spread", 
     const stale = render(<ForeignBondsTab />);
     await settle(stale.container);
     await waitFor(() => expect(screen.getByText(OAT_BUND)).toBeTruthy());
-    await waitFor(() => expect(stale.container.textContent).not.toContain("-12bp"));
+    await waitFor(() => expect(stale.container.textContent).not.toContain("-0.12pp"));
     const strip = [...stale.container.querySelectorAll("div")].find((d) => d.textContent.startsWith("SPREAD") && d.children.length > 1);
     const oat = [...strip.children].find((c) => c.textContent.includes(OAT_BUND));
     expect(oat.textContent).toContain("—");

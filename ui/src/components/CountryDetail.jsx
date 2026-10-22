@@ -1,10 +1,12 @@
-import { SOVEREIGN_YIELD_CODES } from "../lib/constants";
+import { SOVEREIGN_YIELD_CODES, countryBond, fbCardCodes } from "../lib/constants";
 import { goldSeries, momChange, reservesSeries, ticSeries } from "../lib/countrySeries";
 import { useApiResource } from "../hooks/useApiResource";
+import { useSeries } from "../hooks/useMarketSeries";
 import { useCountryDetail } from "../hooks/useCountryDetail";
 import { useCountryNarrative } from "../hooks/useCountryNarrative";
 import { DataConfidence } from "./DataConfidence";
 import { AnalystBrief } from "./country/AnalystBrief";
+import { CountryBondCurve } from "./country/CountryBondCurve";
 import { CountryStatCards } from "./country/CountryStatCards";
 import { LiquidationBanner } from "./country/LiquidationBanner";
 import { SeriesChart } from "./country/SeriesChart";
@@ -21,12 +23,16 @@ import { StressContribution } from "./country/StressContribution";
  * different things, and the one passing `{}` showed every country's spread
  * as a dash, indistinguishable from a country FRED does not cover.
  */
-export function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
+export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}, now }) {
   const { ticHistory, goldHistory, reservesHistory, cds, loading } = useCountryDetail(iso);
   const { narrative, loading: narrativeLoading, provider, generate } = useCountryNarrative(iso);
   // D-0071: which providers this deployment can authenticate. Fetched once
   // rather than assumed, so the panel never offers a key that is not there.
   const { data: providerInfo } = useApiResource(`/analyze/providers`);
+  // Sentinel D-0113: the four FB countries also read their daily FB curve,
+  // through its own request. MARKETS' TRACKED_CODES is untouched; every other
+  // country asks for nothing (fbCardCodes is []).
+  const fb = useSeries(fbCardCodes(iso));
 
   if (loading) {
     return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
@@ -46,6 +52,7 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
   const hasAnySeries = Boolean(ticRows.length || goldRows.length || reservesRows.length || cdsRows.length);
 
   const yieldCode = SOVEREIGN_YIELD_CODES[iso];
+  const bond = countryBond(iso, { ...latestAll, ...fb.latest }, fb.dates, now ?? new Date());
 
   return (
     <div style={container}>
@@ -64,7 +71,9 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
       </div>
 
       <DataConfidence
-        sourceKeys={["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields"]}
+        sourceKeys={bond
+          ? ["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields", `foreign_bonds_${bond.curve[0].code.slice(3, 5).toLowerCase()}`]
+          : ["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields"]}
         label="Sources on this panel"
       />
 
@@ -75,10 +84,13 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
         ticMom={momChange(ticRows)}
         latestGold={goldRows[goldRows.length - 1]}
         ticHistory={ticHistory}
-        countryYield={yieldCode ? latestAll[yieldCode] : null}
+        countryYield={bond ? bond.tenYear.value : yieldCode ? latestAll[yieldCode] : null}
+        yieldSource={bond ? bond.tenYear : null}
         us10y={latestAll["DGS10"]}
         cds={cds}
       />
+
+      {bond && <CountryBondCurve key={iso} iso={iso} bond={bond} chart />}
 
       <StressContribution iso={iso} />
 

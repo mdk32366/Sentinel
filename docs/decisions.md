@@ -3228,6 +3228,8 @@ one. The only free official daily sources that a script can read without a
 challenge are these three. France has none, so its gap is shown, not filled
 (`A-0026`).
 
+Amended by D-0113 (country cards).
+
 ### D-0112 - France on FOREIGN-BONDS: Banque de France TEC daily, the monthly OECD 10Y as a labelled fallback
 
 Supersedes `D-0111` option A for France only. Owner GO 2026-10-22 8:48 AM PT
@@ -3319,3 +3321,58 @@ anomaly), the entry stays in place and reads "—" rather than hiding, unlike
 the other spreads. `useSeries` also returns the per-code points (additive).
 **Unchanged:** scorer, DB, `SOVEREIGN_YIELD_CODES`, `TRACKED_CODES` and the
 API. Tested by `T-0112` addendum 2.
+
+**D-0112 amendment 3 (2026-10-22): the strip reads in one unit, and a stale leg shows "—".**
+The OAT–Bund entry on the FOREIGN-BONDS spread strip now reads in pp, like
+every other spread there (it was the one bp entry); the label keeps its
+meaning (FR 10Y BdF TEC minus DE 10Y Bundesbank, daily) and
+`oatBundDailySpread` still returns bp, divided by 100 at the strip. Every
+other spread on the strip now stays in place and shows "—" when the
+watchdog calls one of its legs stale or worse, instead of disappearing, so
+the strip keeps its shape. A spread whose leg is fresh but has no value at
+all is still left out. Display only: nothing scored moves. Pinned by
+T-0112 addendum 3.
+
+### D-0113 - Country cards for DEU / GBR / JPN / FRA read the daily FB curve, with a curve row, slopes and the Foreign Bonds chart; display only
+
+Amends `D-0111`'s card clause ("country cards ... byte-identical"). Trinity's
+ruling, owner request 2026-10-22 ("Update the Country Baseball Cards for the
+four countries where we are tracking their bonds"); chart scope addition by
+the owner 12:25 PM PT; per-country chart state and MARKETS preservation by
+Trinity 12:26 PM PT.
+
+**Choice.** On the DEU, GBR, JPN and FRA cards (`FB_CARD_COUNTRY` ->
+DE/GB/JP/FR):
+- **Sovereign Yield** and **Spread** read the daily `FB_xx_10Y`. When it is
+  missing or older than the source's watchdog window (`FB_MAX_AGE_DAYS`, a
+  mirror of `freshness_watchdog.CHECKS`: DE 4, GB 5, JP 7, FR 4 days), they
+  fall back to the monthly OECD series in `SOVEREIGN_YIELD_CODES`, badged
+  **MONTHLY**. The tip names the source: FIT daily (DE, GB), CMT daily (JP,
+  FR), monthly OECD (fallback). The spread stays a measured difference
+  (`D-0066`). `DataConfidence` adds that country's `foreign_bonds_xx` key.
+- A **curve row**, 2/5/7/10/30Y; a tenor with no value shows **NO SOURCE**.
+  **2s10s** and **10s30s** in bp; a missing or stale leg, or two legs on
+  different observation dates, gives "—".
+- The **Foreign Bonds chart**, filtered to that country (its five tenors,
+  % CHANGE, ranges). Not forked: the chart panel was lifted out of
+  `MarketsTab.jsx` into `pages/MarketsChartPanel.jsx`, and both render it.
+  Its view state is per country (the card is keyed by ISO) and separate from
+  MARKETS' state, which a country card does not reset (the #97 class).
+
+The FB codes are read by their own request (`useSeries(fbCardCodes(iso))`);
+`TRACKED_CODES` and `SOVEREIGN_YIELD_CODES` are unchanged and pinned exactly.
+Every other country (ITA included) renders as before and makes no FB request.
+
+**Not scored.** No scorer reads an FB code. `ForeignBondsAreNotScored` stays,
+and `tests/test_d0113_scorer_golden.py` pins composite and v2 output
+byte-identical to a golden captured from master `0680d4b`.
+
+**Rejected.** (a) Adding the FB codes to `TRACKED_CODES`: every MARKETS load
+would fetch 20 more series for four cards. (b) A copy of the chart for the
+card: two copies drift. (c) A fixed staleness window for all four: Japan's
+MOF file runs to 7 days in the watchdog, so a 4-day rule would badge good
+JGB data MONTHLY. (d) Interpolating a missing tenor or a cross-date slope.
+
+**What forced the call.** The four cards showed a monthly 10Y that can sit
+weeks behind while the same countries' daily curves were one tab away.
+

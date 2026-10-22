@@ -176,7 +176,8 @@ export function US_SPREADS(latest) {
  *
  * Every entry is `scored: false`. `tests/test_markets_tooltips.py` holds that
  * shut against both scorers, as it does for METRICS. The `FB_` codes are in
- * no ticker, no country card and no scorer.
+ * no ticker and no scorer; since Sentinel D-0113 the DEU/GBR/JPN/FRA country
+ * cards display them (display only, `countryBond` below).
  */
 const FB_COUNTRY = {
   DE: { kind: "FIT", colors: ["#8A7448", "#A38A57", "#B89A60", "#C8A96E", "#E0C690"] },
@@ -253,30 +254,35 @@ const pp = (a, b) => (a != null && b != null ? a - b : null);
 
 /**
  * The FOREIGN-BONDS spread strip, in pp. `fresh(code)` is false when the
- * watchdog calls that leg's source stale or worse; such a spread is hidden
- * rather than shown against a leg that has stopped moving.
+ * watchdog calls that leg's source stale or worse; such a spread stays in
+ * place and shows "—" rather than a number against a leg that has stopped
+ * moving (Sentinel D-0113 follow-up; it used to be hidden). A spread with a
+ * fresh but absent leg (no data at all) is still left out.
  */
 export function foreignBondSpreads(latest, fresh = () => true, series = {}) {
-  const leg = (code) => (fresh(code) ? latest[code] : null);
+  const settle = (s, a, b) => {
+    if (!fresh(a) || !fresh(b)) return { ...s, val: null, display: "—" };
+    return { ...s, val: pp(latest[a], latest[b]) };
+  };
   const lag = " The two legs can be dated a business day apart (the BoE curve is published a day late).";
   return [
-    { label: "Bund–UST 10Y", val: pp(leg("FB_DE_10Y"), leg("DGS10")),
-      tip: "German 10Y (Bundesbank fitted) minus US 10Y Treasury (DGS10), in percentage points." + lag },
-    { label: "Gilt–UST 10Y", val: pp(leg("FB_GB_10Y"), leg("DGS10")),
-      tip: "UK 10Y (BoE fitted spot) minus US 10Y Treasury (DGS10), in percentage points." + lag },
-    { label: "JGB–UST 10Y", val: pp(leg("FB_JP_10Y"), leg("DGS10")),
-      tip: "Japan 10Y (MOF constant-maturity) minus US 10Y Treasury (DGS10), in percentage points." + lag },
-    { label: "Gilt–Bund 10Y", val: pp(leg("FB_GB_10Y"), leg("FB_DE_10Y")),
-      tip: "UK 10Y minus German 10Y, both fitted curves, in percentage points." + lag },
-    { label: "Gilt–Bund 2Y", val: pp(leg("FB_GB_02Y"), leg("FB_DE_02Y")),
-      tip: "UK 2Y minus German 2Y, both fitted curves, in percentage points." + lag },
-    { label: "DE 10Y–2Y", val: pp(leg("FB_DE_10Y"), leg("FB_DE_02Y")), inverts: true,
-      tip: "German curve slope: 10Y minus 2Y (Bundesbank fitted). Below zero the curve is inverted." },
-    { label: "GB 10Y–2Y", val: pp(leg("FB_GB_10Y"), leg("FB_GB_02Y")), inverts: true,
-      tip: "UK curve slope: 10Y minus 2Y (BoE fitted spot). Below zero the curve is inverted." },
-    { label: "JP 30Y–10Y", val: pp(leg("FB_JP_30Y"), leg("FB_JP_10Y")),
-      tip: "Japan long end: 30Y minus 10Y (MOF constant-maturity), where the super-long JGB repricing shows." },
-  ].filter((s) => s.val != null).concat([oatBundCurrent(fresh, series)]);
+    settle({ label: "Bund–UST 10Y",
+      tip: "German 10Y (Bundesbank fitted) minus US 10Y Treasury (DGS10), in percentage points." + lag }, "FB_DE_10Y", "DGS10"),
+    settle({ label: "Gilt–UST 10Y",
+      tip: "UK 10Y (BoE fitted spot) minus US 10Y Treasury (DGS10), in percentage points." + lag }, "FB_GB_10Y", "DGS10"),
+    settle({ label: "JGB–UST 10Y",
+      tip: "Japan 10Y (MOF constant-maturity) minus US 10Y Treasury (DGS10), in percentage points." + lag }, "FB_JP_10Y", "DGS10"),
+    settle({ label: "Gilt–Bund 10Y",
+      tip: "UK 10Y minus German 10Y, both fitted curves, in percentage points." + lag }, "FB_GB_10Y", "FB_DE_10Y"),
+    settle({ label: "Gilt–Bund 2Y",
+      tip: "UK 2Y minus German 2Y, both fitted curves, in percentage points." + lag }, "FB_GB_02Y", "FB_DE_02Y"),
+    settle({ label: "DE 10Y–2Y", inverts: true,
+      tip: "German curve slope: 10Y minus 2Y (Bundesbank fitted). Below zero the curve is inverted." }, "FB_DE_10Y", "FB_DE_02Y"),
+    settle({ label: "GB 10Y–2Y", inverts: true,
+      tip: "UK curve slope: 10Y minus 2Y (BoE fitted spot). Below zero the curve is inverted." }, "FB_GB_10Y", "FB_GB_02Y"),
+    settle({ label: "JP 30Y–10Y",
+      tip: "Japan long end: 30Y minus 10Y (MOF constant-maturity), where the super-long JGB repricing shows." }, "FB_JP_30Y", "FB_JP_10Y"),
+  ].filter((s) => s.val != null || s.display === "—").concat([oatBundCurrent(fresh, series)]);
 }
 
 export const OAT_BUND_LABEL = "OAT–Bund 10Y (daily, BdF TEC − Bundesbank)";
@@ -296,16 +302,97 @@ export function oatBundDailySpread(fr = [], de = []) {
 }
 
 /**
- * The strip entry for the daily OAT–Bund. Always present on the tab: when
+ * The strip entry for the daily OAT–Bund, in pp. Always present on the tab: when
  * either leg is past the FB freshness rule (`fresh`), or no shared date
  * exists, it reads "—" instead of quoting a number.
  */
 function oatBundCurrent(fresh, series) {
-  const tip = "French 10Y (Banque de France TEC, constant-maturity) minus German 10Y (Bundesbank fitted), daily, in basis points, only on dates both legs publish - a missing leg is a gap, never filled. Two constructions: a constant-maturity yield against a fitted zero-coupon one. Shows — when either leg is stale (Sentinel D-0112 amendment 2).";
-  const dash = { label: OAT_BUND_LABEL, unit: "bp", val: null, display: "—", tip: tip };
+  const tip = "French 10Y (Banque de France TEC, constant-maturity) minus German 10Y (Bundesbank fitted), daily, in percentage points like the rest of the strip, only on dates both legs publish - a missing leg is a gap, never filled. Two constructions: a constant-maturity yield against a fitted zero-coupon one. Shows — when either leg is stale (Sentinel D-0112 amendment 2).";
+  const dash = { label: OAT_BUND_LABEL, val: null, display: "—", tip: tip };
   if (!fresh("FB_FR_10Y") || !fresh("FB_DE_10Y")) return dash;
   const last = oatBundDailySpread(series.FB_FR_10Y, series.FB_DE_10Y).at(-1);
-  return last ? { label: OAT_BUND_LABEL, unit: "bp", val: last.bp, date: last.date, tip: tip } : dash;
+  // pp, like the rest of the strip (Sentinel D-0113 follow-up); the daily
+  // series itself stays in bp.
+  return last ? { label: OAT_BUND_LABEL, val: last.bp / 100, date: last.date, tip: tip } : dash;
+}
+
+/**
+ * Sentinel D-0113 (amends D-0111's card clause, display only): the country
+ * cards for the four FB countries show the daily FB curve. ISO3 -> FB code.
+ */
+export const FB_CARD_COUNTRY = { DEU: "DE", GBR: "GB", JPN: "JP", FRA: "FR" };
+
+/** The five FB codes a country card reads, or [] for every other country. */
+export function fbCardCodes(iso) {
+  const cc = FB_CARD_COUNTRY[iso];
+  return cc ? FB_TENORS.map((t) => `FB_${cc}_${String(t).padStart(2, "0")}Y`) : [];
+}
+
+/** The FB tab's chart metrics for one country, for the card's embedded chart. */
+export function fbCardMetrics(iso) {
+  const codes = new Set(fbCardCodes(iso));
+  return FOREIGN_BOND_METRICS.filter((m) => codes.has(m.code));
+}
+
+/**
+ * Per-source staleness limits, in days. A mirror of `max_age_days` for
+ * foreign_bonds_{de,gb,jp,fr} in pipelines/freshness_watchdog.py, the rule the
+ * Foreign Bonds tab's spreads already follow; tests/test_d0113_card_freshness.py
+ * fails if the two disagree.
+ */
+export const FB_MAX_AGE_DAYS = { DE: 4, GB: 5, JP: 7, FR: 4 };
+
+const FB_CARD_SOURCE = {
+  DE: "FIT: Deutsche Bundesbank Svensson fitted zero-coupon curve, daily",
+  GB: "FIT: Bank of England GLC fitted spot curve, daily",
+  JP: "CMT: Ministry of Finance constant-maturity par yield, daily",
+  FR: "CMT: Banque de France TEC constant-maturity, daily",
+};
+
+const DAY = 86400000;
+function ageDays(date, now) {
+  if (!date) return null;
+  return Math.floor((now.getTime() - Date.parse(`${String(date).slice(0, 10)}T00:00:00Z`)) / DAY);
+}
+
+/**
+ * What a country card shows from the FB curve (Sentinel D-0113), or null for a
+ * non-FB country. `latest` is the flat `{code: value}` map (FB codes plus the
+ * SOVEREIGN_YIELD_CODES fallback), `dates` the newest observation date per code.
+ *
+ * tenYear: the daily FB 10Y while fresh; otherwise the monthly OECD series,
+ *   badged MONTHLY. slopes: 2s10s and 10s30s in bp, null ("—") when a leg is
+ *   missing, stale beyond FB_MAX_AGE_DAYS, or dated differently from the other.
+ */
+export function countryBond(iso, latest = {}, dates = {}, now = new Date()) {
+  const cc = FB_CARD_COUNTRY[iso];
+  if (!cc) return null;
+  const limit = FB_MAX_AGE_DAYS[cc];
+  const curve = fbCardCodes(iso).map((code, i) => {
+    const value = latest[code] ?? null;
+    const date = value != null && dates[code] ? String(dates[code]).slice(0, 10) : null;
+    const age = ageDays(date, now);
+    return { tenor: FB_TENORS[i], label: `${FB_TENORS[i]}Y`, code, value, date,
+      stale: value == null || age == null || age > limit };
+  });
+  const leg = (t) => curve.find((c) => c.tenor === t);
+  const slope = (label, a, b) => {
+    const s = leg(a), l = leg(b);
+    const ok = !s.stale && !l.stale && s.date === l.date;
+    return { label, bp: ok ? Math.round((l.value - s.value) * 10000) / 100 : null };
+  };
+  const ten = leg(10);
+  const monthlyCode = SOVEREIGN_YIELD_CODES[iso];
+  const tenYear = !ten.stale
+    ? { value: ten.value, daily: true, code: ten.code, badge: null, kind: FB_COUNTRY[cc].kind,
+        tip: `Source: ${ten.code}, ${FB_CARD_SOURCE[cc]} (as of ${ten.date}). Display only (Sentinel D-0113).` }
+    : { value: latest[monthlyCode] ?? null, daily: false, code: monthlyCode, badge: "MONTHLY", kind: "MON",
+        tip: `Source: monthly OECD average via FRED ${monthlyCode}, the FALLBACK: no daily ${ten.code} within ${limit} days. It can sit weeks behind (Sentinel D-0113).` };
+  return {
+    tenYear,
+    curve,
+    slopes: [slope("2s10s", 2, 10), slope("10s30s", 10, 30)],
+  };
 }
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────

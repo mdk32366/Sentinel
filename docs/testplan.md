@@ -700,3 +700,55 @@ so a generic 401/403/404 from a tree without the route cannot pass it.
 templated POST to one path per `FOREIGN_BOND_JOBS` key. That makes it stricter:
 a source without its own button fails it, which was checked by removing the MOF
 button.
+
+**T-0112 addendum 3: one unit on the strip, "—" on a stale leg (2026-10-22).**
+`ForeignBondsTab.dom.test.jsx`: every spread renders in pp and no strip
+entry renders bp (the OAT–Bund entry reads -0.12pp on the fixture); with
+`foreign_bonds_gb` stale the four Gilt/GB spreads show "—" and no number
+while Bund–UST and JP 30Y–10Y keep theirs; `foreignBondSpreads` with DGS10
+stale keeps the three UST spreads with val null and display "—"; the
+OAT–Bund current value is ≈ -0.15 pp with a percentage-points tip. Pins
+D-0112 amendment 3. Seen red at the red commit (5 failed), green after.
+
+### T-0113 - Country cards on the daily FB curve: fallback, curve row, slopes, the shared chart, and nothing scored moved
+
+Proves `D-0113`. **Red first:** the tests landed alone in commit
+`42928a8`, where the three UI files had 7 failures and
+`test_d0113_card_freshness` failed (no `FB_MAX_AGE_DAYS`); the invariant pins
+and the scorer golden passed there, as they must on master.
+
+`ui/src/components/country/country.dom.test.jsx`
+- `FB_CARD_COUNTRY`, `fbCardCodes` (5 codes; `[]` for ITA), `FB_MAX_AGE_DAYS`.
+- `countryBond`: daily 10Y with FIT/CMT tips; stale or missing 10Y -> monthly
+  fallback badged MONTHLY with a "monthly OECD" tip; 2s10s +50bp, 10s30s +45bp
+  on the fixture; a stale leg or mixed dates -> "—"; null for ITA.
+- `CountryStatCards` shows DAILY / MONTHLY and the measured spread (-160 bps).
+- `CountryBondCurve` shows NO SOURCE for an empty tenor.
+- **Exact pins** (red on any change): `SOVEREIGN_YIELD_CODES` and
+  `TRACKED_CODES`, compared to literal baselines (codes masked `SOV_xx`, the
+  literal-code rule).
+
+`ui/src/components/CountryDetail.dom.test.jsx`
+- The chart (`country-bond-chart`) renders for DEU/GBR/JPN/FRA with the
+  country's five tenor toggles, and the request carries `fbCardCodes(iso)`.
+- % CHANGE toggles (`aria-pressed` false -> true) on the card.
+- ITA: no chart, no % CHANGE, no `FB_` request.
+- Per-country state: % CHANGE on DEU, rerender GBR, GBR shows the default.
+
+`ui/src/marketsState.dom.test.jsx`: MARKETS series and % CHANGE set, a country
+card opened and closed, MARKETS controls unchanged.
+
+`tests/test_d0113_card_freshness.py`: `FB_MAX_AGE_DAYS` equals the watchdog's
+`foreign_bonds_*` `max_age_days`.
+
+`tests/test_d0113_scorer_golden.py`: composite and v2 on a fixed SQLite fixture
+(`tests/composite_golden_fixture.py`, all 20 FB codes seeded), clock frozen,
+JSON equal to `tests/fixtures/d0113_scorer_golden.json` written from master
+`0680d4b`. Regenerate only with `--write`, and only on a deliberate scorer
+change.
+
+**Seen red.** Each pin was mutated once (one entry changed in
+`SOVEREIGN_YIELD_CODES`, `FB_DE_10Y` added to `TRACKED_CODES`, one golden value
+edited), seen failing, and reverted. The AC-1 default-board test stays green:
+the shared chart panel adds `aria-pressed` only on the card.
+

@@ -39,6 +39,8 @@ export function useSeries(codes) {
   const key = (codes || []).join(",");
 
   useEffect(() => {
+    // Sentinel D-0113: an empty list (a non-FB country card) asks for nothing.
+    if (!key) return undefined;
     let live = true;
     const list = key ? key.split(",") : [];
     const end = new Date();

@@ -1,14 +1,11 @@
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine } from "recharts";
-
-import { RANGES } from "../lib/constants";
 import { formatDate } from "../lib/format";
 import { changeBetween, changeSuffix, changeWindowLabel } from "../lib/series";
 import { useChartSeries } from "../hooks/useChartSeries";
 import { useChartView } from "../hooks/useChartView";
-import { CustomTooltip } from "../components/CustomTooltip";
 import { DataConfidence } from "../components/DataConfidence";
 import { InfoTip } from "../components/InfoTip";
 import { StatCard } from "../components/StatCard";
+import { MarketsChartPanel } from "./MarketsChartPanel";
 
 /**
  * The MARKETS layout, as a component: DataConfidence -> StatCard grid ->
@@ -74,40 +71,7 @@ export function MarketsTab({
           />
         ))}
       </div>
-      <div style={{ background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "24px 28px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 24, flexWrap: "wrap", gap: 12 }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            {charted.map(m => {
-              const on = activeMetrics.includes(m.code);
-              return <button key={m.code} onClick={() => setActiveMetrics(prev => prev.includes(m.code) ? prev.filter(c => c !== m.code) : [...prev, m.code])} style={{ background: on ? `${m.color}18` : "transparent", border: `1px solid ${on ? m.color : "#1E2D3D"}`, color: on ? m.color : "#3A4D5C", borderRadius: 2, padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12, transition: "all 0.15s" }}>{m.label}</button>;
-            })}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <button onClick={() => setNormalized(p => !p)} style={{ background: normalized ? "#1A2530" : "transparent", border: `1px solid ${normalized ? "#5A6878" : "#1E2D3D"}`, color: normalized ? "#8A9BAC" : "#3A4D5C", borderRadius: 2, padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 11 }}>% CHANGE</button>
-            <div style={{ display: "flex", border: "1px solid #1E2D3D", borderRadius: 2, overflow: "hidden" }}>
-              {RANGES.map(r => <button key={r.label} onClick={() => setRange(r)} style={{ background: range.label === r.label ? "#1A2530" : "transparent", border: "none", borderLeft: "1px solid #1E2D3D", color: range.label === r.label ? "#C8A96E" : "#3A4D5C", padding: "5px 12px", cursor: "pointer", fontFamily: "monospace", fontSize: 12 }}>{r.label}</button>)}
-            </div>
-          </div>
-        </div>
-        {loading ? (
-          <div style={{ height: 380, display: "flex", alignItems: "center", justifyContent: "center", color: "#2A3540", fontFamily: "monospace", fontSize: 13 }}>fetching data...</div>
-        ) : (
-          <ResponsiveContainer width="100%" height={380}>
-            <LineChart data={chartData} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
-              <CartesianGrid strokeDasharray="2 6" stroke="#0F1923" vertical={false} />
-              <XAxis dataKey="date" tickFormatter={formatDate} tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 11 }} axisLine={{ stroke: "#1A2530" }} tickLine={false} minTickGap={60} interval="preserveStartEnd" />
-              <YAxis tick={{ fill: "#3A4D5C", fontFamily: "monospace", fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={v => normalized ? `${v.toFixed(1)}%` : v.toFixed(2)} width={52} />
-              {normalized && <ReferenceLine y={0} stroke="#2A3540" strokeDasharray="4 4" />}
-              <Tooltip content={<CustomTooltip />} />
-              <Legend wrapperStyle={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", paddingTop: 16 }} formatter={(value) => charted.find(m => m.code === value)?.label || value} />
-              {activeMetrics.map(code => {
-                const m = charted.find(x => x.code === code);
-                return <Line key={code} type="monotone" dataKey={code} name={code} stroke={m?.color} strokeWidth={1.5} dot={false} activeDot={{ r: 3, strokeWidth: 0 }} connectNulls />;
-              })}
-            </LineChart>
-          </ResponsiveContainer>
-        )}
-      </div>
+      <MarketsChartPanel charted={charted} view={{ activeMetrics, setActiveMetrics, range, setRange, normalized, setNormalized }} chartData={chartData} loading={loading} />
       {strip && strip.length > 0 && (
         <div style={{ marginTop: 12, background: "#0A1520", border: "1px solid #1A2530", borderRadius: 2, padding: "14px 28px", display: "flex", gap: 32, alignItems: "center", flexWrap: "wrap" }}>
           <span style={{ fontFamily: "monospace", fontSize: 11, color: "#3A4D5C", letterSpacing: "0.1em" }}>SPREAD</span>
