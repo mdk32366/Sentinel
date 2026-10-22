@@ -3964,3 +3964,17 @@ was opened to remove.
 (`tests/test_composite_dimensions.py`), so dim 4 has to appear there.
 Follow-up, together with `F-0119`: label the dim-4 row "DEU/GBR/JPN/FRA only",
 and state the maximum as 185 for those four and 165 elsewhere.
+
+### F-0121 - AC-1 markets-default UI test fails on Matt's Windows laptop, green in CI
+
+**Claim.** `ui/src/marketsDefault.ac1.dom.test.jsx` (AC-1) failed in a
+local Vitest run on Matt's Windows laptop during the `D-0114` (#104) work at
+`2f9f840`, with no UI change in that tree. The same test passes in CI (Linux)
+on the same commits.
+
+**Consequence if unhandled.** A local red on Windows can be mistaken for a
+regression, or it can train people to ignore real AC-1 failures.
+
+**Handled.** Classified Windows-local and not chased now (Trinity, 2026-10-22
+2:12 PM PT). CI stays the gate for AC-1. Reopen if it fails in CI or on a
+non-Windows machine.
