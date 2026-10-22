@@ -619,3 +619,30 @@ against `a0479c0` names neither).
 
 **Known limits.** The CSV shape is the guide's, not a measured one (`A-0029`).
 The manual trigger and startup fill for `bdf` wait for #99.
+
+**T-0111 addendum: manual trigger and startup fill (2026-10-22).**
+`POST /api/fetch/foreign-bonds/{source}` (`source` in
+`scheduler.FOREIGN_BOND_JOBS`: `bundesbank`, `boe`, `mof`) with optional
+`?backfill=1`. **Red first:** the tests landed in their own commit, where 7
+failed and 1 errored. Every case first asserts that the route is registered,
+so a generic 401/403/404 from a tree without the route cannot pass it.
+
+`tests/test_foreign_bonds_manual_fetch.py`
+- **401**: no credentials, and the job is not called.
+- **403**: a POST carrying the D-0093 proof cookie alone gets
+  `Proof access is read-only`, and the job is not called.
+- **404**: an unknown source (`ecb`) with Basic Auth, and the job is not called.
+- **Fail-closed**: a header-only Bundesbank 200 on every attempt. The response
+  is `{status: failed, inserted: 0, updated: 0, latest_date: null}`, 0
+  TimeSeries rows are written, there is one `Bundesbank_Yields` UpdateLog row
+  marked `failed` with 0 inserted, 3 attempts are made, and `?backfill=1`
+  reached the run (`startPeriod=`). The positive twin, real fixtures, gives
+  `{success, 40, 0, 2026-10-21}`.
+- **One line per source**: `FOREIGN_BOND_JOBS` keys equal the three sources;
+  the startup one-shot calls the wrapper once per job; ADMIN lists one
+  trigger per source.
+
+`tests/test_admin_surface.py`: the F-0098 drift guard now expands the one
+templated POST to one path per `FOREIGN_BOND_JOBS` key. That makes it stricter:
+a source without its own button fails it, which was checked by removing the MOF
+button.
