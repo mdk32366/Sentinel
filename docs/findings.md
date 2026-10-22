@@ -3820,3 +3820,34 @@ it "last reported $93.8bn". The figure is unsupported.
 production that day, behind a precondition that refused anything but exactly
 those 12 (`docs/ddl/2026-10-08-remove-slv-tic-rows.sql`, which holds the
 backup). SLV is now `no_data`, which is what Table 3 says.
+
+### F-0115 - test_tic_staleness's boundary case fails around the 19th-23rd of every month
+
+**Claim.** `tests/test_tic_staleness.py::test_boundary_sits_where_the_constant_says`
+failed on master `be64218` and on Sentinel PR #97 CI (run 39687092004,
+2026-10-21 22:32 UTC). Production was correct. The test was not.
+
+**Artifact.** The fixture's newest row is `utcnow() - days_ago`, snapped to
+the 1st of its month, because TIC rows are dated to the first of the data
+month. So the row's real age is `days_ago` plus the day of the month it lands
+on minus 1, which adds 0 to 30 days. The case asserted that `days_ago =
+MAX_SOURCE_AGE_DAYS - 25` (115) succeeds. That holds only while the snap adds
+no more than 25 days. On 2026-10-21, 115 days back is 2026-06-28, which snaps
+to 2026-06-01: 142 days old, over the 140-day limit, so the run is `failed`.
+Whenever the date 115 days back falls on the 27th or later of its month,
+which is around the 19th-23rd of the current month depending on month
+lengths, the test is red for a few days, then green again. A monthly flake.
+
+**Sample size.** One test. Reproduced on a frozen 2026-10-21 (red commit).
+
+**Consequence.** Every Sentinel PR's CI goes red for those days with a
+failure unrelated to its change, and the job never reaches a green conclusion.
+
+**Fixed.** The test freezes the clock (`frozen_utcnow`, which patches only
+`treasury_holdings.datetime.utcnow`) and places the newest row exactly
+`MAX_SOURCE_AGE_DAYS` and `MAX_SOURCE_AGE_DAYS + 1` days old: `success` and
+`failed`. It does this for a month start in every month of 2025-2027, so the
+edge is the constant whatever the date.
+- Mutation proof: changing `>` to `>=` in production, or ageing the source one
+  day less, fails 36 subtests.
+- `MAX_SOURCE_AGE_DAYS` (140) and all production code are unchanged.
