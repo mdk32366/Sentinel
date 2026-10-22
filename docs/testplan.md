@@ -789,3 +789,23 @@ JPN and FRA gain `dim4_*` fields and a stale-source signal, and no score moved.
 `scripts/d0114_shadow.py`: old vs new dim 4 and composite per country on
 PROD, read-only. This is the merge gate: non-FB rows must show zero delta.
 
+### T-0073b - The four country chart panels explain themselves: title tooltips, other charts unchanged
+
+Extends `D-0073` (the country tiles explain themselves) to the four chart
+panels under the stress contribution block. Display only: no scorer, fetcher
+or data change. **Red first:** the test landed alone in commit `688a57f`, where
+the four panel cases failed (no tip anchor) and the unchanged-chart case passed.
+
+`ui/src/components/country/SeriesChartTips.dom.test.jsx`
+- TREASURY HOLDINGS, GOLD RESERVES, 5Y SOVEREIGN CDS and TOTAL RESERVES
+  EX-GOLD each render inside a focusable (`tabindex="0"`, `data-tip`) shared
+  `InfoTip`; focus shows a `role="tooltip"` bubble naming the source, cadence
+  and units (TIC monthly, billions USD; IMF IRFCL monthly, metric tonnes;
+  World Government Bonds daily, bps; IMF IFS via FRED monthly, millions USD);
+  blur removes it.
+- A `SeriesChart` with no `tip` keeps its plain title: no `data-tip`, no
+  `tabindex` anywhere in it.
+
+Texts live in `ui/src/lib/countryPanelTips.js`, each taken from the fetcher
+that writes the series (`tic_fetcher`, `imf_gold_reserves`, `cds_fetcher`,
+`fred_fetcher`) and the freshness watchdog's cadence notes.
