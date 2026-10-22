@@ -351,3 +351,15 @@ Six more keyless fetchers write `FB_` rows through
 `countryBond`, as `D-0113` does. The euro-area curves feed only
 `components/foreignBonds/EaBenchmarkPanel.jsx` on FOREIGN-BONDS. No scorer
 reads any batch 2a code.
+
+## Foreign Bonds batch 2b-1 (D-0116)
+
+Three more keyless fetchers through `pipelines/foreign_bond_common`:
+`minfin_auctions` (PL auction yields from an `.xlsm`, opened without macros),
+`bdi_bmk` (IT BMK0100, monthly) and `ecb_irs` (monthly 10Y for IT/ES/GR/PT/PL,
+`FB_xx_10Y_ECB_M`). `POST /api/ingest/bdi-mfn-bmk` is the manual backup for
+`bdi_bmk`: same parser, all or nothing, and a row in the new
+`ingest_provenance` table per accepted upload (the table is created by
+`create_all` on deploy: a new table is additive, no DDL). `countryBond`
+falls back own series -> ECB IRS (45 days) -> OECD monthly -> dash; GRC and PRT
+cards have no curve (`showCurve: false`). No scorer reads any 2b-1 code.
