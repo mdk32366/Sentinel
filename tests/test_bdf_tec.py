@@ -321,8 +321,11 @@ class Wiring(unittest.TestCase):
             seen.append(backfill)
             return {"status": "success", "inserted": 0, "updated": 0, "errors": [], "latest_date": None}
 
+        # The cron reads its run from FOREIGN_BOND_JOBS["bdf"] (D-0112 follow-up),
+        # so the fake goes in the table entry, not the module name.
+        label, _run, metrics = sched.FOREIGN_BOND_JOBS["bdf"]
         with mock.patch.object(sched, "get_session", return_value=db), \
-             mock.patch.object(sched, "run_bdf_tec", fake):
+             mock.patch.dict(sched.FOREIGN_BOND_JOBS, {"bdf": (label, fake, metrics)}):
             sched.scheduled_bdf_tec_fetch()
         self.assertEqual(seen, [True])
 

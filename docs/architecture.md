@@ -294,7 +294,7 @@ fallback stays on `sovereign_yields`.
 updated, latest_date}`. A failed run answers `failed` with zero counts, never
 a 500. `?backfill=1` forces the five-year read; without it, the backfill
 happens only when the series is empty. The sources are the keys of
-`scheduler.FOREIGN_BOND_JOBS` (`bundesbank`, `boe`, `mof`): adding a source is
+`scheduler.FOREIGN_BOND_JOBS` (`bundesbank`, `boe`, `mof`, `bdf`): adding a source is
 one line there, and an unknown name is a 404. The route sits behind Basic
 Auth, and the proof cookie is read-only (403). ADMIN has one button per
 source. `scheduled_startup_fetches` runs every `FOREIGN_BOND_JOBS` entry after

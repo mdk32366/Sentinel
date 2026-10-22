@@ -620,6 +620,28 @@ against `a0479c0` names neither).
 **Known limits.** The CSV shape is the guide's, not a measured one (`A-0029`).
 The manual trigger and startup fill for `bdf` wait for #99.
 
+**T-0112 addendum: `bdf` on the manual trigger (2026-10-22).** `bdf` is now
+the fourth `FOREIGN_BOND_JOBS` entry, so `POST /api/fetch/foreign-bonds/bdf`,
+the startup fill and the `bdf_tec` cron all run the same table entry.
+**Red first:** the tests landed in their own commit, where 4 failed (404
+unknown source x2; `bdf` missing from the table x2).
+
+`tests/test_foreign_bonds_manual_fetch.py`
+- **One line per source**: the keys are `bundesbank`, `boe`, `mof`, `bdf`.
+- **No key**: `POST …/bdf` with an empty `WEBSTAT_API_KEY` answers 200 with
+  status `skipped` (`failed` would also pass; `success` fails), 0/0/null, 0
+  TimeSeries rows, and no request is sent. Nothing raises.
+- **Positive twin**: with a key, `?backfill=1` lands the fixture through the
+  route: `{success, 40, 0, 2026-10-21}`, sent as `Authorization: Apikey <key>`.
+- **Cron**: `scheduled_bdf_tec_fetch` calls the wrapper with
+  `FOREIGN_BOND_JOBS["bdf"]`.
+
+Guards that moved with the table, none loosened: the F-0098 admin-surface
+guard and the per-source ADMIN test now need a `bdf` button (both failed
+without it); `test_bdf_tec.Wiring.test_first_run_backfills` patches the
+`bdf` table entry instead of the module name, with the same `[True]`
+assertion.
+
 **T-0111 addendum: manual trigger and startup fill (2026-10-22).**
 `POST /api/fetch/foreign-bonds/{source}` (`source` in
 `scheduler.FOREIGN_BOND_JOBS`: `bundesbank`, `boe`, `mof`) with optional
