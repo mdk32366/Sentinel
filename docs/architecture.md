@@ -279,6 +279,19 @@ NULL. No migration.
 retried, then `failed` (F-0117). The first run against an empty series
 backfills five years from the archives (F-0116).
 
+**Manual trigger and startup fill.** `POST /api/fetch/foreign-bonds/{source}`
+(`api/routes.py`) runs one source now through the same wrapper the cron uses,
+`scheduler._scheduled_foreign_bonds`, and answers `{status, inserted,
+updated, latest_date}`. A failed run answers `failed` with zero counts, never
+a 500. `?backfill=1` forces the five-year read; without it, the backfill
+happens only when the series is empty. The sources are the keys of
+`scheduler.FOREIGN_BOND_JOBS` (`bundesbank`, `boe`, `mof`): adding a source is
+one line there, and an unknown name is a 404. The route sits behind Basic
+Auth, and the proof cookie is read-only (403). ADMIN has one button per
+source. `scheduled_startup_fetches` runs every `FOREIGN_BOND_JOBS` entry after
+FRED/TIC/gold/stress, so a redeploy fills the tab without waiting for the
+weekday crons.
+
 **Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb` and
 `_jp` (patterns `FB\_DE\_%` etc.). France stays on `sovereign_yields`.
 
