@@ -679,9 +679,12 @@ def composite_from_parts(parts: dict, multiplier: float):
     points to a cross-asset (1.5x) country such as Germany and 5.0 to an
     unmultiplied one such as the UK. Pinned by tests/test_d0114_decomposition.py.
     """
-    raw = (parts["tic_score"] + parts["gold_score"] + parts["monetary_score"]
-           + parts["petro_score"] + parts["cds_score"] + parts["dim4_score"])
-    return raw, raw * multiplier
+    tic_score, gold_score = parts["tic_score"], parts["gold_score"]
+    monetary_score, petro_score = parts["monetary_score"], parts["petro_score"]
+    cds_score, dim4_score = parts["cds_score"], parts["dim4_score"]
+    # D-0066 / D-0114: the one place the dimensions are summed (F-0076 reads this line).
+    raw_score = tic_score + gold_score + monetary_score + petro_score + cds_score + dim4_score
+    return raw_score, raw_score * multiplier
 
 
 def compute_composite_stress(db: Session) -> dict:
