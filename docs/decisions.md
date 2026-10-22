@@ -3227,3 +3227,65 @@ provenance undocumented) - not approved, not in this change. (f) The Yahoo
 one. The only free official daily sources that a script can read without a
 challenge are these three. France has none, so its gap is shown, not filled
 (`A-0026`).
+
+### D-0112 - France on FOREIGN-BONDS: Banque de France TEC daily, the monthly OECD 10Y as a labelled fallback
+
+Supersedes `D-0111` option A for France only. Owner GO 2026-10-22 8:48 AM PT
+(via Trinity); API choice ruled by Trinity 8:58 AM PT: the **new** Webstat
+API documented in the Bank's own guide,
+<https://webstat.banque-france.fr/pages/guide-migration-api/?flg=fr-fr>, not
+the legacy `api.webstat.banque-france.fr/webstat-fr/v1` gateway (`F-0118`).
+
+**Choice.** `pipelines/bdf_tec.py` (`BdF_TEC`) reads the five Banque de
+France TEC series `FM.D.FR.EUR.FR2.BB.FRMOYTEC{2,5,7,10,30}.HSTA` in one
+request:
+
+    GET https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/csv
+        ?select=series_key,time_period,time_period_start,obs_value
+        &where=series_key in ("...TEC2.HSTA", ..., "...TEC30.HSTA") and time_period_start>=date'YYYY-MM-DD'
+        &order_by=time_period_start
+    Authorization: Apikey <WEBSTAT_API_KEY>
+
+| Country | Source | Type | Codes | Watchdog window |
+|---|---|---|---|---|
+| FR | Banque de France Webstat TEC (constant-maturity OAT yield) | CMT | `FB_FR_{02,05,07,10,30}Y` | 4 d (`foreign_bonds_fr`) |
+
+Bundesbank pattern throughout: weekdays 10:00 UTC; the first run against an
+empty series backfills five years; a daily run reads 14 days; all five series
+or nothing. Fail closed: the guide's 404 "dataset observations does not
+exist" and the measured 401 "API key is not valid" fail at once and name
+`WEBSTAT_API_KEY` (never its value); a 200 with only the header is retried,
+then `failed`; a series missing from the answer, one not asked for, or a
+renamed column is `SchemaDrift`. With no `WEBSTAT_API_KEY` the job logs a
+warning and returns `skipped`: no request, no row, no UpdateLog row, no
+exception.
+
+**UI.** The four NO SOURCE cells and the monthly FR 10Y card become five daily
+`FB_FR_` cells. While no daily French 10Y is stored (no key yet, or the
+source down from the start) the FR 10Y card shows the monthly OECD
+`IRLTLT01FRM156N`, badged MONTHLY and tipped **FALLBACK**; the other four
+French tenors have no fallback and show "—". The footer carries
+"Source: Banque de France, updated <date>" from the newest French daily row.
+A daily OAT–Bund 10Y spread joins the strip; the monthly one stays.
+
+**Unchanged.** Display only (`A-0028`): neither scorer is touched, and the
+`FB_FR_` codes are held out of both by `tests/test_markets_tooltips.py` and
+`tests/test_foreign_bonds.py`. The default dashboard is byte-identical
+(AC-1). `IRLTLT01FRM156N` and composite D4 are unchanged.
+
+**Not in this change.** `bdf` joins `FOREIGN_BOND_JOBS`, the manual trigger
+`POST /api/fetch/foreign-bonds/{source}` and the startup one-shot after #99
+(D-0111 manual fetch) merges: a one-line follow-up. The `WEBSTAT_API_KEY`
+Fly secret and the egress allowlist entry (selfhost-platform) are separate.
+
+**Rejected.** (a) The legacy gateway `api.webstat.banque-france.fr`: its
+documentation portal could not be reached and only third-party code names
+its header (`F-0118`). (b) The `apikey=` URL parameter: the guide reserves it
+for testing, and a key in a URL reaches logs. (c) Dropping the monthly FR 10Y:
+it is the only French number available until a key is set, and the longer
+history behind the monthly OAT–Bund spread.
+
+**What forced the call.** `D-0111` found no free official daily French yield
+that a script could read without a challenge. The Banque de France's new API
+is free with a registered key, so the gap can be filled rather than shown.
+The fixtures are synthetic until a key exists (`A-0029`).

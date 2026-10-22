@@ -16,6 +16,7 @@ from pipelines.freshness_watchdog import run_freshness_check
 from pipelines.gold_price_fetcher import run_gold_price_fetch
 from pipelines.boe_yields import METRICS as BOE_METRICS, run_boe_yields
 from pipelines.bundesbank_yields import METRICS as BUNDESBANK_METRICS, run_bundesbank_yields
+from pipelines.bdf_tec import METRICS as BDF_TEC_METRICS, run_bdf_tec
 from pipelines.mof_jgb import METRICS as MOF_METRICS, run_mof_jgb
 from pipelines.composite_stress import persist_composite_snapshot
 from pipelines.money_supply_fetcher import run_money_supply_fetch
@@ -72,6 +73,8 @@ SCHEDULED_PIPELINES = {
     "Bundesbank_Yields",
     "BoE_Yields",
     "MOF_JGB",
+    # Sentinel D-0112: France, Banque de France TEC.
+    "BdF_TEC",
 }
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
@@ -350,6 +353,13 @@ def _scheduled_foreign_bonds(label, run, metrics, backfill=None):
             db.close()
 
 
+def scheduled_bdf_tec_fetch():
+    """Banque de France TEC OAT yields, weekdays 10:00 UTC (Sentinel D-0112).
+
+    No WEBSTAT_API_KEY: run_bdf_tec logs and returns ``skipped``; nothing raises.
+    """
+    _scheduled_foreign_bonds("Banque de France TEC", run_bdf_tec, BDF_TEC_METRICS)
+
 # Sentinel D-0111. Every Foreign Bonds source, keyed by the name the manual
 # trigger takes (POST /api/fetch/foreign-bonds/{source}). Adding a source is
 # one line here: (log label, run function, METRICS).
@@ -566,6 +576,15 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled Foreign Bonds weekdays: MOF 10:00, Bundesbank 18:00, BoE 18:30 UTC")
+
+    # Sentinel D-0112: France, Banque de France TEC (Webstat), weekdays 10:00 UTC.
+    scheduler.add_job(
+        scheduled_bdf_tec_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=10, minute=0),
+        id="bdf_tec", name="French OAT Yields (Banque de France)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled Banque de France TEC weekdays at 10:00 UTC")
 
     scheduler.add_job(
         scheduled_freshness_check,

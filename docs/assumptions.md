@@ -889,3 +889,25 @@ could have seen daily.
 `scored: false`, and `tests/test_markets_tooltips.py` fails if either scorer
 names an `FB_` code or the `foreign_bond` category. Changing this needs its
 own spec with a backtest.
+
+### A-0029 - The Webstat CSV export has the shape the Bank's guide documents
+
+**Relies on:** `exports/csv` on the observations table returning a
+`;`-separated file with a header line naming `series_key`,
+`time_period_start` and `obs_value`, one observation per row, and an empty
+cell for a null value. That is how the guide
+(<https://webstat.banque-france.fr/pages/guide-migration-api/?flg=fr-fr>)
+describes the JSON fields and its CSV example, and how `exports/json` maps to
+`exports/csv`. No live CSV has been seen: there is no key yet, so
+`tests/fixtures/foreign_bonds/bdf_tec.csv` is synthetic-from-docs.
+
+**Falsified by:** the first keyed response having another delimiter, other
+column names, or another date format.
+
+**Consequence if wrong:** `parse_bdf_tec` raises `SchemaDrift`, the run is
+`failed` with `FETCH_PARSE`, nothing is written, and FR 10Y stays on the
+labelled monthly fallback. Wrong numbers are not shown; the French daily
+cells are simply missing until the parser is fixed.
+
+**Status:** Open (`D-0112`). Close it by capturing the first keyed response
+as a real fixture (PROVENANCE.md says which file to replace).

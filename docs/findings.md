@@ -3895,3 +3895,32 @@ sees success while the series stops.
 a 5xx (3 attempts, back-off 4 s then 8 s). After the last attempt the run is
 `failed` and writes nothing for any tenor. `T-0111` covers both paths: header
 only every time (failed, 3 attempts, 0 rows) and header only once (success).
+
+### F-0118 - Webstat: two APIs, and a wrong key answers 401, not the guide's 404
+
+**Claim.** Measured from the box on 2026-10-22 at 16:06:29 UTC (9:06:29 AM PT):
+
+| Request | Answer |
+|---|---|
+| `https://api.webstat.banque-france.fr/webstat-fr/v1/data/FM/FM.D.FR.EUR.FR2.BB.FRMOYTEC10.HSTA?format=csv&detail=dataonly`, no key | 401 `{"httpCode":"401","httpMessage":"Unauthorized","moreInformation":"Invalid client id or secret."}` (IBM API Connect, the legacy gateway) |
+| `https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/csv?where=…TEC10…&limit=1`, no key | 404, 105 B, `NotFoundResource` / "The requested dataset observations does not exist." |
+| the same, `Authorization: Apikey not-a-real-key` | 401, 33 B, `{"error": "API key is not valid"}` |
+
+The legacy gateway's developer portal (`developer.webstat.banque-france.fr`)
+could not be read (HTTP 500 to the fetcher, a TLS EOF to curl), so its
+key header could only be found in third-party code. The Bank's own guide,
+<https://webstat.banque-france.fr/pages/guide-migration-api/?flg=fr-fr>,
+documents only the new API: header `Authorization: Apikey <key>`, and a 404
+for an absent or unknown key. The 401 for a wrong key is not in the guide.
+
+**Consequence if unhandled.** Building against the legacy gateway would have
+meant guessing its header. A fetcher that recognised only the documented 404
+would report a wrong key as a generic `FETCH_BLOCKED http=401` with no hint
+that the secret is the problem.
+
+**Handled.** `D-0112` targets the new API (Trinity's ruling, 8:58 AM PT).
+`bdf_tec.fetch_bdf_tec` treats both the 404 and the 401 as a rejected key:
+no retry, `failed`, and an error naming `WEBSTAT_API_KEY` but never its value.
+Both bodies are kept as real fixtures (`bdf_tec_404.json`,
+`bdf_tec_401.json`), and `T-0112` covers both. The selfhost egress allowlist
+names `webstat.banque-france.fr`, not the legacy host.

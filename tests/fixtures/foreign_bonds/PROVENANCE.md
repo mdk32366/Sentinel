@@ -14,3 +14,20 @@ sources takes a key. Tests read only these files - no live network in CI.
 | `boe_glc_nominal_archive_2025_trimmed.xlsx` | `https://www.bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/glcnominalddata.zip` (200, 39,192,649 B, no redirect), member `GLC Nominal daily data_2025 to present.xlsx` | zip `bde17136…`; member `44a1facf…` | sheet 4, the 5 banner rows + first 3 and last 3 dated rows (2025-01-01..03, 2026-09-28..30) |
 | `mof_jgbcm.csv` | `https://www.mof.go.jp/jgbs/reference/interest_rate/jgbcm.csv` (200, 1,556 B, no redirect) | `add13289…` | none (Shift-JIS bytes) |
 | `mof_jgbcm_all_trimmed.csv` | `https://www.mof.go.jp/jgbs/reference/interest_rate/data/jgbcm_all.csv` (200, 1,178,227 B, 13,311 lines, no redirect) | `3ed93b15…` | first 3 + last 3 lines (title, header, S49.9.24 with `-` cells; R8.9.28, R8.9.29, R8.9.30) |
+
+## Banque de France Webstat TEC (Sentinel D-0112) - SYNTHETIC-FROM-DOCS
+
+These are **not** real responses. No Webstat API key was available to the
+build (`WEBSTAT_API_KEY` is a secret Sentinel has not been given), so nothing
+was fetched. The CSV shapes come from Banque de France's own API guide,
+<https://webstat.banque-france.fr/pages/guide-migration-api/?flg=fr-fr>, read
+2026-10-22. The values are invented and sit near plausible October 2026 French
+TEC levels. Replace the CSVs with a captured response once a key exists. The two
+error bodies are real (below); they need no key to capture.
+
+| Fixture | Shaped from (guide section) | Synthetic content |
+|---|---|---|
+| `bdf_tec.csv` | "Observations d'une série": fields `series_key`, `time_period`, `time_period_start`, `obs_value`; "Exports EXCEL": `exports/json` -> `exports/csv`; the guide's CSV example is `;`-separated with a header line | 40 rows: series `FM.D.FR.EUR.FR2.BB.FRMOYTEC{2,5,7,10,30}.HSTA` x 8 business days 2026-10-12..2026-10-21, values invented |
+| `bdf_tec_header_only.csv` | the header line of `bdf_tec.csv` | header only, no observation (a 200 that must fail closed) |
+| `bdf_tec_404.json` | **Real response, not synthetic.** `GET https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/csv?where=series_key%20in%20(%22FM.D.FR.EUR.FR2.BB.FRMOYTEC10.HSTA%22)&limit=1` with **no** key, from the box 2026-10-22 16:06:29 UTC (9:06:29 AM PT): HTTP 404, 105 B, sha256 `31a2ec0e474b8cbb…`. Matches the guide's "Authentification" note: an absent or unknown key answers `NotFoundResource` / "The requested dataset observations does not exist." | bytes preserved |
+| `bdf_tec_401.json` | **Real response, not synthetic.** The same endpoint with header `Authorization: Apikey not-a-real-key`, same time: HTTP 401, 33 B, sha256 `0d81b5f645b6f216…`. The guide does not document this answer; it was measured (`F-0118`). No secret: the key sent was a made-up string | bytes preserved |

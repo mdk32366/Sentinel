@@ -305,11 +305,16 @@ class ForeignBondsAreNotScored(unittest.TestCase):
     def test_every_foreign_bond_cell_is_marked_not_scored(self):
         block = self.parse_foreign_bonds()
         self.assertNotIn("scored: true", block)
-        # Two literal entries (FR 10Y, FR NO SOURCE) plus the generated DE/GB/JP one.
-        self.assertEqual(block.count("scored: false"), 3)
+        # Sentinel D-0112: one generated entry covers DE, GB, JP and FR. The
+        # monthly French fallback is its own literal, checked the same way.
+        self.assertEqual(block.count("scored: false"), 1)
+        self.assertIn('["DE", "GB", "JP", "FR"]', block)
+        fallback = self.parse_fr_fallback()
+        self.assertNotIn("scored: true", fallback)
+        self.assertEqual(fallback.count("scored: false"), 1)
 
     def test_neither_scorer_reads_a_foreign_bond(self):
-        codes = [f"FB_{c}_{t:02d}Y" for c in ("DE", "GB", "JP") for t in (2, 5, 7, 10, 30)]
+        codes = [f"FB_{c}_{t:02d}Y" for c in ("DE", "GB", "JP", "FR") for t in (2, 5, 7, 10, 30)]
         for path in (V2_SCORER, COMPOSITE_SCORER):
             text = path.read_text(encoding="utf-8")
             with self.subTest(scorer=path.name):
@@ -318,11 +323,23 @@ class ForeignBondsAreNotScored(unittest.TestCase):
                 for code in codes:
                     self.assertFalse(reads_code(path, code), code)
 
-    def test_the_french_10y_is_the_existing_monthly_series(self):
-        # Option A: no new French code. The card reads IRLTLT01FRM156N, which
-        # composite D4 already scores; this tab does not change that.
+    @staticmethod
+    def parse_fr_fallback():
+        source = CONSTANTS.read_text(encoding="utf-8")
+        block = source[source.index("export const FR_10Y_MONTHLY_FALLBACK = {"):]
+        return block[: block.index("\n};")]
+
+    def test_the_french_monthly_10y_is_the_labelled_fallback(self):
+        # Sentinel D-0112 replaces D-0111 option A: the French cells are the
+        # Banque de France daily TEC (generated FB_FR_ codes). The monthly
+        # IRLTLT01FRM156N stays, read-only, as the FR 10Y fallback, badged
+        # MONTHLY and saying it is a fallback. Composite D4 still scores that
+        # monthly series; nothing here changes it.
         block = self.parse_foreign_bonds()
-        self.assertIn('code: "IRLTLT01FRM156N"', block)
-        self.assertIn('badge: "MONTHLY"', block)
-        self.assertNotIn("FB_FR", CONSTANTS.read_text(encoding="utf-8"))
+        self.assertNotIn("IRLTLT01FRM156N", block)
+        self.assertNotIn('kind: "NONE"', block)
+        fallback = self.parse_fr_fallback()
+        self.assertIn('code: "IRLTLT01FRM156N"', fallback)
+        self.assertIn('badge: "MONTHLY"', fallback)
+        self.assertIn("FALLBACK", fallback)
 

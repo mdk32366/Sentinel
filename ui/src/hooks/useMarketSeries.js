@@ -28,9 +28,13 @@ export const CHANGE_WINDOW_DAYS = 30;
  * Sentinel D-0111: generalised from `useMarketSeries` so FOREIGN-BONDS draws
  * on the same window and the same prior-observation rule. Keyed on the joined
  * code string, not the array's identity (F-0065).
+ *
+ * Sentinel D-0112: also `dates`, the newest observation date per code, for the
+ * FOREIGN-BONDS "Source: Banque de France, updated <date>" line. Additive:
+ * no existing caller reads it.
  */
 export function useSeries(codes) {
-  const [state, setState] = useState({ latest: {}, prior: {}, latestDate: null });
+  const [state, setState] = useState({ latest: {}, prior: {}, latestDate: null, dates: {} });
   const key = (codes || []).join(",");
 
   useEffect(() => {
@@ -46,14 +50,16 @@ export function useSeries(codes) {
         if (!live) return;
         const series = seriesByCode(pivotByDate(raw), list);
         const prior = {};
+        const dates = {};
         let latestDate = null;
         for (const code of list) {
           const found = priorObservation(series[code], CHANGE_WINDOW_DAYS);
           if (found) prior[code] = found;
           const last = series[code]?.at(-1)?.date;
+          if (last) dates[code] = last;
           if (last && (!latestDate || last > latestDate)) latestDate = last;
         }
-        setState({ latest: latestByCode(series), prior, latestDate });
+        setState({ latest: latestByCode(series), prior, latestDate, dates });
       })
       // The ticker is furniture: if it cannot load, the header simply carries
       // no numbers. It must not take the tab with it.

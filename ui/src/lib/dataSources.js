@@ -36,13 +36,13 @@ export const SOURCES = [
     manual: false,
   },
   {
-    name: "Bundesbank · Bank of England · MOF Japan — Foreign Bonds",
+    name: "Bundesbank · Bank of England · MOF Japan · Banque de France — Foreign Bonds",
     url: "https://api.statistiken.bundesbank.de/rest/data/BBSIS",
     update: "Business-daily (auto)",
-    lag: "Same day (Bundesbank, MOF); one business day (BoE)",
-    coverage: "Germany, UK, Japan at 2/5/7/10/30Y; France monthly 10Y only",
-    metrics: ["German Bund yields (Bundesbank Svensson fitted)", "UK gilt yields (BoE GLC fitted spot)", "Japan JGB yields (MOF constant-maturity)"],
-    notes: "FOREIGN-BONDS tab (Sentinel D-0111). Three official free sources, one fetcher each, weekdays at 10:00 (MOF), 18:00 (Bundesbank) and 18:30 UTC (BoE). Display only: no scorer reads them. France has no free official daily source - Agence France Trésor is behind a Cloudflare challenge - so its row is the monthly OECD 10Y from FRED and four cells read NO SOURCE.",
+    lag: "Same day (Bundesbank, MOF, Banque de France); one business day (BoE)",
+    coverage: "Germany, UK, Japan, France at 2/5/7/10/30Y; France 10Y falls back to the monthly OECD series when no daily value is stored",
+    metrics: ["German Bund yields (Bundesbank Svensson fitted)", "UK gilt yields (BoE GLC fitted spot)", "Japan JGB yields (MOF constant-maturity)", "French OAT yields (Banque de France TEC constant-maturity)"],
+    notes: "FOREIGN-BONDS tab (Sentinel D-0111, D-0112). Four official sources, one fetcher each, weekdays at 10:00 (MOF, Banque de France), 18:00 (Bundesbank) and 18:30 UTC (BoE). Display only: no scorer reads them. France is the Banque de France Webstat TEC (free, needs an API key, WEBSTAT_API_KEY); without a key the job skips and FR 10Y shows the monthly OECD 10Y from FRED, labelled as a fallback.",
     manual: false,
   },
   {

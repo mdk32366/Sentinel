@@ -267,6 +267,19 @@ CHECKS = [
         "pipelines": ["MOF_JGB"],
         "note": "Constant-maturity par yields, 2/5/7/10/30Y, business-daily. Display only (Sentinel D-0111).",
     },
+    # Sentinel D-0112: France daily, Banque de France TEC. Same window as the
+    # Bundesbank (same-day publication + weekend + 1). Until WEBSTAT_API_KEY is
+    # set this source has no rows and reads as such; the FR 10Y card shows the
+    # monthly sovereign_yields series as its labelled fallback.
+    {
+        "key": "foreign_bonds_fr",
+        "period": "day",
+        "label": "French OAT yields (Banque de France)",
+        "patterns": ["FB\\_FR\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["BdF_TEC"],
+        "note": "TEC constant-maturity OAT yields, 2/5/7/10/30Y, business-daily. Display only (Sentinel D-0112).",
+    },
     {
         "key": "reserves_ex_gold",
         "period": "month",

@@ -166,27 +166,29 @@ export function US_SPREADS(latest) {
  * `kind` is what the number IS, and every tip says it:
  *   FIT  fitted-curve zero-coupon / spot yield at the exact maturity
  *        (Bundesbank Svensson, BoE GLC spot)
- *   CMT  ministry constant-maturity par yield (MOF Japan)
+ *   CMT  constant-maturity yield (MOF Japan par yields; Banque de France TEC)
  *   MON  monthly average, not daily (OECD via FRED) - badged MONTHLY
- *   NONE no free official daily source found (France, D-0111 option A);
- *        rendered as "—" with the reason in the tip
+ *
+ * Sentinel D-0112 replaced D-0111 option A's four NO SOURCE cells: France is
+ * the Banque de France TEC, daily. The monthly OECD `IRLTLT01FRM156N` stays as
+ * the FR 10Y FALLBACK only (`FR_10Y_MONTHLY_FALLBACK`, `foreignBondCells`),
+ * shown while no daily French 10Y has been stored - e.g. before
+ * WEBSTAT_API_KEY is set.
  *
  * Every entry is `scored: false`. `tests/test_markets_tooltips.py` holds that
  * shut against both scorers, as it does for METRICS. The `FB_` codes are in
- * no ticker, no country card and no scorer; the French 10Y is the existing
- * `IRLTLT01FRM156N`, read here and changed nowhere.
+ * no ticker, no country card and no scorer; `IRLTLT01FRM156N` is read here and
+ * changed nowhere.
  */
 const FB_COUNTRY = {
   DE: { kind: "FIT", colors: ["#8A7448", "#A38A57", "#B89A60", "#C8A96E", "#E0C690"] },
   GB: { kind: "FIT", colors: ["#4F7A86", "#5F909E", "#6FA4B3", "#7EB8C9", "#A5D2DF"] },
   JP: { kind: "CMT", colors: ["#94503B", "#B0604A", "#C86D52", "#E07B5A", "#F0A487"] },
+  FR: { kind: "CMT", colors: ["#6E6496", "#8277AD", "#9B8EC4", "#B3A8D6", "#CCC4E6"] },
 };
 const FB_TENORS = [2, 5, 7, 10, 30];
 const FB_NOT_SCORED =
   "Not scored. Display only (Sentinel D-0111): composite dimension 4 already scores this country's monthly OECD 10Y, and a daily copy would count the same signal twice on a different clock.";
-const FR_NO_SOURCE =
-  "NO SOURCE. No free, official, daily French yield could be read on 2026-10-21: Agence France Trésor answers a Cloudflare challenge (HTTP 403) to a script, the ECB publishes only euro-area curves and a monthly 10Y, and the Banque de France series stopped in July 2024. Option A (Sentinel D-0111) shows the monthly OECD 10Y only; a paid feed was not approved.";
-
 function fbTip(cc, t) {
   const pad = String(t).padStart(2, "0");
   if (cc === "DE") {
@@ -195,11 +197,32 @@ function fbTip(cc, t) {
   if (cc === "GB") {
     return `UK ${t}-year gilt yield. FIT: Bank of England GLC nominal spot curve at ${t}.0 years (sheet "4. spot curve"), business-daily, published one business day later. A fitted spot rate, not a par or benchmark yield.`;
   }
+  if (cc === "FR") {
+    return `France ${t}-year OAT yield. CMT: Banque de France TEC ${t} (taux de l'échéance constante), the yield of a notional OAT of exactly ${t} years interpolated from benchmark OATs, business-daily. Series FM.D.FR.EUR.FR2.BB.FRMOYTEC${t}.HSTA (Webstat).`;
+  }
   return `Japan ${t}-year JGB yield. CMT: Ministry of Finance constant-maturity par yield interpolated from benchmark JGBs, column ${t}年 of jgbcm.csv, business-daily. A par yield, so not the same construction as the DE and UK fitted spot rates.`;
 }
 
+/**
+ * FR 10Y while no daily Banque de France 10Y is stored (Sentinel D-0112): the
+ * monthly OECD series, labelled as the fallback it is. The other four French
+ * tenors have no fallback and show "—".
+ */
+export const FR_10Y_MONTHLY_FALLBACK = {
+  code: "IRLTLT01FRM156N",
+  key: "FR_10Y",
+  label: "FR 10Y",
+  color: "#9B8EC4",
+  unit: "%",
+  kind: "MON",
+  badge: "MONTHLY",
+  scored: false,
+  tip: "FALLBACK. No daily Banque de France 10Y is stored yet, so this card shows the OECD long-term interest rate for France, a MONTHLY average via FRED IRLTLT01FRM156N - the series Sentinel already stores. It can sit weeks behind the daily cells beside it.",
+  stressRole: "Not scored on this tab. The same monthly series already feeds composite dimension 4; this card reads it and changes nothing (Sentinel D-0112).",
+};
+
 export const FOREIGN_BOND_METRICS = [
-  ...["DE", "GB", "JP"].flatMap((cc) => FB_TENORS.map((t, i) => ({
+  ...["DE", "GB", "JP", "FR"].flatMap((cc) => FB_TENORS.map((t, i) => ({
     code: `FB_${cc}_${String(t).padStart(2, "0")}Y`,
     key: `FB_${cc}_${String(t).padStart(2, "0")}Y`,
     label: `${cc} ${t}Y`,
@@ -210,35 +233,32 @@ export const FOREIGN_BOND_METRICS = [
     tip: fbTip(cc, t),
     stressRole: FB_NOT_SCORED,
   }))),
-  ...FB_TENORS.map((t) => (t === 10
-    ? {
-        code: "IRLTLT01FRM156N",
-        key: "FR_10Y",
-        label: "FR 10Y",
-        color: "#9B8EC4",
-        unit: "%",
-        kind: "MON",
-        badge: "MONTHLY",
-        scored: false,
-        tip: "France 10-year government bond yield. MON: the OECD long-term interest rate, a MONTHLY average, via FRED IRLTLT01FRM156N - the series Sentinel already stores. Not a daily number: it can sit weeks behind the DE, UK and JP cells beside it.",
-        stressRole: "Not scored on this tab. The same monthly series already feeds composite dimension 4; this card reads it and changes nothing (Sentinel D-0111, option A).",
-      }
-    : {
-        code: null,
-        key: `FR_${String(t).padStart(2, "0")}Y`,
-        label: `FR ${t}Y`,
-        color: "#3A4D5C",
-        unit: "%",
-        kind: "NONE",
-        scored: false,
-        tip: FR_NO_SOURCE,
-        stressRole: "Not scored. Nothing to score: there is no series.",
-      })),
 ];
+
+/** The cells to draw: FR 10Y swaps to the monthly fallback while the daily is missing. */
+export function foreignBondCells(latest) {
+  return FOREIGN_BOND_METRICS.map((m) => (
+    m.code === "FB_FR_10Y" && latest?.FB_FR_10Y == null ? FR_10Y_MONTHLY_FALLBACK : m
+  ));
+}
+
+/** "Source: Banque de France, updated <YYYY-MM-DD>" from the newest French daily row (D-0112). */
+export function bdfAttribution(dates) {
+  const newest = FOREIGN_BOND_METRICS
+    .filter((m) => m.code.startsWith("FB_FR_"))
+    .map((m) => dates?.[m.code])
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+  return newest
+    ? `Source: Banque de France, updated ${String(newest).slice(0, 10)}`
+    : "Source: Banque de France, not yet available";
+}
 
 /** Codes FOREIGN-BONDS reads: its own cells plus the legs of its spreads. */
 export const FOREIGN_BOND_CODES = [
-  ...FOREIGN_BOND_METRICS.map((m) => m.code).filter(Boolean),
+  ...FOREIGN_BOND_METRICS.map((m) => m.code),
+  FR_10Y_MONTHLY_FALLBACK.code,
   "DGS10",
   "IRLTLT01DEM156N",
 ];
@@ -248,6 +268,7 @@ export function foreignBondSourceKey(code) {
   if (code.startsWith("FB_DE_")) return "foreign_bonds_de";
   if (code.startsWith("FB_GB_")) return "foreign_bonds_gb";
   if (code.startsWith("FB_JP_")) return "foreign_bonds_jp";
+  if (code.startsWith("FB_FR_")) return "foreign_bonds_fr";
   if (code.startsWith("IRLTLT01")) return "sovereign_yields";
   if (code.startsWith("DGS")) return "treasury_yields";
   return null;
@@ -280,8 +301,10 @@ export function foreignBondSpreads(latest, fresh = () => true) {
       tip: "UK curve slope: 10Y minus 2Y (BoE fitted spot). Below zero the curve is inverted." },
     { label: "JP 30Y–10Y", val: pp(leg("FB_JP_30Y"), leg("FB_JP_10Y")),
       tip: "Japan long end: 30Y minus 10Y (MOF constant-maturity), where the super-long JGB repricing shows." },
+    { label: "OAT–Bund 10Y", val: pp(leg("FB_FR_10Y"), leg("FB_DE_10Y")),
+      tip: "French 10Y (Banque de France TEC, constant-maturity) minus German 10Y (Bundesbank fitted), daily, in percentage points. Two constructions: a constant-maturity yield against a fitted zero-coupon one." },
     { label: "OAT–Bund 10Y (monthly)", val: pp(leg("IRLTLT01FRM156N"), leg("IRLTLT01DEM156N")),
-      tip: "France minus Germany 10Y, monthly, OECD (IRLTLT01FRM156N − IRLTLT01DEM156N). Monthly averages, not a daily spread: no free official daily French yield exists (Sentinel D-0111 option A)." },
+      tip: "France minus Germany 10Y, monthly, OECD (IRLTLT01FRM156N − IRLTLT01DEM156N). Monthly averages, not a daily spread; kept beside the daily OAT–Bund for the longer OECD history (Sentinel D-0112)." },
   ].filter((s) => s.val != null);
 }
 
