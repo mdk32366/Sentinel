@@ -348,6 +348,15 @@ class CompositeCountry(BaseModel):
     monetary_score: int
     spread_bps: Optional[float] = None
     spread_widening_bps: Optional[float] = None
+    # D-0114. Dimension 4 for DEU/GBR/JPN/FRA only; absent (None) elsewhere.
+    # Declared because response_model strips undeclared fields (F-0079).
+    dim4_score: Optional[float] = None
+    dim4_source: Optional[str] = None
+    dim4_level_score: Optional[float] = None
+    dim4_spread_score: Optional[float] = None
+    dim4_spread_bp: Optional[float] = None
+    dim4_spread_pctile: Optional[float] = None
+    dim4_flags: Optional[List[str]] = None
     # D-0066: spread_score removed. A field that is always zero is a trap -
     # a reader takes it for a dimension that happens to be quiet.
     oil_dependent: bool

@@ -324,7 +324,10 @@ class ForeignBondsAreNotScored(unittest.TestCase):
         for code in codes:
             self.assertFalse(reads_code(V2_SCORER, code), code)
         composite = COMPOSITE_SCORER.read_text(encoding="utf-8")
-        self.assertNotIn("foreign_bond", composite)
+        # No selection by the FB category: the four codes are named exactly.
+        # (The scorer does reference the watchdog's "foreign_bonds_*" keys,
+        # to share the D-0113 freshness limits.)
+        self.assertNotIn('"foreign_bond"', composite)
         for code in codes:
             with self.subTest(code=code):
                 self.assertEqual(code in composite, code in scored, code)

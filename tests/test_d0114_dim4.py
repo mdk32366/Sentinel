@@ -87,7 +87,9 @@ class Scoring(unittest.TestCase):
     def test_fra_spread_term_at_the_top_of_its_history(self):
         fra = rows()["FRA"]
         self.assertEqual(fra["dim4_source"], "FB_FR_10Y")
-        self.assertEqual(fra["dim4_level_score"], 0)
+        # Level: 3.35% is under the US 10Y, but the FR-US gap widened >30bp
+        # inside 120 days, so the unchanged D-0066 ladder gives its +5 kicker.
+        self.assertEqual(fra["dim4_level_score"], 5)
         self.assertAlmostEqual(fra["dim4_spread_bp"], 85.0, places=1)
         self.assertEqual(fra["dim4_spread_pctile"], 100.0)
         self.assertEqual(fra["dim4_spread_score"], 20.0)
@@ -112,11 +114,16 @@ class Scoring(unittest.TestCase):
         self.assertIn("spread_leg_stale", fra["dim4_flags"])
 
     def test_no_spread_term_for_germany_or_non_ez(self):
-        by = rows()
-        for iso in ("DEU", "GBR", "JPN"):
-            with self.subTest(iso=iso):
-                self.assertIsNone(by[iso]["dim4_spread_score"])
-                self.assertIsNone(by[iso]["dim4_spread_pctile"])
+        # Germany scores 0 on the fixture and drops off the board, so its
+        # dimension 4 is read directly.
+        db = fx.build()
+        with mock.patch.object(cs, "datetime", _Frozen):
+            for iso in ("DEU", "GBR", "JPN"):
+                with self.subTest(iso=iso):
+                    d4 = cs.get_dim4_fb(db, iso, fx.US_10Y)
+                    self.assertIsNone(d4["dim4_spread_score"])
+                    self.assertIsNone(d4["dim4_spread_pctile"])
+                    self.assertNotIn("spread_leg_missing", d4["dim4_flags"])
 
     def test_missing_leg_gives_level_only(self):
         fra = rows(drop=("FB_DE_10Y",))["FRA"]
