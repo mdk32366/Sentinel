@@ -18,6 +18,13 @@ from pipelines.boe_yields import METRICS as BOE_METRICS, run_boe_yields
 from pipelines.bundesbank_yields import METRICS as BUNDESBANK_METRICS, run_bundesbank_yields
 from pipelines.bdf_tec import METRICS as BDF_TEC_METRICS, run_bdf_tec
 from pipelines.mof_jgb import METRICS as MOF_METRICS, run_mof_jgb
+# Sentinel D-0115: Foreign Bonds batch 2a, keyless daily sources.
+from pipelines.boc_valet import METRICS as BOC_METRICS, run_boc_valet
+from pipelines.riksbank_swea import METRICS as RIKSBANK_METRICS, run_riksbank_swea
+from pipelines.rba_f2 import METRICS as RBA_METRICS, run_rba_f2
+from pipelines.norges_govt import METRICS as NORGES_METRICS, run_norges_govt
+from pipelines.bde_ti13 import METRICS as BDE_METRICS, run_bde_ti13
+from pipelines.ecb_yc import METRICS as ECB_METRICS, run_ecb_yc
 from pipelines.composite_stress import persist_composite_snapshot
 from pipelines.money_supply_fetcher import run_money_supply_fetch
 from pipelines.imf_gold_reserves import run_imf_gold_fetch
@@ -75,6 +82,13 @@ SCHEDULED_PIPELINES = {
     "MOF_JGB",
     # Sentinel D-0112: France, Banque de France TEC.
     "BdF_TEC",
+    # Sentinel D-0115: Foreign Bonds batch 2a.
+    "BoC_Valet",
+    "Riksbank_SWEA",
+    "RBA_F2",
+    "Norges_GOVT",
+    "BdE_TI13",
+    "ECB_YC",
 }
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
@@ -368,6 +382,13 @@ FOREIGN_BOND_JOBS = {
     "boe": ("BoE yields", run_boe_yields, BOE_METRICS),
     "mof": ("MOF JGB", run_mof_jgb, MOF_METRICS),
     "bdf": ("Banque de France TEC", run_bdf_tec, BDF_TEC_METRICS),
+    # Sentinel D-0115: batch 2a.
+    "boc": ("Bank of Canada Valet", run_boc_valet, BOC_METRICS),
+    "riksbank": ("Riksbank SWEA", run_riksbank_swea, RIKSBANK_METRICS),
+    "rba": ("RBA F2", run_rba_f2, RBA_METRICS),
+    "norges": ("Norges Bank GOVT", run_norges_govt, NORGES_METRICS),
+    "bde": ("Banco de Espana TI_1_3", run_bde_ti13, BDE_METRICS),
+    "ecb": ("ECB yield curves", run_ecb_yc, ECB_METRICS),
 }
 
 
@@ -390,6 +411,36 @@ def scheduled_boe_yields_fetch():
 def scheduled_mof_jgb_fetch():
     """MOF JGB constant-maturity yields, weekdays 10:00 UTC (Sentinel D-0111)."""
     _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["mof"])
+
+
+def scheduled_boc_valet_fetch():
+    """Bank of Canada benchmark yields, weekdays 23:00 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["boc"])
+
+
+def scheduled_riksbank_yields_fetch():
+    """Riksbank SWEA government bond yields, weekdays 16:30 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["riksbank"])
+
+
+def scheduled_rba_f2_fetch():
+    """RBA F2 government bond yields, weekdays 08:00 and 20:00 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["rba"])
+
+
+def scheduled_norges_yields_fetch():
+    """Norges Bank generic government rates, weekdays 16:45 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["norges"])
+
+
+def scheduled_bde_ti13_fetch():
+    """Banco de Espana TI_1_3 secondary-market yields, weekdays 10:30 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["bde"])
+
+
+def scheduled_ecb_yc_fetch():
+    """ECB euro-area AAA / all-issuer yield curves, weekdays 07:30 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["ecb"])
 
 
 def scheduled_treasury_auctions_fetch():
@@ -586,6 +637,24 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled Banque de France TEC weekdays at 10:00 UTC")
+
+    # Sentinel D-0115: Foreign Bonds batch 2a, keyless, weekdays, UTC.
+    for func, hour, minute, job_id, name in (
+        (scheduled_ecb_yc_fetch, "7", "30", "ecb_yc", "Euro Area Yield Curves (ECB)"),
+        (scheduled_rba_f2_fetch, "8,20", "0", "rba_f2", "Australia Bond Yields (RBA F2)"),
+        (scheduled_bde_ti13_fetch, "10", "30", "bde_ti13", "Spain Bond Yields (Banco de Espana)"),
+        (scheduled_riksbank_yields_fetch, "16", "30", "riksbank_yields", "Sweden Bond Yields (Riksbank)"),
+        (scheduled_norges_yields_fetch, "16", "45", "norges_yields", "Norway Bond Yields (Norges Bank)"),
+        (scheduled_boc_valet_fetch, "23", "0", "boc_valet", "Canada Bond Yields (Bank of Canada)"),
+    ):
+        scheduler.add_job(
+            func,
+            CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
+            id=job_id, name=name,
+            replace_existing=True,
+        )
+    logger.info("Scheduled Foreign Bonds batch 2a weekdays: ECB 07:30, RBA 08:00+20:00, "
+                "BdE 10:30, Riksbank 16:30, Norges 16:45, BoC 23:00 UTC")
 
     scheduler.add_job(
         scheduled_freshness_check,

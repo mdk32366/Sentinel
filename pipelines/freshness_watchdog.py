@@ -280,6 +280,66 @@ CHECKS = [
         "pipelines": ["BdF_TEC"],
         "note": "TEC constant-maturity OAT yields, 2/5/7/10/30Y, business-daily. Display only (Sentinel D-0112).",
     },
+    # Sentinel D-0115: Foreign Bonds batch 2a, keyless. Windows from spec@0.3
+    # §15: same-day publication + weekend + 1, except RBA F2 (published
+    # weekly, ~8-day lag observed 2026-10-22) at 12. EA is the ECB benchmark
+    # panel, not a country; its key still ends in a 2-letter tag so the cc
+    # mapping in composite_stress._fb_max_age_days stays well-formed, and
+    # FB_DIM4_CODES never reads it.
+    {
+        "key": "foreign_bonds_ca",
+        "period": "day",
+        "label": "Canada GoC bond yields (Bank of Canada)",
+        "patterns": ["FB\\_CA\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["BoC_Valet"],
+        "note": "Benchmark bond yields, 2/3/5/7/10/long(30)Y, business-daily. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_se",
+        "period": "day",
+        "label": "Sweden government bond yields (Riksbank)",
+        "patterns": ["FB\\_SE\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["Riksbank_SWEA"],
+        "note": "SWEA SEGVB 2/5/7/10Y, business-daily. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_au",
+        "period": "day",
+        "label": "Australia government bond yields (RBA F2)",
+        "patterns": ["FB\\_AU\\_%"],
+        "max_age_days": 12,       # weekly publication, ~8-day lag
+        "pipelines": ["RBA_F2"],
+        "note": "Table F2 2/3/5/10Y, daily values published weekly (~8-day lag). Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_no",
+        "period": "day",
+        "label": "Norway government bond yields (Norges Bank)",
+        "patterns": ["FB\\_NO\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["Norges_GOVT"],
+        "note": "Generic government rates 3/5/7/10Y, business-daily. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_es",
+        "period": "day",
+        "label": "Spain government bond yields (Banco de Espana)",
+        "patterns": ["FB\\_ES\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["BdE_TI13"],
+        "note": "TI_1_3 secondary-market 3/5/10/15Y, business-daily. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_ea",
+        "period": "day",
+        "label": "Euro area AAA / all-issuer yield curves (ECB)",
+        "patterns": ["FB\\_EA\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["ECB_YC"],
+        "note": "Svensson spot rates, AAA and all issuers, 2/5/7/10/30Y, business-daily. Benchmark panel, not a country. Display only (Sentinel D-0115).",
+    },
     {
         "key": "reserves_ex_gold",
         "period": "month",
