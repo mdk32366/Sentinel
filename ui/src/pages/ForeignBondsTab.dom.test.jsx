@@ -23,6 +23,7 @@ import App from "../App";
 import * as constants from "../lib/constants";
 import {
   FOREIGN_BOND_CODES, FOREIGN_BOND_METRICS, SOVEREIGN_YIELD_CODES, TABS, foreignBondSpreads,
+  oatBundDailySpread,
 } from "../lib/constants";
 import { parseRoute } from "../lib/countryRoute";
 import { ForeignBondsTab } from "./ForeignBondsTab";
@@ -153,7 +154,7 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     expect(FOREIGN_BOND_CODES).not.toContain(FRA);
     expect(FOREIGN_BOND_METRICS.filter((m) => m.label === "FR 10Y").map((m) => m.code)).toEqual(["FB_FR_10Y"]);
     const labels = foreignBondSpreads({ [FRA]: 4.44, [DEU]: 3.5, FB_FR_10Y: 3.35, FB_DE_10Y: 3.47 }).map((s) => s.label);
-    expect(labels).toEqual(["OAT\u2013Bund 10Y"]);
+    expect(labels).toEqual(["OAT\u2013Bund 10Y (daily, BdF TEC \u2212 Bundesbank)"]);
   });
 
   it("T-0112 add. 2: the tab never requests the monthly FR series", async () => {
@@ -200,7 +201,7 @@ describe("§7.7: the spread strip", () => {
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
     for (const label of ["Bund–UST 10Y", "Gilt–UST 10Y", "JGB–UST 10Y", "Gilt–Bund 10Y",
-      "Gilt–Bund 2Y", "DE 10Y–2Y", "GB 10Y–2Y", "JP 30Y–10Y", "OAT–Bund 10Y"]) {
+      "Gilt–Bund 2Y", "DE 10Y–2Y", "GB 10Y–2Y", "JP 30Y–10Y", "OAT–Bund 10Y (daily, BdF TEC − Bundesbank)"]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
     expect(screen.queryByText("OAT–Bund 10Y (monthly)")).toBeNull();
@@ -208,8 +209,8 @@ describe("§7.7: the spread strip", () => {
     expect(container.textContent).toContain("-0.63pp");
     // No monthly OAT-Bund (4.44 - 3.50) any more (D-0112 amendment 1).
     expect(container.textContent).not.toContain("+0.94pp");
-    // OAT-Bund daily (D-0112): FB_FR_10Y 3.35 - FB_DE_10Y 3.47
-    expect(container.textContent).toContain("-0.12pp");
+    // OAT-Bund daily in bp (D-0112 amendment 2): FB_FR_10Y 3.35 - FB_DE_10Y 3.47
+    expect(container.textContent).toContain("-12bp");
   });
 
   it("hides a spread whose leg is stale, and keeps the rest", async () => {
@@ -296,5 +297,71 @@ describe("AC-3: FOREIGN-BONDS has MARKETS' structure and interactions", () => {
     });
     await waitFor(() => expect(window.location.hash).toBe("#/markets"));
     await waitFor(() => expect(container.textContent).toContain("Source: FRED"));
+  });
+});
+
+const OAT_BUND = "OAT–Bund 10Y (daily, BdF TEC − Bundesbank)";
+const pt = (date, value) => ({ date, value });
+
+describe("D-0112 amendment 2 (T-0112 addendum 2): the daily OAT–Bund spread", () => {
+  it("is FB_FR_10Y minus FB_DE_10Y in bp on fixture dates", () => {
+    const fr = [pt("2026-10-19", 3.30), pt("2026-10-20", 3.35)];
+    const de = [pt("2026-10-19", 3.45), pt("2026-10-20", 3.47)];
+    const out = oatBundDailySpread(fr, de);
+    expect(out.map((p) => p.date)).toEqual(["2026-10-19", "2026-10-20"]);
+    expect(out[0].bp).toBeCloseTo(-15, 6);
+    expect(out[1].bp).toBeCloseTo(-12, 6);
+  });
+
+  it("a date with one leg missing is a gap, never a forward fill", () => {
+    const fr = [pt("2026-10-16", 3.20), pt("2026-10-19", 3.30), pt("2026-10-20", 3.35)];
+    const de = [pt("2026-10-16", 3.40), pt("2026-10-20", 3.47)];
+    const out = oatBundDailySpread(fr, de);
+    expect(out.map((p) => p.date)).toEqual(["2026-10-16", "2026-10-20"]);
+    expect(out[0].bp).toBeCloseTo(-20, 6);
+    expect(oatBundDailySpread(fr, [])).toEqual([]);
+    expect(oatBundDailySpread(undefined, de)).toEqual([]);
+  });
+
+  it("the current value comes from the last date BOTH legs share", () => {
+    const series = {
+      FB_FR_10Y: [pt("2026-10-19", 3.30), pt("2026-10-20", 3.35)],
+      FB_DE_10Y: [pt("2026-10-19", 3.45)],
+    };
+    const s = foreignBondSpreads({ FB_FR_10Y: 3.35, FB_DE_10Y: 3.45 }, () => true, series)
+      .find((x) => x.label === OAT_BUND);
+    expect(s.unit).toBe("bp");
+    expect(s.val).toBeCloseTo(-15, 6);
+  });
+
+  it("a stale leg shows a dash, not a number", () => {
+    const series = {
+      FB_FR_10Y: [pt("2026-10-20", 3.35)], FB_DE_10Y: [pt("2026-10-20", 3.47)],
+    };
+    for (const staleCode of ["FB_FR_10Y", "FB_DE_10Y"]) {
+      const s = foreignBondSpreads({ FB_FR_10Y: 3.35, FB_DE_10Y: 3.47 }, (c) => c !== staleCode, series)
+        .find((x) => x.label === OAT_BUND);
+      expect(s.val).toBeNull();
+      expect(s.display).toBe("—");
+    }
+  });
+
+  it("on the tab: -12bp when fresh, — when the French leg is stale", async () => {
+    const view = render(<ForeignBondsTab />);
+    await settle(view.container);
+    await waitFor(() => expect(screen.getByText(OAT_BUND)).toBeTruthy());
+    const cell = () => screen.getByText(OAT_BUND).closest("div[style]").parentElement;
+    await waitFor(() => expect(cell().textContent).toContain("-12bp"));
+    cleanup();
+
+    freshness = allFresh();
+    freshness.sources.find((s) => s.key === "foreign_bonds_fr").status = "stale";
+    const stale = render(<ForeignBondsTab />);
+    await settle(stale.container);
+    await waitFor(() => expect(screen.getByText(OAT_BUND)).toBeTruthy());
+    await waitFor(() => expect(stale.container.textContent).not.toContain("-12bp"));
+    const strip = [...stale.container.querySelectorAll("div")].find((d) => d.textContent.startsWith("SPREAD") && d.children.length > 1);
+    const oat = [...strip.children].find((c) => c.textContent.includes(OAT_BUND));
+    expect(oat.textContent).toContain("—");
   });
 });
