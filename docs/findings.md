@@ -4040,3 +4040,25 @@ failure in `F-0124` applies. Verified from the laptop: newest 2026-09.
 
 **Handled.** No new host; the selfhost allow-list already carries it. The
 2b-1 selfhost PR adds `www.gov.pl` and `a2a.bancaditalia.it`.
+
+### F-0128 - MinFin PL, Banca d'Italia and ECB IRS reuse terms are unverified (`A-0039`)
+
+**Claim.** `A-0039` (redisplay with attribution) rests on each publisher's
+general reuse terms. Nobody has read and recorded the specific terms for the
+MinFin auction workbook, BMK0100 or the ECB IRS dataset.
+
+**Handled.** Not yet. Display only, sources cited on cards and tooltips; no
+scored use. Until verified, a restrictive term takes the PL/IT/GR/PT cards
+down (the `A-0039` consequence). Open.
+
+### F-0129 - Italy monthly (BMK0100) can read stale before the next month lands
+
+**Claim.** `foreign_bonds_it` is monthly with `max_age_days` 45, aged from the
+month-end date. Prod after the 2026-10-22 deploy: latest 2026-09-30. If the
+October observation is published after about 14 November, the watchdog flags
+Italy stale though nothing is broken; `ecb_irs_monthly` (also 45 days) has the
+same exposure for the IRS fallback.
+
+**Handled.** Not changed. Watch the first November release date; if BdI
+routinely publishes after day 14, widen to 55 as `F-0089` did, or age from
+publication. Open.

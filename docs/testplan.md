@@ -938,3 +938,16 @@ maturities refused; month end (leap February).
 **Case T-0145: MONTHLY badge, no curve.** GRC/PRT show the IRS 10Y MONTHLY with
 no curve and no slopes, a dash when stale; ITA MONTHLY with 3s10s and 10s30s;
 ITA/POL/ESP fall back to IRS, then IRLTLT; POL shows "AS OF LAST AUCTION <date>".
+
+**Case T-0146: ingest 413 before reading.** POST /api/ingest/bdi-mfn-bmk with
+Content-Length over the 2 MB cap is 413; the body is never read; nothing ingested.
+
+**Case T-0147: malformed Content-Length.** Non-integer or negative is 400
+before reading.
+
+**Case T-0148: chunked upload over the cap.** No Content-Length: the stream is
+read only until it passes 2 MB, then 413; never buffered whole.
+
+**Case T-0149: at the cap still ingests.** Exactly 2 MB reaches the parser
+intact. Every POST `/ingest/` route is checked for the early 413. Tests:
+`tests/test_ingest_body_cap.py` (self-contained, no fixtures).
