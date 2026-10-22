@@ -230,3 +230,138 @@ describe("D-0073: every country tile explains itself", () => {
     expect(value.style.color).toBe("rgb(200, 169, 110)");
   });
 });
+
+// ── Sentinel D-0113 (Trinity ruling 2026-10-22): FB daily bonds on the cards ──
+import {
+  FB_CARD_COUNTRY, FB_MAX_AGE_DAYS, SOVEREIGN_YIELD_CODES, countryBond, fbCardCodes,
+} from "../../lib/constants";
+import { TRACKED_CODES } from "../../hooks/useMarketSeries";
+import { CountryBondCurve } from "./CountryBondCurve";
+
+const NOW = new Date("2026-10-22T12:00:00Z");
+const D = "2026-10-21";
+function deLatest(over = {}) {
+  return {
+    latest: { FB_DE_02Y: 2.1, FB_DE_05Y: 2.3, FB_DE_07Y: 2.4, FB_DE_10Y: 2.6, FB_DE_30Y: 3.05,
+      [SOVEREIGN_YIELD_CODES.DEU]: 2.9, DGS10: 4.2, ...(over.latest || {}) },
+    dates: { FB_DE_02Y: D, FB_DE_05Y: D, FB_DE_07Y: D, FB_DE_10Y: D, FB_DE_30Y: D, ...(over.dates || {}) },
+  };
+}
+
+describe("D-0113: the FB card mapping", () => {
+  it("maps exactly the four FB countries to their FB codes", () => {
+    expect(FB_CARD_COUNTRY).toEqual({ DEU: "DE", GBR: "GB", JPN: "JP", FRA: "FR" });
+    expect(fbCardCodes("JPN")).toEqual(["FB_JP_02Y", "FB_JP_05Y", "FB_JP_07Y", "FB_JP_10Y", "FB_JP_30Y"]);
+    expect(fbCardCodes("ITA")).toEqual([]);
+  });
+
+  it("mirrors the watchdog's per-source freshness limits (freshness_watchdog.py)", () => {
+    expect(FB_MAX_AGE_DAYS).toEqual({ DE: 4, GB: 5, JP: 7, FR: 4 });
+  });
+
+  it("returns null for a non-FB country, so ITA is unchanged", () => {
+    expect(countryBond("ITA", {}, {}, NOW)).toBeNull();
+  });
+});
+
+describe("D-0113: the 10Y on the Sovereign Yield and Spread cards", () => {
+  it("uses the daily FB 10Y and names the source in the tip", () => {
+    const { latest, dates } = deLatest();
+    const b = countryBond("DEU", latest, dates, NOW);
+    expect(b.tenYear.value).toBe(2.6);
+    expect(b.tenYear.daily).toBe(true);
+    expect(b.tenYear.badge).toBeNull();
+    expect(b.tenYear.tip).toMatch(/FIT/);
+    expect(b.tenYear.tip).toMatch(/daily/);
+    const jp = countryBond("JPN", { FB_JP_10Y: 1.6 }, { FB_JP_10Y: D }, NOW);
+    expect(jp.tenYear.tip).toMatch(/CMT/);
+  });
+
+  it("FRA falls back to the monthly OECD series with a MONTHLY badge when no daily 10Y", () => {
+    const b = countryBond("FRA", { [SOVEREIGN_YIELD_CODES.FRA]: 3.4 }, {}, NOW);
+    expect(b.tenYear.value).toBe(3.4);
+    expect(b.tenYear.daily).toBe(false);
+    expect(b.tenYear.badge).toBe("MONTHLY");
+    expect(b.tenYear.code).toBe(SOVEREIGN_YIELD_CODES.FRA);
+    expect(b.tenYear.tip).toMatch(/monthly OECD/);
+  });
+
+  it("falls back too when the daily 10Y is stale beyond its limit", () => {
+    const { latest, dates } = deLatest({ dates: { FB_DE_10Y: "2026-10-10" } });
+    const b = countryBond("DEU", latest, dates, NOW);
+    expect(b.tenYear.badge).toBe("MONTHLY");
+    expect(b.tenYear.value).toBe(2.9);
+  });
+
+  it("renders the daily value with a DAILY sub-line and the spread from the daily 10Y", () => {
+    const { latest, dates } = deLatest();
+    const b = countryBond("DEU", latest, dates, NOW);
+    render(<CountryStatCards ticHistory={null} cds={NO_CDS} countryYield={b.tenYear.value}
+      yieldSource={b.tenYear} us10y={4.2} />);
+    expect(screen.getByText("2.60%")).toBeTruthy();
+    expect(screen.getByText(/DAILY · FIT/)).toBeTruthy();
+    expect(screen.getByText("-160bps")).toBeTruthy();
+  });
+
+  it("renders the MONTHLY badge on the FRA fallback", () => {
+    const b = countryBond("FRA", { [SOVEREIGN_YIELD_CODES.FRA]: 3.4 }, {}, NOW);
+    render(<CountryStatCards ticHistory={null} cds={NO_CDS} countryYield={b.tenYear.value}
+      yieldSource={b.tenYear} us10y={4.2} />);
+    expect(screen.getAllByText(/MONTHLY/).length).toBeGreaterThan(0);
+    expect(screen.getByText("-80bps")).toBeTruthy();
+  });
+});
+
+describe("D-0113: the curve row and slopes", () => {
+  it("shows NO SOURCE for a tenor with no observation", () => {
+    const { latest, dates } = deLatest();
+    delete latest.FB_DE_07Y; delete dates.FB_DE_07Y;
+    render(<CountryBondCurve iso="DEU" bond={countryBond("DEU", latest, dates, NOW)} />);
+    expect(screen.getByText("2.10%")).toBeTruthy();
+    expect(screen.getAllByText("NO SOURCE")).toHaveLength(1);
+  });
+
+  it("slopes are in bp: 2s10s and 10s30s", () => {
+    const { latest, dates } = deLatest();
+    const b = countryBond("DEU", latest, dates, NOW);
+    expect(b.slopes.map((s) => [s.label, s.bp])).toEqual([["2s10s", 50], ["10s30s", 45]]);
+    render(<CountryBondCurve iso="DEU" bond={b} />);
+    expect(screen.getByText("+50bp")).toBeTruthy();
+    expect(screen.getByText("+45bp")).toBeTruthy();
+  });
+
+  it("a stale leg makes the slope a dash", () => {
+    const { latest, dates } = deLatest({ dates: { FB_DE_30Y: "2026-10-01" } });
+    const b = countryBond("DEU", latest, dates, NOW);
+    expect(b.slopes[0].bp).toBe(50);
+    expect(b.slopes[1].bp).toBeNull();
+    render(<CountryBondCurve iso="DEU" bond={b} />);
+    expect(screen.getByTestId("slope-10s30s").textContent).toMatch(/—/);
+  });
+
+  it("legs on different observation dates never make a slope", () => {
+    const { latest, dates } = deLatest({ dates: { FB_DE_02Y: "2026-10-20" } });
+    const b = countryBond("DEU", latest, dates, NOW);
+    expect(b.slopes[0].bp).toBeNull();
+    render(<CountryBondCurve iso="DEU" bond={b} />);
+    expect(screen.getByTestId("slope-2s10s").textContent).toMatch(/—/);
+  });
+});
+
+// Pinned through a mask: constants.test.js forbids the literal FRED codes
+// outside constants.js, and the mask keeps every country letter exact.
+const mask = (x) => x.replace(/IRLTLT01([A-Z]{2})M156N/g, "SOV_$1");
+const SOVEREIGN_BASELINE = '{"JPN":"SOV_JP","DEU":"SOV_DE","ITA":"SOV_IT","FRA":"SOV_FR","ESP":"SOV_ES","GBR":"SOV_GB","AUS":"SOV_AU","CAN":"SOV_CA","NLD":"SOV_NL","NOR":"SOV_NO","SWE":"SOV_SE","CHE":"SOV_CH","BEL":"SOV_BE","KOR":"SOV_KR"}';
+const TRACKED_BASELINE = "DGS30,DGS10,DGS7,DGS5,DGS2,DFF,DFII10,DCOILWTICO,DTWEXBGS,CPIAUCSL,WM2NS,GOLD_SPOT_USD,SOV_JP,SOV_DE,SOV_IT,SOV_FR,SOV_ES,SOV_GB,SOV_AU,SOV_CA,SOV_NL,SOV_NO,SOV_SE,SOV_CH,SOV_BE,SOV_KR";
+
+describe("D-0113 hard invariants", () => {
+  it("SOVEREIGN_YIELD_CODES is exactly unchanged", () => {
+    expect(mask(JSON.stringify(SOVEREIGN_YIELD_CODES))).toBe(SOVEREIGN_BASELINE);
+    for (const c of Object.values(SOVEREIGN_YIELD_CODES)) expect(c).toMatch(/^IRLTLT01[A-Z]{2}M156N$/);
+  });
+
+  it("MARKETS TRACKED_CODES is exactly unchanged and holds no FB_ code", () => {
+    expect(mask(TRACKED_CODES.join(","))).toBe(TRACKED_BASELINE);
+    expect(TRACKED_CODES.some((c) => c.startsWith("FB_"))).toBe(false);
+  });
+});
