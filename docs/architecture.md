@@ -276,8 +276,8 @@ NULL. No migration.
 **Fail-closed.** A source writes all its rows in one transaction or none.
 `SchemaDrift` (missing column, bad date, value outside [-2, 15] %) and a
 0-row parse both mean `failed`. A Bundesbank 200 with only a header is
-retried, then `failed` (F-0116). The first run against an empty series
-backfills five years from the archives (F-0115).
+retried, then `failed` (F-0117). The first run against an empty series
+backfills five years from the archives (F-0116).
 
 **Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb` and
 `_jp` (patterns `FB\_DE\_%` etc.). France stays on `sovereign_yields`.

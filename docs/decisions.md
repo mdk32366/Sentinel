@@ -3206,11 +3206,11 @@ to master `be64218`; the tab strip gains one entry.
 Fetchers fail closed, all or nothing per run: a missing column, an
 unparseable date or a value outside [-2, 15] % writes nothing; a run that
 would write 0 rows is `failed`, never `success`; a Bundesbank 200 with only a
-header is retried, then `failed` (`F-0116`). Writes reuse
+header is retried, then `failed` (`F-0117`). Writes reuse
 `fred_fetcher.upsert_observations` (F-0073). Weekday cron, UTC: MOF 10:00,
 Bundesbank 18:00, BoE 18:30. The first run against an empty series backfills
 five years (Bundesbank `startPeriod`, BoE `glcnominalddata.zip`, MOF
-`jgbcm_all.csv`; both archive URLs verified, `F-0115`).
+`jgbcm_all.csv`; both archive URLs verified, `F-0116`).
 
 **Rejected.** (a) Daily DE/UK/JP 10Y in the composite: dimension 4 already
 scores these countries' monthly OECD 10Y, so a daily copy counts the same

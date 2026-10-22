@@ -511,7 +511,7 @@ lives in the decision, where a reader will find it before re-proposing the idea.
 ### T-0111 - Foreign Bonds: three fail-closed fetchers, a reused MARKETS, a default board that did not move
 
 Proves `D-0111` (vault:D-0057 §8 and AC-1 to AC-5). Every case reads
-fixtures captured from the real sources on 2026-10-21 (`F-0115`); none
+fixtures captured from the real sources on 2026-10-21 (`F-0116`); none
 touches a network. **Red first:** the tests landed in their own commit, ahead
 of the code, and failed there (counts are in the PR). Every negative has a
 positive twin, so a guard that failed unconditionally would not pass.
@@ -526,7 +526,7 @@ positive twin, so a guard that failed unconditionally would not pass.
   other four tenors must not be written either); `years:` row missing 30;
   `基準日` renamed; 99 in the MOF file; an ISO date where an era date belongs.
   Each one is `failed`, `FETCH_PARSE`, and 0 rows, asserted before and after.
-- **Header-only 200** (`F-0116`): every time = `failed`, 3 attempts, sleeps
+- **Header-only 200** (`F-0117`): every time = `failed`, 3 attempts, sleeps
   [4, 8], 0 rows. Once, then data = `success`, 40 rows.
 - **0 rows**: a MOF header with no data, and a BoE month-start sheet with no
   rows, are both `failed`.
