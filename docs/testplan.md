@@ -809,3 +809,76 @@ the four panel cases failed (no tip anchor) and the unchanged-chart case passed.
 Texts live in `ui/src/lib/countryPanelTips.js`, each taken from the fetcher
 that writes the series (`tic_fetcher`, `imf_gold_reserves`, `cds_fetcher`,
 `fred_fetcher`) and the freshness watchdog's cadence notes.
+
+### T-0115 - Foreign Bonds batch 2a: six keyless sources, five cards, the EA panel, nothing scored moved
+
+Proves `D-0115`. The spec numbers its cases T-0115 to T-0132; the register
+pairs one T heading with one D, so they are listed here as cases.
+
+**Case T-0115: parsers, six sources to zero-padded FB codes.**
+`tests/test_fb_batch2a.py::T0115Parsers` on synthetic
+fixtures in `tests/fixtures/foreign_bonds/` (`PROVENANCE.md`): each parser
+returns `(code, date, Decimal)` rows for exactly its codes; RBA CRLF and blank
+tails, Norges SDMX CSV and the ECB CSV parse.
+
+**Case T-0116: Batch 2a fail closed: empty, header-only, non-2xx, 429.**
+
+An empty or header-only answer, a non-2xx, or a Riksbank 429 writes a
+`failed` run and no rows. The 429 is not retried: exactly one call.
+
+**Case T-0117: Ten foreign-bond jobs and their schedule.**
+
+`FOREIGN_BOND_JOBS` has exactly 10 keys; the scheduler registers the six new
+ids at the D-0115 UTC times (`tests/test_scheduler_jobs.py`); the manual
+trigger accepts each new source and still refuses an unknown one.
+
+**Case T-0118: Batch 2a freshness limits.**
+
+`freshness_watchdog.CHECKS`: CA/SE/NO/ES/EA 4 days, AU 12; the UI's
+`FB_MAX_AGE_DAYS` mirrors it.
+
+**Case T-0119: An HTML body is a failure, not data.**
+
+Every new fetcher rejects an HTML answer (`html_body.html`) and writes no rows.
+
+**Case T-0120: Card slope chips follow each source's tenors.**
+
+UI (`fbBatch2a.dom.test.jsx`): NOR shows 3s10s and no 2s10s; only CAN shows
+10s30s, tooltip "10s-long"; SWE/AUS 2s10s; the daily 10Y headline renders;
+AUS tolerates 12 days.
+
+**Case T-0121: The composite is byte-identical.**
+
+The scorer golden and `pipelines/composite_stress.py` sha256 are pinned to
+`48b6ea0`; adding the new FB rows to the golden fixture leaves the payload
+byte-equal. The fixture has 7 countries, not the production 41.
+
+**Case T-0122: The scoring surface did not move.**
+
+`FB_DIM4_CODES` is still the D-0114 four; the sovereign and tracked code lists
+hash as at `48b6ea0`; EA is not a card country.
+
+**Case T-0123: ECB yield curves: AAA and all-issuer at 2/5/7/10/30.**
+
+`T0123EcbYieldCurves`: both curves map to `FB_EA_AAA_*` / `FB_EA_ALL_*`.
+
+**Case T-0127: BdE: Latin-1 decode.**
+
+**Case T-0128: BdE: `_` is missing, not zero.**
+
+**Case T-0129: BdE: parsing stops at the FUENTE / NOTAS footer.**
+
+**Case T-0130: BdE: column order does not matter.**
+
+`T0127`-`T0130` in `tests/test_fb_batch2a.py`, on `bde_ti_1_3.csv` and the
+shuffled copy (A-0032).
+
+**Case T-0131: EA is a benchmark panel, never a country.**
+
+UI: both curves and AAA 2s10s / 10s30s in bp render; a stale leg dashes the
+slope; EA is not in `FB_CARD_COUNTRY`; FOREIGN-BONDS renders the panel first.
+
+**Case T-0132: ESP: daily 10Y, monthly OECD fallback, 3s10s only.**
+
+UI: with no daily row the card shows `IRLTLT01ESM156N` with MONTHLY, a 3s10s
+chip and no 10s30s; daily ES gives a 3/5/10/15Y curve.

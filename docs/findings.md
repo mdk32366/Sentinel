@@ -3978,3 +3978,38 @@ regression, or it can train people to ignore real AC-1 failures.
 **Handled.** Classified Windows-local and not chased now (Trinity, 2026-10-22
 2:12 PM PT). CI stays the gate for AC-1. Reopen if it fails in CI or on a
 non-Windows machine.
+
+### F-0122 - Batch 2 gaps: SNB stale since 2025-07-31, no Danish source, NZ blocked by a WAF
+
+**Claim.** Probed 2026-10-22 for spec@0.3. The SNB government bond yield
+cube's newest observation is 2025-07-31, so CH has no usable daily source.
+Denmark has no keyless daily government yield source found. The RBNZ
+download answers 403 from a web application firewall to non-browser clients.
+
+**Consequence if unhandled.** CH, DK and NZ would be shown as missing with no
+recorded reason.
+
+**Handled.** None of the three is in `D-0115`; they stay on the monthly OECD
+fallback where one exists.
+
+### F-0123 - RBA F2 lags about 8 days
+
+**Claim.** On 2026-10-22 the newest F2 observation was 2026-10-14. The RBA
+updates F2 weekly, so the newest row is routinely a week or more old.
+
+**Consequence if unhandled.** A 4-day limit would show AUS stale most days.
+
+**Handled.** `rba_f2` freshness is 12 days, and the job runs twice a day
+(08:00 and 20:00 UTC) to pick up a release promptly.
+
+### F-0124 - The ECB Data Portal is unreachable from the build box, reachable from the laptop
+
+**Claim.** From the build box, `data-api.ecb.europa.eu` fails the TLS
+handshake (unexpected EOF). From Matt's laptop the same request returns the
+CSV (newest 2026-10-21). The box egress path, not the ECB, is the cause.
+
+**Consequence if unhandled.** A selfhost deployment with the same egress
+would see `ecb_yc` fail closed every day.
+
+**Handled.** `data-api.ecb.europa.eu` is in the selfhost egress allow-list PR
+with the other five batch 2a hosts. Fly is unaffected.

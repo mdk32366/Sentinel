@@ -340,3 +340,14 @@ source (the watchdog), which the scorer, the D-0113 cards and the watchdog all
 read. `scripts/d0114_shadow.py` computes the old and new scores side by side
 on any `DATABASE_URL`, and writes nothing.
 
+
+## Foreign Bonds batch 2a (D-0115)
+
+Six more keyless fetchers write `FB_` rows through
+`pipelines/foreign_bond_common` (`reject_html`, `make_metrics`):
+`boc_valet`, `riksbank_yields`, `rba_f2`, `norges_yields`, `bde_ti13`,
+`ecb_yc`. Each is a scheduler job and a manual-trigger source and has a
+`freshness_watchdog.CHECKS` entry. The cards read CA/SE/AU/NO/ES through
+`countryBond`, as `D-0113` does. The euro-area curves feed only
+`components/foreignBonds/EaBenchmarkPanel.jsx` on FOREIGN-BONDS. No scorer
+reads any batch 2a code.
