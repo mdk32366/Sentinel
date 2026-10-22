@@ -222,7 +222,9 @@ describe("§7.7: the spread strip", () => {
     freshness.sources.find((s) => s.key === "foreign_bonds_gb").status = "stale";
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
-    const cell = (label) => screen.getByText(label).closest("div[style]").parentElement;
+    // One strip entry: the strip's direct child that carries this label.
+    const strip = () => [...container.querySelectorAll("div")].find((d) => d.textContent.startsWith("SPREAD") && d.children.length > 1);
+    const cell = (label) => [...strip().children].find((c) => c.textContent.startsWith(label));
     await waitFor(() => expect(cell("Gilt–UST 10Y").textContent).toContain("—"));
     for (const label of ["Gilt–UST 10Y", "Gilt–Bund 10Y", "Gilt–Bund 2Y", "GB 10Y–2Y"]) {
       expect(cell(label).textContent).toContain("—");

@@ -3322,6 +3322,17 @@ the other spreads. `useSeries` also returns the per-code points (additive).
 **Unchanged:** scorer, DB, `SOVEREIGN_YIELD_CODES`, `TRACKED_CODES` and the
 API. Tested by `T-0112` addendum 2.
 
+**D-0112 amendment 3 (2026-10-22): the strip reads in one unit, and a stale leg shows "—".**
+The OAT–Bund entry on the FOREIGN-BONDS spread strip now reads in pp, like
+every other spread there (it was the one bp entry); the label keeps its
+meaning (FR 10Y BdF TEC minus DE 10Y Bundesbank, daily) and
+`oatBundDailySpread` still returns bp, divided by 100 at the strip. Every
+other spread on the strip now stays in place and shows "—" when the
+watchdog calls one of its legs stale or worse, instead of disappearing, so
+the strip keeps its shape. A spread whose leg is fresh but has no value at
+all is still left out. Display only: nothing scored moves. Pinned by
+T-0112 addendum 3.
+
 ### D-0113 - Country cards for DEU / GBR / JPN / FRA read the daily FB curve, with a curve row, slopes and the Foreign Bonds chart; display only
 
 Amends `D-0111`'s card clause ("country cards ... byte-identical"). Trinity's

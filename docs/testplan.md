@@ -701,6 +701,15 @@ templated POST to one path per `FOREIGN_BOND_JOBS` key. That makes it stricter:
 a source without its own button fails it, which was checked by removing the MOF
 button.
 
+**T-0112 addendum 3: one unit on the strip, "—" on a stale leg (2026-10-22).**
+`ForeignBondsTab.dom.test.jsx`: every spread renders in pp and no strip
+entry renders bp (the OAT–Bund entry reads -0.12pp on the fixture); with
+`foreign_bonds_gb` stale the four Gilt/GB spreads show "—" and no number
+while Bund–UST and JP 30Y–10Y keep theirs; `foreignBondSpreads` with DGS10
+stale keeps the three UST spreads with val null and display "—"; the
+OAT–Bund current value is ≈ -0.15 pp with a percentage-points tip. Pins
+D-0112 amendment 3. Seen red at the red commit (5 failed), green after.
+
 ### T-0113 - Country cards on the daily FB curve: fallback, curve row, slopes, the shared chart, and nothing scored moved
 
 Proves `D-0113`. **Red first:** the tests landed alone in commit

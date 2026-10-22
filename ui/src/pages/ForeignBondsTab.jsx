@@ -18,9 +18,9 @@ const OK = new Set(["ok", "anomaly"]);
  * Sentinel D-0112; amendment 1 took the monthly OECD FR 10Y off this tab).
  * Display only - nothing here feeds a score.
  *
- * A spread is shown only while the watchdog calls both legs' sources current;
- * one stale leg hides it rather than quoting a number against a frozen leg.
- * The daily OAT–Bund (amendment 2) stays in place and reads "—" instead.
+ * A spread quotes a number only while the watchdog calls both legs' sources
+ * current; one stale leg leaves it in place reading "—" rather than a number
+ * against a frozen leg (amendment 3). Every entry, OAT–Bund included, is pp.
  */
 export function ForeignBondsTab() {
   const { latest, prior, latestDate, dates, series } = useSeries(FOREIGN_BOND_CODES);
