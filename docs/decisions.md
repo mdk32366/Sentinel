@@ -3480,3 +3480,53 @@ Switzerland, Denmark and New Zealand (`F-0122`).
 
 **Assumptions.** `A-0032` (BdE CSV), `A-0033` (Valet LONG as 30Y), `A-0034`
 (ECB data licence).
+
+### D-0116 - Foreign Bonds batch 2b-1: Poland auction yields, Italy BMK monthly, ECB IRS monthly 10Y fallback; display only
+
+**Ruling.** Trinity's rulings on the batch 2b spec (2026-10-22): build 2b-1
+only (PL, IT, ECB IRS); New Zealand and Switzerland move to 2b-2. Extends
+`D-0111` / `D-0113` / `D-0115`. Does not amend `D-0114`: dimension 4 still
+reads exactly the four `FB_DIM4_CODES`, and `pipelines/composite_stress.py`
+is untouched.
+
+**Choice.**
+- **Three fetchers, all keyless, all fail closed:**
+
+  | Job id | Module | Source | Codes | Schedule (UTC) |
+  |---|---|---|---|---|
+  | `minfin_auctions` | `pipelines/minfin_pl_auctions.py` | Polish MinFin `Obligacje_Hurtowe.xlsm`, sheet `Operacje` | `FB_PL_02Y/05Y/10Y` | Mon-Fri 15:00 |
+  | `bdi_bmk` | `pipelines/bdi_bmk.py` | Banca d'Italia BMK0100 (CSV in a ZIP) | `FB_IT_03Y/05Y/10Y/30Y` | daily 08:00 |
+  | `ecb_irs` (+ `ecb_irs_mondays`) | `pipelines/ecb_irs.py` | ECB Data Portal IRS `M.{IT,ES,GR,PT,PL}.L.L40.CI.0000..N.Z` | `FB_{IT,ES,GR,PT,PL}_10Y_ECB_M` | days 1-10 07:15, plus Mondays 07:15 |
+
+  `FOREIGN_BOND_JOBS` has exactly 13 keys (T-0141).
+- **PL.** Wholesale auction (`TypOperacji` = `AS`) average yield `RentŚr` x 100,
+  dated the auction day. Buckets by residual maturity: 2Y [1.5, 3.5), 5Y
+  [3.5, 7), 10Y [7, 12]; per auction and bucket the bond closest to the
+  tenor wins, a tie goes to the longer bond. Floaters (`Kupon` FRN), `NZ`
+  series, switch auctions and blank yields are skipped. The attachment is
+  found by its Content-Disposition file name, never by a fixed URL; the
+  workbook is opened with `keep_vba=False`, `read_only=True`. Card label
+  "AS OF LAST AUCTION <date>"; freshness 40 days.
+- **IT.** BMK0100 monthly benchmark yields (end-of-month dated), 3/5/10/30Y.
+  MONTHLY badge; freshness 45 days. Manual backup `POST
+  /api/ingest/bdi-mfn-bmk` (Basic Auth; the proof cookie is 403): the same
+  parser, all or nothing (413 over 2 MB, 422 on any rejection, 0 rows
+  written), idempotent, one `ingest_provenance` row per accepted upload.
+  BMK0200 is not built.
+- **ECB IRS.** Monthly convergence 10Y, stored at month end. A card fallback
+  only, never a card of its own for IT/ES/PL. Card 10Y order: the country's own
+  series while fresh, then `FB_xx_10Y_ECB_M` within 45 days, then the OECD
+  `IRLTLT01xxM156N`, else a dash. ES: BdE daily first, then ECB_M (amends the
+  `D-0115` ESP fallback by inserting the IRS step).
+- **GRC and PRT** become card countries with a MONTHLY 10Y from ECB IRS only:
+  no curve, no slope chips.
+- **Freshness checks:** `foreign_bonds_pl` (day, 40), `foreign_bonds_it`
+  (month, 45), `ecb_irs_monthly` (month, 45). The ES pattern becomes
+  `FB\_ES\_%Y` so the ES daily check does not own `FB_ES_10Y_ECB_M`.
+- **Nothing scored moves.** The scorer golden and `composite_stress.py` are
+  byte-identical to `646c215` (T-0143).
+
+**Not in this decision.** NZ, CH (2b-2); Korea ECOS; BMK0200.
+
+**Assumptions.** `A-0036` (PL bucketing), `A-0037` (BMK0100 column keys),
+`A-0038` (IRS as fallback), `A-0039` (licences).

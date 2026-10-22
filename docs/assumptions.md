@@ -1005,3 +1005,54 @@ update date.
 
 **Consequence if wrong:** the EA panel would need to come down; nothing
 scored depends on it.
+
+### A-0035 - VOID, NEVER ISSUED
+
+Skipped when D-0116 was ruled; A-0036..A-0039 were assigned. Nothing cites it.
+
+### A-0036 - A Polish auction yield stands in for a constant-maturity yield
+
+**Relies on:** the closest-to-tenor bond at a wholesale auction being a fair
+2Y/5Y/10Y point, and `RentŚr` being the auction's average yield as a fraction.
+
+**Status:** Assumed (`D-0116`). Labelled "as of last auction" on the card.
+
+**Falsified by:** MinFin documenting `RentŚr` as something other than the
+average yield, or a percent rather than a fraction.
+
+**Consequence if wrong:** PL points sit off a secondary-market curve or are
+100x off; the value range check (`to_value`) fails such a run closed.
+
+### A-0037 - BMK0100 columns 203/205/210/230 are the 3/5/10/30Y benchmarks
+
+**Relies on:** Banca d'Italia's `MFN_BMK.M.020.922.0.EUR.{203,205,210,230}`
+keys being the gross benchmark BTP yields at those maturities, monthly.
+
+**Status:** Assumed (`D-0116`); checked against the live export on
+2026-10-22 (10Y 4.3622 for 2026-09, alongside ECB IRS IT 4.362).
+
+**Falsified by:** a key renamed or redefined; the parser then fails closed.
+
+**Consequence if wrong:** IT shows the wrong tenor; nothing scored.
+
+### A-0038 - The ECB IRS monthly 10Y is an acceptable card fallback
+
+**Relies on:** the convergence-criterion yield being a 10Y government
+benchmark, comparable to the daily series it backs up.
+
+**Status:** Assumed (`D-0116`). Always badged MONTHLY, with its own tooltip.
+
+**Falsified by:** a material, persistent gap to the daily 10Y.
+
+**Consequence if wrong:** a stale-daily card shows a monthly average that can
+differ by tens of bp; display only.
+
+### A-0039 - MinFin PL, Banca d'Italia and ECB IRS data may be redisplayed with attribution
+
+**Relies on:** each publisher's general reuse terms (source cited).
+
+**Status:** Unverified (`D-0116`). Cards and tooltips cite each source.
+
+**Falsified by:** terms restricting these datasets.
+
+**Consequence if wrong:** the PL/IT/GR/PT cards come down; nothing scored.

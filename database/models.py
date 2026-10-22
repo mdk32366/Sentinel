@@ -195,3 +195,26 @@ class UpdateLog(Base):
     
     def __repr__(self):
         return f"<UpdateLog {self.pipeline_name}: {self.status} @ {self.completed_at}>"
+
+
+class IngestProvenance(Base):
+    """Sentinel D-0116: one row per accepted manual upload (POST /api/ingest/...).
+
+    Who uploaded what, when, its sha256 and what it changed. Never the
+    password: ``uploader`` is the Basic Auth user name only.
+    """
+    __tablename__ = "ingest_provenance"
+
+    id = Column(Integer, primary_key=True)
+    source = Column(String(50), nullable=False, index=True)
+    uploaded_at = Column(DateTime, nullable=False)
+    uploader = Column(String(100), nullable=False)
+    sha256 = Column(String(64), nullable=False)
+    rows_inserted = Column(Integer, nullable=False, default=0)
+    rows_updated = Column(Integer, nullable=False, default=0)
+    rows_unchanged = Column(Integer, nullable=False, default=0)
+    min_date = Column(DateTime)
+    max_date = Column(DateTime)
+
+    def __repr__(self):
+        return f"<IngestProvenance {self.source} {self.sha256[:12]} @ {self.uploaded_at}>"

@@ -19,6 +19,8 @@ const cell = { background: "#0F1923", border: "1px solid #1A2530", borderRadius:
  * panel (CountryDetail keys it by ISO) and never touches MARKETS' state.
  */
 export function CountryBondCurve({ iso, bond, chart = false }) {
+  // Sentinel D-0116: GR/PT have a 10Y (ECB IRS, monthly) and no curve.
+  if (bond.showCurve === false) return null;
   return (
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>

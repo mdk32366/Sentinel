@@ -882,3 +882,59 @@ slope; EA is not in `FB_CARD_COUNTRY`; FOREIGN-BONDS renders the panel first.
 
 UI: with no daily row the card shows `IRLTLT01ESM156N` with MONTHLY, a 3s10s
 chip and no 10s30s; daily ES gives a 3/5/10/15Y curve.
+
+### T-0116 - Foreign Bonds batch 2b-1: PL auctions, IT BMK, ECB IRS, nothing scored moved
+
+Proves `D-0116`. One T heading per D, as for `T-0115`; the cases are below.
+The spec's T-0124 (IRS parse) is case T-0144 and T-0126 (MONTHLY badge, no
+curve) is case T-0145. Tests: `tests/test_fb_batch2b1.py` and
+`ui/src/components/country/fbBatch2b1.dom.test.jsx`, on synthetic fixtures
+built by `tests/fixtures/foreign_bonds/make_fb2b1_fixtures.py`.
+
+**Case T-0133: ECB IRS run.** Five countries at month end; a blank value is
+missing, not zero; rerun idempotent; header-only, HTML, an unasked key or a
+bad period fail closed with no rows.
+
+**Case T-0134: BMK0100 parse.** ZIP, CSV and comma-decimal CSV agree; the four
+columns map to `FB_IT_03Y/05Y/10Y/30Y`; a blank cell is missing.
+
+**Case T-0135: BMK0100 fails closed.** HTML, header only, a daily key, a
+missing column, a wrong first cell, a bad date, an out-of-range value, a ZIP
+with two or no CSVs, a ZIP bomb.
+
+**Case T-0136: The manual BMK ingest.** 401 without auth, 403 with the proof
+cookie, 413 over 2 MB, 422 on rejection with 0 rows and no provenance;
+idempotent (second upload all unchanged); a revision counts as updated; one
+`ingest_provenance` row per accepted upload with the uploader name and sha256.
+
+**Case T-0137: Admin surface.** The route and the four job ids are in
+`adminActions.js`.
+
+**Case T-0138: PL parse.** Closest-to-tenor bond per auction and bucket;
+FRN, switch auctions, blank yields and out-of-bucket bonds skipped; the
+`since` window; bucket edges; macros never kept.
+
+**Case T-0139: PL attachment and workbook fail closed.** Resolved by
+Content-Disposition; wrong name, content type or size refused; HTML, a
+non-zip, a missing sheet or column refused.
+
+**Case T-0140: PL end to end.** Page, HEAD, workbook: six rows; a page with no
+attachment writes nothing.
+
+**Case T-0141: Thirteen jobs and their crons.** `minfin_auctions` Mon-Fri
+15:00, `bdi_bmk` daily 08:00, `ecb_irs` days 1-10 07:15, `ecb_irs_mondays`
+Mondays 07:15.
+
+**Case T-0142: Freshness.** PL 40 days, IT 45 (month), `ecb_irs_monthly` 45
+(month); country patterns never own an `_ECB_M` code.
+
+**Case T-0143: The composite is byte-identical.** Hashes pinned; the new rows
+added to the golden fixture leave the payload byte-equal; no FB or ECB_M
+code in the sovereign set.
+
+**Case T-0144: IRS parse.** PLN and EUR keys map; other countries or
+maturities refused; month end (leap February).
+
+**Case T-0145: MONTHLY badge, no curve.** GRC/PRT show the IRS 10Y MONTHLY with
+no curve and no slopes, a dash when stale; ITA MONTHLY with 3s10s and 10s30s;
+ITA/POL/ESP fall back to IRS, then IRLTLT; POL shows "AS OF LAST AUCTION <date>".

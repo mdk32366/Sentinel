@@ -192,6 +192,11 @@ const FB_COUNTRY = {
   AU: { kind: "CMT", tenors: [2, 3, 5, 10], colors: ["#4C7A4C", "#5C905C", "#6DA66D", "#93C493"] },
   NO: { kind: "CMT", tenors: [3, 5, 7, 10], colors: ["#5A5A8A", "#6B6BA3", "#7D7DBC", "#A3A3D6"] },
   ES: { kind: "BMK", tenors: [3, 5, 10, 15], colors: ["#8A6A2E", "#A37E38", "#BC9343", "#D6B46E"] },
+  // Sentinel D-0116 (batch 2b-1). Neither is daily: PL is the yield at the
+  // last regular auction, IT the Banca d'Italia monthly benchmark series.
+  PL: { kind: "AUC", tenors: [2, 5, 10], cadence: "auction", colors: ["#8A3E5C", "#A34C6D", "#BC5B7F"] },
+  IT: { kind: "BMK", tenors: [3, 5, 10, 30], cadence: "monthly",
+    colors: ["#3E7A5C", "#4C916D", "#5BA87F", "#86C9A3"] },
 };
 const FB_TENORS = [2, 5, 7, 10, 30];
 /** The tenors one FB country publishes (Sentinel D-0115). */
@@ -229,11 +234,17 @@ function fbTip(cc, t) {
     const sid = { 3: "D_G0B1F0ZN", 5: "D_G0B1F0ZO", 10: "D_G0B1F0ZP", 15: "D_G0B1F0ZQ" }[t];
     return `Spain ${t}-year government bond yield. BMK: Banco de España table TI_1_3, secondary-market yield, business-daily. Series ${sid}.`;
   }
+  if (cc === "PL") {
+    return `Poland ${t}-year government bond yield. AUC: Ministry of Finance average yield (RentŚr) of the fixed-rate bond closest to ${t} years sold at a regular auction (AS), from Obligacje_Hurtowe.xlsm. As of the last auction, not daily.`;
+  }
+  if (cc === "IT") {
+    return `Italy ${t}-year benchmark BTP yield. BMK: Banca d'Italia BMK0100, MFN_BMK.M.020.922.0.EUR.2${String(t).padStart(2, "0")}, monthly (likely a monthly average). Not daily.`;
+  }
   return `Japan ${t}-year JGB yield. CMT: Ministry of Finance constant-maturity par yield interpolated from benchmark JGBs, column ${t}年 of jgbcm.csv, business-daily. A par yield, so not the same construction as the DE and UK fitted spot rates.`;
 }
 
 export const FOREIGN_BOND_METRICS = [
-  ...["DE", "GB", "JP", "FR", "CA", "SE", "AU", "NO", "ES"].flatMap((cc) => fbTenors(cc).map((t, i) => ({
+  ...["DE", "GB", "JP", "FR", "CA", "SE", "AU", "NO", "ES", "PL", "IT"].flatMap((cc) => fbTenors(cc).map((t, i) => ({
     code: fbCode(cc, t),
     key: fbCode(cc, t),
     label: `${cc} ${t}Y`,
@@ -329,7 +340,9 @@ export function foreignBondSourceKey(code) {
   if (code.startsWith("FB_GB_")) return "foreign_bonds_gb";
   if (code.startsWith("FB_JP_")) return "foreign_bonds_jp";
   if (code.startsWith("FB_FR_")) return "foreign_bonds_fr";
-  for (const cc of ["CA", "SE", "AU", "NO", "ES", "EA"]) {
+  // Sentinel D-0116: the monthly ECB IRS 10Y is its own watchdog source.
+  if (/^FB_[A-Z]{2}_10Y_ECB_M$/.test(code)) return "ecb_irs_monthly";
+  for (const cc of ["CA", "SE", "AU", "NO", "ES", "EA", "PL", "IT"]) {
     if (code.startsWith(`FB_${cc}_`)) return `foreign_bonds_${cc.toLowerCase()}`;
   }
   if (code.startsWith("DGS")) return "treasury_yields";
@@ -410,7 +423,16 @@ export const FB_CARD_COUNTRY = {
   DEU: "DE", GBR: "GB", JPN: "JP", FRA: "FR",
   // Sentinel D-0115 (batch 2a). No EA: the euro area is a benchmark panel.
   CAN: "CA", SWE: "SE", AUS: "AU", NOR: "NO", ESP: "ES",
+  // Sentinel D-0116 (batch 2b-1). GRC and PRT have no curve: 10Y only, from
+  // the monthly ECB IRS series.
+  ITA: "IT", POL: "PL", GRC: "GR", PRT: "PT",
 };
+
+/** Sentinel D-0116: countries whose card has a 10Y and no curve. */
+const FB_NO_CURVE = new Set(["GR", "PT"]);
+/** Sentinel D-0116: the countries with a monthly ECB IRS 10Y (FB_{cc}_10Y_ECB_M). */
+export const ECB_IRS_COUNTRIES = ["IT", "ES", "GR", "PT", "PL"];
+const ecbIrsCode = (cc) => `FB_${cc}_10Y_ECB_M`;
 
 /**
  * The slopes each card shows (Sentinel D-0115): a slope is listed only where
@@ -428,12 +450,27 @@ const FB_CARD_SLOPES = {
   AU: [["2s10s", 2, 10]],
   NO: [["3s10s", 3, 10]],
   ES: [["3s10s", 3, 10]],
+  PL: [["2s10s", 2, 10]],
+  IT: [["3s10s", 3, 10], ["10s30s", 10, 30]],
+  GR: [],
+  PT: [],
 };
 
 /** The FB codes a country card reads, or [] for every other country. */
 export function fbCardCodes(iso) {
   const cc = FB_CARD_COUNTRY[iso];
-  return cc ? fbTenors(cc).map((t) => fbCode(cc, t)) : [];
+  if (!cc || FB_NO_CURVE.has(cc)) return [];
+  return fbTenors(cc).map((t) => fbCode(cc, t));
+}
+
+/**
+ * Sentinel D-0116: every FB code a country card requests, the curve plus the
+ * monthly ECB IRS 10Y fallback where there is one; [] for a non-FB country.
+ */
+export function fbCardFetchCodes(iso) {
+  const cc = FB_CARD_COUNTRY[iso];
+  if (!cc) return [];
+  return ECB_IRS_COUNTRIES.includes(cc) ? [...fbCardCodes(iso), ecbIrsCode(cc)] : fbCardCodes(iso);
 }
 
 /** The FB tab's chart metrics for one country, for the card's embedded chart. */
@@ -448,7 +485,9 @@ export function fbCardMetrics(iso) {
  * Foreign Bonds tab's spreads already follow; tests/test_d0113_card_freshness.py
  * fails if the two disagree.
  */
-export const FB_MAX_AGE_DAYS = { DE: 4, GB: 5, JP: 7, FR: 4, CA: 4, SE: 4, AU: 12, NO: 4, ES: 4, EA: 4 };
+export const FB_MAX_AGE_DAYS = { DE: 4, GB: 5, JP: 7, FR: 4, CA: 4, SE: 4, AU: 12, NO: 4, ES: 4, EA: 4, PL: 40, IT: 45 };
+/** Sentinel D-0116: the ECB IRS monthly fallback; mirrors ecb_irs_monthly in the watchdog. */
+export const ECB_IRS_MAX_AGE_DAYS = 45;
 
 const FB_CARD_SOURCE = {
   DE: "FIT: Deutsche Bundesbank Svensson fitted zero-coupon curve, daily",
@@ -460,6 +499,8 @@ const FB_CARD_SOURCE = {
   AU: "CMT: Reserve Bank of Australia table F2, daily values published weekly",
   NO: "CMT: Norges Bank generic government bond rate, daily",
   ES: "BMK: Banco de España TI_1_3 secondary-market yield, daily",
+  PL: "AUC: Polish Ministry of Finance average auction yield, as of the last auction",
+  IT: "BMK: Banca d'Italia BMK0100 benchmark BTP yield, monthly",
 };
 
 const DAY = 86400000;
@@ -480,15 +521,16 @@ function ageDays(date, now) {
 export function countryBond(iso, latest = {}, dates = {}, now = new Date()) {
   const cc = FB_CARD_COUNTRY[iso];
   if (!cc) return null;
+  const noCurve = FB_NO_CURVE.has(cc);
   const limit = FB_MAX_AGE_DAYS[cc];
-  const tenors = fbTenors(cc);
-  const curve = fbCardCodes(iso).map((code, i) => {
+  const tenors = noCurve ? [] : fbTenors(cc);
+  const point = (code, max) => {
     const value = latest[code] ?? null;
     const date = value != null && dates[code] ? String(dates[code]).slice(0, 10) : null;
     const age = ageDays(date, now);
-    return { tenor: tenors[i], label: `${tenors[i]}Y`, code, value, date,
-      stale: value == null || age == null || age > limit };
-  });
+    return { code, value, date, stale: value == null || age == null || age > max };
+  };
+  const curve = fbCardCodes(iso).map((code, i) => ({ tenor: tenors[i], label: `${tenors[i]}Y`, ...point(code, limit) }));
   const leg = (t) => curve.find((c) => c.tenor === t);
   const slope = (label, a, b, tip) => {
     const s = leg(a), l = leg(b);
@@ -496,16 +538,31 @@ export function countryBond(iso, latest = {}, dates = {}, now = new Date()) {
     const out = { label, bp: ok ? Math.round((l.value - s.value) * 10000) / 100 : null };
     return tip ? { ...out, tip } : out;
   };
-  const ten = leg(10);
+  // Sentinel D-0116: own series while fresh -> ECB IRS monthly within 45 days
+  // -> the monthly OECD series via FRED (a dash where there is none).
+  const ten = noCurve ? null : leg(10);
+  const cadence = FB_COUNTRY[cc]?.cadence ?? "daily";
+  const irs = ECB_IRS_COUNTRIES.includes(cc) ? point(ecbIrsCode(cc), ECB_IRS_MAX_AGE_DAYS) : null;
   const monthlyCode = SOVEREIGN_YIELD_CODES[iso];
-  const tenYear = !ten.stale
-    ? { value: ten.value, daily: true, code: ten.code, badge: null, kind: FB_COUNTRY[cc].kind,
-        tip: `Source: ${ten.code}, ${FB_CARD_SOURCE[cc]} (as of ${ten.date}). Display only (Sentinel D-0113).` }
-    : { value: latest[monthlyCode] ?? null, daily: false, code: monthlyCode, badge: "MONTHLY", kind: "MON",
-        tip: `Source: monthly OECD average via FRED ${monthlyCode}, the FALLBACK: no daily ${ten.code} within ${limit} days. It can sit weeks behind (Sentinel D-0113).` };
+  let tenYear;
+  if (ten && !ten.stale) {
+    const badge = cadence === "auction" ? `AS OF LAST AUCTION ${ten.date}` : cadence === "monthly" ? "MONTHLY" : null;
+    tenYear = { value: ten.value, daily: cadence === "daily", code: ten.code, badge, kind: FB_COUNTRY[cc].kind,
+      tip: `Source: ${ten.code}, ${FB_CARD_SOURCE[cc]} (as of ${ten.date}). Display only (Sentinel ${cadence === "daily" ? "D-0113" : "D-0116"}).` };
+  } else if (irs && !irs.stale) {
+    tenYear = { value: irs.value, daily: false, code: irs.code, badge: "MONTHLY", kind: "MON",
+      tip: `Source: ECB IRS monthly 10Y (EU convergence-criterion yield), ${irs.code}, as of ${irs.date}.${ten ? ` The FALLBACK: no ${ten.code} within ${limit} days.` : ""} Display only (Sentinel D-0116).` };
+  } else {
+    tenYear = { value: monthlyCode ? latest[monthlyCode] ?? null : null, daily: false, code: monthlyCode ?? null, badge: "MONTHLY", kind: "MON",
+      tip: monthlyCode
+        ? `Source: monthly OECD average via FRED ${monthlyCode}, the FALLBACK: no fresher series. It can sit weeks behind (Sentinel D-0113).`
+        : "No fresh 10Y series: a dash, not a yield of zero (Sentinel D-0116)." };
+  }
   return {
     tenYear,
     curve,
+    showCurve: !noCurve,
+    sourceKey: noCurve ? "ecb_irs_monthly" : `foreign_bonds_${cc.toLowerCase()}`,
     slopes: FB_CARD_SLOPES[cc].map(([label, a, b, tip]) => slope(label, a, b, tip)),
   };
 }

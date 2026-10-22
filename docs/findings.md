@@ -4013,3 +4013,30 @@ would see `ecb_yc` fail closed every day.
 
 **Handled.** `data-api.ecb.europa.eu` is in the selfhost egress allow-list PR
 with the other five batch 2a hosts. Fly is unaffected.
+
+### F-0125 - MinFin's attachment URL is opaque; only the file name is stable
+
+**Claim.** gov.pl serves `Obligacje_Hurtowe.xlsm` from `/attachment/<uuid>`
+links whose UUID is not documented as stable; the file name appears only in
+the Content-Disposition header.
+
+**Handled.** `resolve_attachment` HEADs each attachment link and picks the one
+whose Content-Disposition names the file, checking content type and size
+(T-0139). No match fails the run closed.
+
+### F-0126 - Banca d'Italia serves BMK0100 as a ZIP holding one CSV
+
+**Claim.** The EN export for BMK0100 answers with a ZIP containing a single
+`;`-separated CSV whose first header cell is `DATA_OSS`, dates `YYYY/MM/DD`,
+with extra columns beside the four used. Live on 2026-10-22: newest 2026-09-30.
+
+**Handled.** `bdi_bmk.unwrap` requires exactly one CSV and caps the unzipped
+size; the parser picks columns by key (T-0134, T-0135).
+
+### F-0127 - ECB IRS is unreachable from the build box, as `F-0124`
+
+**Claim.** The IRS dataset shares `data-api.ecb.europa.eu`; the box TLS
+failure in `F-0124` applies. Verified from the laptop: newest 2026-09.
+
+**Handled.** No new host; the selfhost allow-list already carries it. The
+2b-1 selfhost PR adds `www.gov.pl` and `a2a.bancaditalia.it`.

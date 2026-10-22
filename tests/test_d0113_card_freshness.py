@@ -22,4 +22,6 @@ class CardFreshnessMirrorsTheWatchdog(unittest.TestCase):
                     for c in freshness_watchdog.CHECKS if c["key"].startswith("foreign_bonds_")}
         self.assertEqual(ui, watchdog)
         # Sentinel D-0115 (T-0118): batch 2a countries and the EA benchmark.
-        self.assertEqual(set(ui), {"DE", "GB", "JP", "FR", "CA", "SE", "AU", "NO", "ES", "EA"})
+        self.assertEqual(set(ui), {"DE", "GB", "JP", "FR", "CA", "SE", "AU", "NO", "ES", "EA",
+                                   # Sentinel D-0116 (batch 2b-1).
+                                   "PL", "IT"})

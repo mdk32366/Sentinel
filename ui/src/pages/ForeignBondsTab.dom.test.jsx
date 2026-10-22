@@ -109,9 +109,9 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     await settle(container);
     const grid = [...container.querySelectorAll("div")].find((d) => d.style.display === "grid");
     // Sentinel D-0115: batch 2a adds CA (6), SE, AU, NO and ES (4 each) after FR.
-    expect(grid.children.length).toBe(42);
-    expect(FOREIGN_BOND_METRICS.length).toBe(42);
-    expect(FOREIGN_BOND_METRICS.filter((m) => m.code?.startsWith("FB_")).length).toBe(42);
+    expect(grid.children.length).toBe(49);
+    expect(FOREIGN_BOND_METRICS.length).toBe(49);
+    expect(FOREIGN_BOND_METRICS.filter((m) => m.code?.startsWith("FB_")).length).toBe(49);
     expect(grid.style.gridTemplateColumns).toBe("repeat(5, 1fr)");
 
     const cards = [...grid.children];
@@ -127,6 +127,9 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
       "AU 2Y", "AU 3Y", "AU 5Y", "AU 10Y",
       "NO 3Y", "NO 5Y", "NO 7Y", "NO 10Y",
       "ES 3Y", "ES 5Y", "ES 10Y", "ES 15Y",
+      // Sentinel D-0116: batch 2b-1 adds PL (auction) and IT (monthly BMK).
+      "PL 2Y", "PL 5Y", "PL 10Y",
+      "IT 3Y", "IT 5Y", "IT 10Y", "IT 30Y",
     ]);
     expect(cards[3].textContent).toContain("3.47%");
     expect(cards[13].textContent).toContain("2.93%");
@@ -147,7 +150,7 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     await settle(container);
     const grid = [...container.querySelectorAll("div")].find((d) => d.style.display === "grid");
     const cards = [...grid.children];
-    expect(cards.length).toBe(42);
+    expect(cards.length).toBe(49);
     const fr = cards.slice(15, 20);
     expect(fr[3].querySelector("span").textContent).toBe("FR 10Y");
     expect(fr.filter((c) => c.textContent.includes("\u2014")).length).toBe(5);
@@ -198,6 +201,14 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
       } else if (m.code.startsWith("FB_ES_")) {
         expect(m.tip).toContain("Banco de España");
         expect(m.tip).toMatch(/D_G0B1F0Z[NOPQ]/);
+      } else if (m.code.startsWith("FB_PL_")) {
+        // Sentinel D-0116 (T-0137): auction yields, labelled as such.
+        expect(m.tip).toContain("Ministry of Finance");
+        expect(m.tip).toMatch(/last auction/);
+      } else if (m.code.startsWith("FB_IT_")) {
+        // Sentinel D-0116 (T-0139): monthly benchmark BTP yields.
+        expect(m.tip).toContain("Banca d'Italia");
+        expect(m.tip).toMatch(/BMK0100/);
       } else {
         expect(m.code).toMatch(/^FB_FR_\d\dY$/);
         expect(m.kind).toBe("CMT");
@@ -292,7 +303,7 @@ describe("AC-3: FOREIGN-BONDS has MARKETS' structure and interactions", () => {
   });
 
   it("the same controls: series toggles, % CHANGE, the four ranges", async () => {
-    for (const [hash, toggles] of [["#/markets", 12], ["#/foreign-bonds", 42]]) {
+    for (const [hash, toggles] of [["#/markets", 12], ["#/foreign-bonds", 49]]) {
       const { body } = await open(hash);
       const chart = [...body.children].find((el) => el.textContent.includes("% CHANGE"));
       const buttons = [...chart.querySelectorAll("button")].map((b) => b.textContent);

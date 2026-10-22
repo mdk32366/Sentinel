@@ -25,6 +25,9 @@ from pipelines.rba_f2 import METRICS as RBA_METRICS, run_rba_f2
 from pipelines.norges_govt import METRICS as NORGES_METRICS, run_norges_govt
 from pipelines.bde_ti13 import METRICS as BDE_METRICS, run_bde_ti13
 from pipelines.ecb_yc import METRICS as ECB_METRICS, run_ecb_yc
+from pipelines.ecb_irs import METRICS as ECB_IRS_METRICS, run_ecb_irs
+from pipelines.minfin_pl_auctions import METRICS as MINFIN_PL_METRICS, run_minfin_auctions
+from pipelines.bdi_bmk import METRICS as BDI_BMK_METRICS, run_bdi_bmk
 from pipelines.composite_stress import persist_composite_snapshot
 from pipelines.money_supply_fetcher import run_money_supply_fetch
 from pipelines.imf_gold_reserves import run_imf_gold_fetch
@@ -89,6 +92,10 @@ SCHEDULED_PIPELINES = {
     "Norges_GOVT",
     "BdE_TI13",
     "ECB_YC",
+    # Sentinel D-0116: Foreign Bonds batch 2b-1.
+    "ECB_IRS",
+    "MinFin_PL",
+    "BdI_BMK",
 }
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
@@ -389,6 +396,10 @@ FOREIGN_BOND_JOBS = {
     "norges": ("Norges Bank GOVT", run_norges_govt, NORGES_METRICS),
     "bde": ("Banco de Espana TI_1_3", run_bde_ti13, BDE_METRICS),
     "ecb": ("ECB yield curves", run_ecb_yc, ECB_METRICS),
+    # Sentinel D-0116: batch 2b-1.
+    "minfin_auctions": ("MinFin Poland auctions", run_minfin_auctions, MINFIN_PL_METRICS),
+    "bdi_bmk": ("Banca d'Italia BMK0100", run_bdi_bmk, BDI_BMK_METRICS),
+    "ecb_irs": ("ECB IRS monthly 10Y", run_ecb_irs, ECB_IRS_METRICS),
 }
 
 
@@ -441,6 +452,21 @@ def scheduled_bde_ti13_fetch():
 def scheduled_ecb_yc_fetch():
     """ECB euro-area AAA / all-issuer yield curves, weekdays 07:30 UTC (Sentinel D-0115)."""
     _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["ecb"])
+
+
+def scheduled_minfin_auctions_fetch():
+    """Poland MinFin auction yields, weekdays 15:00 UTC (Sentinel D-0116)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["minfin_auctions"])
+
+
+def scheduled_bdi_bmk_fetch():
+    """Italy Banca d'Italia benchmark BTP yields (monthly), daily 08:00 UTC (Sentinel D-0116)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["bdi_bmk"])
+
+
+def scheduled_ecb_irs_fetch():
+    """ECB IRS monthly 10Y (IT/ES/GR/PT/PL), 07:15 UTC days 1-10 and Mondays (Sentinel D-0116)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["ecb_irs"])
 
 
 def scheduled_treasury_auctions_fetch():
@@ -655,6 +681,36 @@ def start_scheduler():
         )
     logger.info("Scheduled Foreign Bonds batch 2a weekdays: ECB 07:30, RBA 08:00+20:00, "
                 "BdE 10:30, Riksbank 16:30, Norges 16:45, BoC 23:00 UTC")
+
+    # Sentinel D-0116: Foreign Bonds batch 2b-1, keyless, UTC.
+    scheduler.add_job(
+        scheduled_minfin_auctions_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=0),
+        id="minfin_auctions", name="Poland Auction Yields (MinFin)",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_bdi_bmk_fetch,
+        CronTrigger(hour=8, minute=0),
+        id="bdi_bmk", name="Italy Benchmark BTP Yields (Banca d'Italia)",
+        replace_existing=True,
+    )
+    # The ECB publishes the month's IRS early in the next month; days 1-10
+    # catch the release, Mondays catch a late one or a revision.
+    scheduler.add_job(
+        scheduled_ecb_irs_fetch,
+        CronTrigger(day="1-10", hour=7, minute=15),
+        id="ecb_irs", name="ECB IRS Monthly 10Y",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_ecb_irs_fetch,
+        CronTrigger(day_of_week="mon", hour=7, minute=15),
+        id="ecb_irs_mondays", name="ECB IRS Monthly 10Y (Mondays)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled Foreign Bonds batch 2b-1: MinFin weekdays 15:00, BdI daily 08:00, "
+                "ECB IRS 07:15 days 1-10 + Mondays (UTC)")
 
     scheduler.add_job(
         scheduled_freshness_check,

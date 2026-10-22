@@ -173,7 +173,8 @@ class T0116FailClosed(unittest.TestCase):
 class T0117Jobs(unittest.TestCase):
     def test_ten_sources_and_six_job_ids(self):
         from pipelines import scheduler
-        self.assertEqual(len(scheduler.FOREIGN_BOND_JOBS), 10)
+        # Sentinel D-0116 (batch 2b-1) adds three: 13 (T-0141).
+        self.assertEqual(len(scheduler.FOREIGN_BOND_JOBS), 13)
         for name in ("BoC_Valet", "Riksbank_SWEA", "RBA_F2", "Norges_GOVT", "BdE_TI13", "ECB_YC"):
             self.assertIn(name, scheduler.SCHEDULED_PIPELINES)
         src = (ROOT / "pipelines" / "scheduler.py").read_text(encoding="utf-8")

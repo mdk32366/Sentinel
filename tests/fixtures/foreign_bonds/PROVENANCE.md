@@ -46,3 +46,15 @@ a read-only shape probe on 2026-10-22. No value is a real observation.
 | bde_ti_1_3.csv, bde_ti_1_3_shuffled.csv | BdE `ti_1_3.csv`, Latin-1, 6 metadata rows, `"_"` missing, FUENTE/NOTAS footer (a row after the footer must be ignored); the shuffled file reorders columns |
 | ecb_yc.csv, ecb_yc_header_only.csv | ECB Data Portal `YC/B.U2.EUR.4F.G_N_A+G_N_C.SV_C_YM.SR_2Y+…` csvdata, trimmed columns |
 | html_body.html | an HTML page returned where CSV was expected (spec@0.3 anomaly, T-0119) |
+
+## Sentinel D-0116 (FB batch 2b-1) fixtures
+
+All synthetic, built by `make_fb2b1_fixtures.py` (deterministic) from the
+shapes seen in a read-only probe on 2026-10-22. No value is a real observation.
+
+| File | Shape of |
+|---|---|
+| ecb_irs.csv, ecb_irs_header_only.csv | ECB Data Portal `IRS/M.IT+ES+GR+PT+PL.L.L40.CI.0000..N.Z` csvdata, trimmed columns; PT 2026-09 blank |
+| bdi_bmk0100.csv, bdi_bmk0100.zip, bdi_bmk0100_it_decimal.csv | Banca d'Italia BMK0100 EN export: `;`-separated, quoted, `DATA_OSS` first, `YYYY/MM/DD`, extra columns; ZIP with one CSV; comma-decimal copy |
+| minfin_obligacje_hurtowe.xlsm | MinFin `Obligacje_Hurtowe.xlsm` sheet `Operacje`; a dummy non-VBA `vbaProject.bin` makes it an `.xlsm` |
+| minfin_page.html | gov.pl transaction-database page: `/attachment/<uuid>` links |
