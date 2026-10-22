@@ -1,4 +1,4 @@
-import { SOVEREIGN_YIELD_CODES, countryBond, fbCardCodes } from "../lib/constants";
+import { SOVEREIGN_YIELD_CODES, countryBond, fbCardFetchCodes } from "../lib/constants";
 import { goldSeries, momChange, reservesSeries, ticSeries } from "../lib/countrySeries";
 import { useApiResource } from "../hooks/useApiResource";
 import { useSeries } from "../hooks/useMarketSeries";
@@ -33,7 +33,7 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
   // Sentinel D-0113: the four FB countries also read their daily FB curve,
   // through its own request. MARKETS' TRACKED_CODES is untouched; every other
   // country asks for nothing (fbCardCodes is []).
-  const fb = useSeries(fbCardCodes(iso));
+  const fb = useSeries(fbCardFetchCodes(iso));
 
   if (loading) {
     return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
@@ -73,7 +73,7 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
 
       <DataConfidence
         sourceKeys={bond
-          ? ["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields", `foreign_bonds_${bond.curve[0].code.slice(3, 5).toLowerCase()}`]
+          ? ["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields", bond.sourceKey]
           : ["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields"]}
         label="Sources on this panel"
       />

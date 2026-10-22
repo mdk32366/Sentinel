@@ -286,6 +286,38 @@ def trigger_foreign_bonds_fetch(source: str, backfill: bool = Query(False)):
     )
 
 
+def _basic_username(request: Request) -> str:
+    """The Basic Auth user name (the middleware has already checked it). Never the password."""
+    import base64
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("basic "):
+        return "unknown"
+    try:
+        return base64.b64decode(header[6:].strip()).decode("utf-8").split(":", 1)[0] or "unknown"
+    except Exception:
+        return "unknown"
+
+
+@router.post("/ingest/bdi-mfn-bmk")
+async def ingest_bdi_mfn_bmk(request: Request, db: Session = Depends(get_db)):
+    """Sentinel D-0116: manual backup for Italy's BMK0100 (Banca d'Italia).
+
+    The body is the BMK0100 export as downloaded: the ZIP, or the CSV inside
+    it. Parsed by the same function the scheduled ``bdi_bmk`` job uses.
+    All or nothing: over 2 MB -> 413, anything the parser rejects -> 422,
+    and in both cases nothing is written. Idempotent. Writes need Basic Auth;
+    the proof cookie is read-only (403).
+    """
+    from pipelines import bdi_bmk
+    body = await request.body()
+    if len(body) > bdi_bmk.MAX_BODY_BYTES:
+        raise HTTPException(status_code=413, detail=f"upload over {bdi_bmk.MAX_BODY_BYTES} bytes")
+    try:
+        return bdi_bmk.ingest(db, body, _basic_username(request))
+    except bdi_bmk.IngestRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/holdings", response_model=HoldingsResponse)
 def get_all_holdings(
     country_iso: Optional[str] = Query(None),

@@ -11,9 +11,11 @@ const SOURCE_KEYS = [
   // Sentinel D-0115 (batch 2a).
   "foreign_bonds_ca", "foreign_bonds_se", "foreign_bonds_au", "foreign_bonds_no", "foreign_bonds_es",
   "foreign_bonds_ea",
+  // Sentinel D-0116 (batch 2b-1).
+  "foreign_bonds_pl", "foreign_bonds_it",
 ];
 const DEFAULT_ACTIVE = ["FB_DE_10Y", "FB_GB_10Y", "FB_JP_10Y"];
-const SOURCE_NOTE = "Source: Deutsche Bundesbank · Bank of England · Ministry of Finance Japan · Bank of Canada · Sveriges Riksbank · Reserve Bank of Australia · Norges Bank · Banco de España";
+const SOURCE_NOTE = "Source: Deutsche Bundesbank · Bank of England · Ministry of Finance Japan · Bank of Canada · Sveriges Riksbank · Reserve Bank of Australia · Norges Bank · Banco de España · Ministry of Finance Poland (as of last auction) · Banca d'Italia (monthly)";
 const OK = new Set(["ok", "anomaly"]);
 
 /**
