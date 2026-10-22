@@ -507,3 +507,65 @@ hand.
 is no test for the rescaling because there is no rescaling; the measurement
 lives in the decision, where a reader will find it before re-proposing the idea.
 
+
+### T-0111 - Foreign Bonds: three fail-closed fetchers, a reused MARKETS, a default board that did not move
+
+Proves `D-0111` (vault:D-0057 §8 and AC-1 to AC-5). Every case reads
+fixtures captured from the real sources on 2026-10-21 (`F-0116`); none
+touches a network. **Red first:** the tests landed in their own commit, ahead
+of the code, and failed there (counts are in the PR). Every negative has a
+positive twin, so a guard that failed unconditionally would not pass.
+
+`tests/test_foreign_bonds.py`
+- **Parse**: exact `(code, date, value)` tuples. DE R10XX 2026-10-21 3.47 (8
+  rows, weekend `.` skipped). GB 2026-10-20 10Y 5.38407521 (70 points). JP
+  2026-10-20 10Y 2.927 (65). Era dates `R8.10.20`, `H30.4.2`, `S49.9.24`. The
+  1974 `-` cells are skipped, not zero. BoE columns are found by the `years:`
+  value: an inserted column changes nothing.
+- **Schema drift**: `OBS_VALUE` renamed; a 99 % value in the 30Y file (the
+  other four tenors must not be written either); `years:` row missing 30;
+  `基準日` renamed; 99 in the MOF file; an ISO date where an era date belongs.
+  Each one is `failed`, `FETCH_PARSE`, and 0 rows, asserted before and after.
+- **Header-only 200** (`F-0117`): every time = `failed`, 3 attempts, sleeps
+  [4, 8], 0 rows. Once, then data = `success`, 40 rows.
+- **0 rows**: a MOF header with no data, and a BoE month-start sheet with no
+  rows, are both `failed`.
+- **Blocked**: a Cloudflare 403 is `blocked`, `cf=1`, not retried, and logged
+  `FETCH_BLOCKED … host=www.mof.go.jp`. A 503 is retried three times.
+- **Idempotent**: each source run twice gives the same row count; the
+  second run is `0 inserted, N updated`.
+- **Stale**: DE 4 d, GB 5 d, JP 7 d, one day inside = ok, one day outside =
+  stale, plus the spec's 5/3, 6/4 and 8/6. France stays on `sovereign_yields`.
+- **Isolation**: exactly 15 `FB_*` codes. None matches `IRLTLT01%` or
+  `%\_CDS\_%` (the matcher is shown to match the real codes). None is in
+  either scorer, `METRICS`, `SOVEREIGN_YIELD_CODES` or `TRACKED_CODES`.
+- **Scheduler**: names declared and scanned; watchdog sources exactly as
+  specified. `test_scheduler_jobs.py` adds the three jobs, weekdays at
+  10:00, 18:00 and 18:30 UTC.
+
+`tests/test_markets_tooltips.py` (AC-4): no Foreign Bonds cell says
+`scored: true`. Neither scorer names `FB_` or `foreign_bond`. France's card
+is the existing `IRLTLT01FRM156N`, badged MONTHLY.
+
+`ui/src/marketsDefault.ac1.dom.test.jsx` (AC-1, AC-2): renders the default
+view and compares it **byte for byte** with
+`ui/src/__fixtures__/markets-default.ac1.html`. That file was written by the
+same test on master `be64218`, before the refactor: 28,147 bytes, 12 cards.
+The comparison covers header + ticker, the MARKETS body, and the tab strip
+less one `FOREIGN-BONDS` button, which must sit straight after MARKETS. Seen
+red twice on purpose: a 1 px padding change in `MarketsTab`, and
+FOREIGN-BONDS moved one place right.
+
+`ui/src/pages/ForeignBondsTab.dom.test.jsx` (AC-3, AC-5, §7.7): 20 cards in
+DE/GB/JP/FR x 2/5/7/10/30 order. Four `—` NO SOURCE cells and one MONTHLY
+badge. Tips name FIT/CMT/MON and the series. 16 chart toggles. All nine
+spreads, and a stale GB leg hides the three gilt spreads. MARKETS and
+FOREIGN-BONDS have the same five sections in the same order and the same
+controls. Toggle, range and % CHANGE behave the same. `#/foreign-bonds` opens
+the tab, and Back returns to MARKETS.
+
+**Known limits.** The fixtures are one day's responses. A format change after
+2026-10-21 is caught when it reaches production, by `SchemaDrift` and the
+watchdog, not in CI. The scheduler's first-run backfill decision is not
+exercised against a database. The live fetch is a manual `python -m
+pipelines.<module> [--backfill]`, never run in CI.

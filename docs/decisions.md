@@ -3179,3 +3179,51 @@ ratio is 98-109%, and 17W, auctioned since 2022, has no ratio yet. The two
 measures disagree today on purpose. Levels are steady, while the number of
 weak auctions is the highest on record.
 
+
+### D-0111 - Foreign Bonds: a FOREIGN-BONDS tab for DE / UK / JP sovereign yields at 2/5/7/10/30Y, built on MARKETS, not scored
+
+Cross-reference: vault:D-0057 (Trinity spec@0.2, md5 `027c6f63c2f86985733474bc0145275f`).
+Owner GO 2026-10-21 2:59 PM PT; scope amendments 3:01, 3:02 and 3:03 PM PT.
+
+**Choice.** A separate **FOREIGN-BONDS** tab (`#/foreign-bonds`, straight
+after MARKETS) for French, German, UK and Japanese government bond yields.
+It is MARKETS with other inputs: the MARKETS block was lifted verbatim out of
+`App.jsx` into `pages/MarketsTab.jsx`, and both tabs render through it.
+Sources are the issuers' own free publications, one fetcher each:
+
+| Country | Source | Type | Codes | Watchdog window |
+|---|---|---|---|---|
+| DE | Bundesbank SDMX `BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R{TT}XX…` (Svensson) | FIT | `FB_DE_{02,05,07,10,30}Y` | 4 d |
+| UK | Bank of England GLC nominal spot curve (`latest-yield-curve-data.zip`) | FIT | `FB_GB_…` | 5 d |
+| JP | Ministry of Finance `jgbcm.csv` | CMT | `FB_JP_…` | 7 d |
+| FR | **option A**: the existing monthly OECD 10Y `IRLTLT01FRM156N`; 2/5/7/30Y **NO SOURCE** | MON | none new | existing `sovereign_yields`, 70 d |
+
+15 new codes in a new `foreign_bond` category. **Display only**: no scorer
+reads them, and `stress_score_v2.py` / `composite_stress.py` are unchanged.
+The default dashboard (MARKETS, ticker, country cards) renders byte-identical
+to master `be64218`; the tab strip gains one entry.
+
+Fetchers fail closed, all or nothing per run: a missing column, an
+unparseable date or a value outside [-2, 15] % writes nothing; a run that
+would write 0 rows is `failed`, never `success`; a Bundesbank 200 with only a
+header is retried, then `failed` (`F-0117`). Writes reuse
+`fred_fetcher.upsert_observations` (F-0073). Weekday cron, UTC: MOF 10:00,
+Bundesbank 18:00, BoE 18:30. The first run against an empty series backfills
+five years (Bundesbank `startPeriod`, BoE `glcnominalddata.zip`, MOF
+`jgbcm_all.csv`; both archive URLs verified, `F-0116`).
+
+**Rejected.** (a) Daily DE/UK/JP 10Y in the composite: dimension 4 already
+scores these countries' monthly OECD 10Y, so a daily copy counts the same
+signal twice on a different clock and moves a calibrated score with no
+backtest (`A-0028`). (b) New tiles on the default board: the owner ruled a
+separate surface (3:01 PM PT). (c) A forked copy of MARKETS for the new tab: two
+copies of one layout drift. (d) France from AFT (Cloudflare challenge, HTTP
+403), the ECB (euro-area curves and a monthly 10Y only) or Yahoo/Stooq
+(unofficial). (e) **bonds-api.com** for France (paid, $19-49/mo, vendor
+provenance undocumented) - not approved, not in this change. (f) The Yahoo
+`CL=F` live WTI tile (O-WTI) - not approved, not in this change.
+
+**What forced the call.** The owner wants the foreign curves next to the US
+one. The only free official daily sources that a script can read without a
+challenge are these three. France has none, so its gap is shown, not filled
+(`A-0026`).

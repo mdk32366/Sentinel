@@ -133,7 +133,157 @@ export const RANGES = [
   { label: "5Y",  days: 1825 },
 ];
 
-export const TABS = ["MARKETS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "CDS", "AUCTIONS", "COUNTRY", "ADMIN", "ABOUT"];
+// Sentinel D-0111: FOREIGN-BONDS sits straight after MARKETS, the surface it
+// is modelled on (#/foreign-bonds).
+export const TABS = ["MARKETS", "FOREIGN-BONDS", "HOLDINGS", "CROSS-ASSET", "GOLD", "COMPOSITE", "CDS", "AUCTIONS", "COUNTRY", "ADMIN", "ABOUT"];
+
+/**
+ * The MARKETS spread strip, moved verbatim out of App.jsx (Sentinel D-0111) so
+ * MarketsTab can draw either tab's strip. null = no strip, exactly the old
+ * `latest["DGS10"] != null && latest["DGS2"] != null` guard.
+ */
+export function US_SPREADS(latest) {
+  if (latest["DGS10"] == null || latest["DGS2"] == null) return null;
+  return [
+    { label: "30Y–10Y", val: latest["DGS30"] != null ? latest["DGS30"] - latest["DGS10"] : null,
+      tip: "30-year minus 10-year Treasury yield (DGS30 − DGS10), in percentage points. A widening gap is the market charging more to lend for the longest terms: the long end repricing duration risk." },
+    { label: "10Y–2Y", val: latest["DGS10"] - latest["DGS2"], inverts: true,
+      tip: "10-year minus 2-year Treasury yield (DGS10 − DGS2), the classic curve slope. Below zero the curve is inverted, the oldest recession signal there is, and is marked INVERTED." },
+    { label: "10Y–5Y", val: latest["DGS5"] != null ? latest["DGS10"] - latest["DGS5"] : null,
+      tip: "10-year minus 5-year Treasury yield (DGS10 − DGS5). The 5Y is close to the average maturity of the debt that rolls over each year, so this is the extra the market asks to lend past the rollover point." },
+    { label: "5Y–2Y", val: latest["DGS5"] != null ? latest["DGS5"] - latest["DGS2"] : null,
+      tip: "5-year minus 2-year Treasury yield (DGS5 − DGS2): the front of the curve, where expectations for Fed policy over the next few years show first." },
+    { label: "10Y–FF", val: latest["DFF"] != null ? latest["DGS10"] - latest["DFF"] : null,
+      tip: "10-year yield minus the effective fed funds rate (DGS10 − DFF): what the bond market sets against what the Fed sets. A long end rising while the Fed cuts widens this." },
+  ].filter(s => s.val != null);
+}
+
+// ── Foreign Bonds (Sentinel D-0111, vault:D-0057) ────────────────────────────
+
+/**
+ * The twenty cells on FOREIGN-BONDS: DE / GB / JP / FR x 2 / 5 / 7 / 10 / 30Y.
+ *
+ * `kind` is what the number IS, and every tip says it:
+ *   FIT  fitted-curve zero-coupon / spot yield at the exact maturity
+ *        (Bundesbank Svensson, BoE GLC spot)
+ *   CMT  ministry constant-maturity par yield (MOF Japan)
+ *   MON  monthly average, not daily (OECD via FRED) - badged MONTHLY
+ *   NONE no free official daily source found (France, D-0111 option A);
+ *        rendered as "—" with the reason in the tip
+ *
+ * Every entry is `scored: false`. `tests/test_markets_tooltips.py` holds that
+ * shut against both scorers, as it does for METRICS. The `FB_` codes are in
+ * no ticker, no country card and no scorer; the French 10Y is the existing
+ * `IRLTLT01FRM156N`, read here and changed nowhere.
+ */
+const FB_COUNTRY = {
+  DE: { kind: "FIT", colors: ["#8A7448", "#A38A57", "#B89A60", "#C8A96E", "#E0C690"] },
+  GB: { kind: "FIT", colors: ["#4F7A86", "#5F909E", "#6FA4B3", "#7EB8C9", "#A5D2DF"] },
+  JP: { kind: "CMT", colors: ["#94503B", "#B0604A", "#C86D52", "#E07B5A", "#F0A487"] },
+};
+const FB_TENORS = [2, 5, 7, 10, 30];
+const FB_NOT_SCORED =
+  "Not scored. Display only (Sentinel D-0111): composite dimension 4 already scores this country's monthly OECD 10Y, and a daily copy would count the same signal twice on a different clock.";
+const FR_NO_SOURCE =
+  "NO SOURCE. No free, official, daily French yield could be read on 2026-10-21: Agence France Trésor answers a Cloudflare challenge (HTTP 403) to a script, the ECB publishes only euro-area curves and a monthly 10Y, and the Banque de France series stopped in July 2024. Option A (Sentinel D-0111) shows the monthly OECD 10Y only; a paid feed was not approved.";
+
+function fbTip(cc, t) {
+  const pad = String(t).padStart(2, "0");
+  if (cc === "DE") {
+    return `Germany ${t}-year Bund yield. FIT: Bundesbank Svensson zero-coupon yield at exactly ${t} years, fitted to listed Federal securities, business-daily. Series BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R${pad}XX.R.A.A._Z._Z.A.`;
+  }
+  if (cc === "GB") {
+    return `UK ${t}-year gilt yield. FIT: Bank of England GLC nominal spot curve at ${t}.0 years (sheet "4. spot curve"), business-daily, published one business day later. A fitted spot rate, not a par or benchmark yield.`;
+  }
+  return `Japan ${t}-year JGB yield. CMT: Ministry of Finance constant-maturity par yield interpolated from benchmark JGBs, column ${t}年 of jgbcm.csv, business-daily. A par yield, so not the same construction as the DE and UK fitted spot rates.`;
+}
+
+export const FOREIGN_BOND_METRICS = [
+  ...["DE", "GB", "JP"].flatMap((cc) => FB_TENORS.map((t, i) => ({
+    code: `FB_${cc}_${String(t).padStart(2, "0")}Y`,
+    key: `FB_${cc}_${String(t).padStart(2, "0")}Y`,
+    label: `${cc} ${t}Y`,
+    color: FB_COUNTRY[cc].colors[i],
+    unit: "%",
+    kind: FB_COUNTRY[cc].kind,
+    scored: false,
+    tip: fbTip(cc, t),
+    stressRole: FB_NOT_SCORED,
+  }))),
+  ...FB_TENORS.map((t) => (t === 10
+    ? {
+        code: "IRLTLT01FRM156N",
+        key: "FR_10Y",
+        label: "FR 10Y",
+        color: "#9B8EC4",
+        unit: "%",
+        kind: "MON",
+        badge: "MONTHLY",
+        scored: false,
+        tip: "France 10-year government bond yield. MON: the OECD long-term interest rate, a MONTHLY average, via FRED IRLTLT01FRM156N - the series Sentinel already stores. Not a daily number: it can sit weeks behind the DE, UK and JP cells beside it.",
+        stressRole: "Not scored on this tab. The same monthly series already feeds composite dimension 4; this card reads it and changes nothing (Sentinel D-0111, option A).",
+      }
+    : {
+        code: null,
+        key: `FR_${String(t).padStart(2, "0")}Y`,
+        label: `FR ${t}Y`,
+        color: "#3A4D5C",
+        unit: "%",
+        kind: "NONE",
+        scored: false,
+        tip: FR_NO_SOURCE,
+        stressRole: "Not scored. Nothing to score: there is no series.",
+      })),
+];
+
+/** Codes FOREIGN-BONDS reads: its own cells plus the legs of its spreads. */
+export const FOREIGN_BOND_CODES = [
+  ...FOREIGN_BOND_METRICS.map((m) => m.code).filter(Boolean),
+  "DGS10",
+  "IRLTLT01DEM156N",
+];
+
+/** Which watchdog source vouches for a code (spec §5 / §7.7). */
+export function foreignBondSourceKey(code) {
+  if (code.startsWith("FB_DE_")) return "foreign_bonds_de";
+  if (code.startsWith("FB_GB_")) return "foreign_bonds_gb";
+  if (code.startsWith("FB_JP_")) return "foreign_bonds_jp";
+  if (code.startsWith("IRLTLT01")) return "sovereign_yields";
+  if (code.startsWith("DGS")) return "treasury_yields";
+  return null;
+}
+
+const pp = (a, b) => (a != null && b != null ? a - b : null);
+
+/**
+ * The FOREIGN-BONDS spread strip, in pp. `fresh(code)` is false when the
+ * watchdog calls that leg's source stale or worse; such a spread is hidden
+ * rather than shown against a leg that has stopped moving.
+ */
+export function foreignBondSpreads(latest, fresh = () => true) {
+  const leg = (code) => (fresh(code) ? latest[code] : null);
+  const lag = " The two legs can be dated a business day apart (the BoE curve is published a day late).";
+  return [
+    { label: "Bund–UST 10Y", val: pp(leg("FB_DE_10Y"), leg("DGS10")),
+      tip: "German 10Y (Bundesbank fitted) minus US 10Y Treasury (DGS10), in percentage points." + lag },
+    { label: "Gilt–UST 10Y", val: pp(leg("FB_GB_10Y"), leg("DGS10")),
+      tip: "UK 10Y (BoE fitted spot) minus US 10Y Treasury (DGS10), in percentage points." + lag },
+    { label: "JGB–UST 10Y", val: pp(leg("FB_JP_10Y"), leg("DGS10")),
+      tip: "Japan 10Y (MOF constant-maturity) minus US 10Y Treasury (DGS10), in percentage points." + lag },
+    { label: "Gilt–Bund 10Y", val: pp(leg("FB_GB_10Y"), leg("FB_DE_10Y")),
+      tip: "UK 10Y minus German 10Y, both fitted curves, in percentage points." + lag },
+    { label: "Gilt–Bund 2Y", val: pp(leg("FB_GB_02Y"), leg("FB_DE_02Y")),
+      tip: "UK 2Y minus German 2Y, both fitted curves, in percentage points." + lag },
+    { label: "DE 10Y–2Y", val: pp(leg("FB_DE_10Y"), leg("FB_DE_02Y")), inverts: true,
+      tip: "German curve slope: 10Y minus 2Y (Bundesbank fitted). Below zero the curve is inverted." },
+    { label: "GB 10Y–2Y", val: pp(leg("FB_GB_10Y"), leg("FB_GB_02Y")), inverts: true,
+      tip: "UK curve slope: 10Y minus 2Y (BoE fitted spot). Below zero the curve is inverted." },
+    { label: "JP 30Y–10Y", val: pp(leg("FB_JP_30Y"), leg("FB_JP_10Y")),
+      tip: "Japan long end: 30Y minus 10Y (MOF constant-maturity), where the super-long JGB repricing shows." },
+    { label: "OAT–Bund 10Y (monthly)", val: pp(leg("IRLTLT01FRM156N"), leg("IRLTLT01DEM156N")),
+      tip: "France minus Germany 10Y, monthly, OECD (IRLTLT01FRM156N − IRLTLT01DEM156N). Monthly averages, not a daily spread: no free official daily French yield exists (Sentinel D-0111 option A)." },
+  ].filter((s) => s.val != null);
+}
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────
 

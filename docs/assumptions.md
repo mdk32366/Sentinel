@@ -831,3 +831,61 @@ letting it pass silently.
 
 **Status:** Holding. Checked on every ingested record. The ingest records an
 `identity_check` per row, and the summary counts failures.
+
+### A-0026 - France has no free, official, daily yield that a script can read
+
+**Relies on:** the 2026-10-21 search (`D-0111`, vault:D-0057 §3.4). Agence
+France Trésor serves its benchmark yields behind a Cloudflare challenge (HTTP
+403 to a script). The ECB publishes euro-area curves and a monthly 10Y only.
+The Banque de France series stopped in July 2024.
+
+**Falsified by:** a French official daily file that downloads without a
+challenge, for example from AFT or as an ECB/BdF country series.
+
+**Consequence if wrong:** France's row stays thinner than it needs to be. It
+is honestly thin, not wrong: the 10Y is the monthly OECD series, badged
+MONTHLY, and the other four cells say NO SOURCE with this reason. The
+OAT-Bund spread is monthly and labelled so.
+
+**Status:** Holding, option A. A paid feed (bonds-api.com) would fill the row
+but is not approved.
+
+### A-0027 - Curve-fitted yields are comparable across countries
+
+**Relies on:** the German (Bundesbank Svensson) and UK (BoE GLC spot) cells
+both being zero-coupon yields at an exact maturity, fitted to each
+government's own bonds. A spread between them is then a like-for-like
+difference.
+
+**Caveat, stated:** the fitting methods differ (Svensson vs the BoE's
+variable-roughness spline), and Japan's cells are MOF **constant-maturity
+par** yields, a different construction. JGB-UST and Japan curve spreads are
+therefore an approximation. Every card's tip says FIT or CMT. The BoE curve
+is one business day behind the others, and the spread tips say so.
+
+**Falsified by:** a material gap (more than a few basis points) between the
+fitted value and a benchmark-bond yield at the same tenor on the same day.
+It has not been measured.
+
+**Consequence if wrong:** a cross-country spread reads a few basis points
+wide or narrow. Nothing is scored on it.
+
+**Status:** Assumed, not measured.
+
+### A-0028 - Foreign Bonds stay out of the stress score
+
+**Relies on:** composite dimension 4 already scoring these countries' 10Y
+through the monthly OECD series (`IRLTLT01%`). A daily copy of the same
+signal adds no new information and would double-count it on a different
+clock.
+
+**Falsified by:** a backtest showing that the daily curves lead D4's monthly
+signal enough to change a country's tier earlier.
+
+**Consequence if wrong:** the composite reacts a month late to a move it
+could have seen daily.
+
+**Status:** Holding by ruling (`D-0111`). Every Foreign Bonds card carries
+`scored: false`, and `tests/test_markets_tooltips.py` fails if either scorer
+names an `FB_` code or the `foreign_bond` category. Changing this needs its
+own spec with a backtest.

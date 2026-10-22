@@ -14,6 +14,9 @@ from pipelines.cds_fetcher import run_cds_fetch
 from pipelines.treasury_direct import run_treasury_direct_fetch
 from pipelines.freshness_watchdog import run_freshness_check
 from pipelines.gold_price_fetcher import run_gold_price_fetch
+from pipelines.boe_yields import METRICS as BOE_METRICS, run_boe_yields
+from pipelines.bundesbank_yields import METRICS as BUNDESBANK_METRICS, run_bundesbank_yields
+from pipelines.mof_jgb import METRICS as MOF_METRICS, run_mof_jgb
 from pipelines.composite_stress import persist_composite_snapshot
 from pipelines.money_supply_fetcher import run_money_supply_fetch
 from pipelines.imf_gold_reserves import run_imf_gold_fetch
@@ -65,6 +68,10 @@ SCHEDULED_PIPELINES = {
     "Gold_Reserves_IMF",
     "TIC_Table3",
     "Treasury_Auctions",
+    # Sentinel D-0111: Foreign Bonds.
+    "Bundesbank_Yields",
+    "BoE_Yields",
+    "MOF_JGB",
 }
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
@@ -300,6 +307,51 @@ def scheduled_gold_price_fetch():
             db.close()
 
 
+def _scheduled_foreign_bonds(label, run, metrics):
+    """Sentinel D-0111. One wrapper body for the three Foreign Bonds jobs.
+
+    The first run against an empty series backfills five years (Bundesbank
+    startPeriod, BoE archive zip, MOF jgbcm_all.csv); every later run reads
+    only the current window.
+    """
+    db = None
+    try:
+        db = get_session()
+        from database.models import Metric, TimeSeries
+        codes = [m["code"] for m in metrics]
+        stored = (
+            db.query(TimeSeries.id)
+            .join(Metric, Metric.id == TimeSeries.metric_id)
+            .filter(Metric.code.in_(codes))
+            .first()
+        )
+        result = run(db, backfill=stored is None)
+        logger.info(
+            f"{label}: {result['status']} - {result['inserted']} inserted, "
+            f"{result['updated']} updated, latest={result.get('latest_date')}"
+        )
+    except Exception as e:
+        logger.error(f"Scheduled {label} fetch failed: {e}", exc_info=True)
+    finally:
+        if db is not None:
+            db.close()
+
+
+def scheduled_bundesbank_yields_fetch():
+    """Bundesbank Svensson Bund yields, weekdays 18:00 UTC (Sentinel D-0111)."""
+    _scheduled_foreign_bonds("Bundesbank yields", run_bundesbank_yields, BUNDESBANK_METRICS)
+
+
+def scheduled_boe_yields_fetch():
+    """BoE GLC nominal spot curve, weekdays 18:30 UTC (Sentinel D-0111)."""
+    _scheduled_foreign_bonds("BoE yields", run_boe_yields, BOE_METRICS)
+
+
+def scheduled_mof_jgb_fetch():
+    """MOF JGB constant-maturity yields, weekdays 10:00 UTC (Sentinel D-0111)."""
+    _scheduled_foreign_bonds("MOF JGB", run_mof_jgb, MOF_METRICS)
+
+
 def scheduled_treasury_auctions_fetch():
     """Treasury auction results from Fiscal Data (D-0098).
 
@@ -455,6 +507,29 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled Treasury auction results weekdays at 22:00 UTC")
+
+    # Sentinel D-0111 (vault:D-0057): Foreign Bonds, weekdays, UTC. MOF
+    # publishes in the Tokyo evening; the BoE zip refreshed ~17:06 UTC on
+    # 2026-10-21 (observed, not a published time).
+    scheduler.add_job(
+        scheduled_mof_jgb_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=10, minute=0),
+        id="mof_jgb", name="Japan JGB Yields (MOF)",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_bundesbank_yields_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=18, minute=0),
+        id="bundesbank_yields", name="German Bund Yields (Bundesbank)",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_boe_yields_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=18, minute=30),
+        id="boe_yields", name="UK Gilt Yields (Bank of England)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled Foreign Bonds weekdays: MOF 10:00, Bundesbank 18:00, BoE 18:30 UTC")
 
     scheduler.add_job(
         scheduled_freshness_check,

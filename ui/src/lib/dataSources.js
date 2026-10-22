@@ -36,6 +36,16 @@ export const SOURCES = [
     manual: false,
   },
   {
+    name: "Bundesbank · Bank of England · MOF Japan — Foreign Bonds",
+    url: "https://api.statistiken.bundesbank.de/rest/data/BBSIS",
+    update: "Business-daily (auto)",
+    lag: "Same day (Bundesbank, MOF); one business day (BoE)",
+    coverage: "Germany, UK, Japan at 2/5/7/10/30Y; France monthly 10Y only",
+    metrics: ["German Bund yields (Bundesbank Svensson fitted)", "UK gilt yields (BoE GLC fitted spot)", "Japan JGB yields (MOF constant-maturity)"],
+    notes: "FOREIGN-BONDS tab (Sentinel D-0111). Three official free sources, one fetcher each, weekdays at 10:00 (MOF), 18:00 (Bundesbank) and 18:30 UTC (BoE). Display only: no scorer reads them. France has no free official daily source - Agence France Trésor is behind a Cloudflare challenge - so its row is the monthly OECD 10Y from FRED and four cells read NO SOURCE.",
+    manual: false,
+  },
+  {
     name: "TIC — Treasury International Capital",
     url: "https://ticdata.treasury.gov/resource-center/data-chart-center/tic/Documents/slt_table5.html",
     update: "Monthly (auto)",

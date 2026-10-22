@@ -3851,3 +3851,47 @@ edge is the constant whatever the date.
 - Mutation proof: changing `>` to `>=` in production, or ageing the source one
   day less, fails 36 subtests.
 - `MAX_SOURCE_AGE_DAYS` (140) and all production code are unchanged.
+
+### F-0116 - The Foreign Bonds sources resolve, parse, and both history archives exist
+
+**Claim.** All five source URLs `D-0111` relies on answered HTTP 200 from the
+box on **2026-10-21 at 22:14:55 UTC (3:14:55 PM PT)**, with no redirect, and
+each parsed with the fetcher that ships:
+
+| URL | Bytes | Parsed |
+|---|---|---|
+| `https://api.statistiken.bundesbank.de/rest/data/BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R{02,05,07,10,30}XX.R.A.A._Z._Z.A?lastNObservations=10` (`Accept: text/csv`) | 3,968 / 3,970 / 3,970 / 3,981 / 3,078 | 8 observations per tenor (two weekend `.` cells skipped); 2026-10-21: 3.08 / 3.19 / 3.31 / 3.47 / 3.86 |
+| `https://www.bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/latest-yield-curve-data.zip` | 362,099 | member `GLC Nominal daily data current month.xlsx` (stamped 2026-10-21 10:06): 70 points, 2026-10-01..20; 10Y 2026-10-20 5.38407521 |
+| `https://www.bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/glcnominalddata.zip` (archive; resolved from the `href`s on `https://www.bankofengland.co.uk/statistics/yield-curves`; fetched 22:15:23 UTC) | 39,192,649 | 8 members, 1979 to present. `…_2016 to 2024.xlsx`: 11,365 points, 2016-01-04..2024-12-31. `…_2025 to present.xlsx`: 2,210 points, 2025-01-02..2026-09-30 |
+| `https://www.mof.go.jp/jgbs/reference/interest_rate/jgbcm.csv` | 1,556 | 65 points, R8.10.1..R8.10.20; 10Y 2026-10-20 2.927 |
+| `https://www.mof.go.jp/jgbs/reference/interest_rate/data/jgbcm_all.csv` (history) | 1,178,227 (13,311 lines) | 56,146 points, S49.9.24 (1974-09-24)..R8.9.30 (2026-09-30) |
+
+**Artifact.** The spec marked the BoE archive URL and `jgbcm_all.csv`
+**UNVERIFIED** (the MOF history request had not completed). Both are now
+verified. The English-site MOF path (`/english/…/jgbcm.csv`) was not used:
+the spec recorded a 404. The test fixtures are trimmed copies of these
+responses, with sha256 of each original, in
+`tests/fixtures/foreign_bonds/PROVENANCE.md`.
+
+**Consequence.** Backfill does not need a fallback. A BoE or MOF layout
+change fails `SchemaDrift` first and writes nothing (`T-0111`).
+
+**Not established.** The BoE archive layout was read for its two newest
+members only. The BoE zip refresh time (~17:06 UTC) was observed once; it is
+not a published time.
+
+### F-0117 - The Bundesbank answers 200 with a header and no observation, sometimes
+
+**Claim.** On 2026-10-21 one request for the R07XX series returned HTTP 200
+whose body was the CSV header line only, and the next request for it returned
+data (observed by Trinity while writing the spec; not reproduced on the box,
+where all five tenors returned data first time).
+
+**Consequence if unhandled.** A parser that reads "no rows" as "nothing new"
+records a successful run with 0 rows, and the watchdog's run-health check
+sees success while the series stops.
+
+**Handled.** `bundesbank_yields.is_header_only` makes that body a retry, like
+a 5xx (3 attempts, back-off 4 s then 8 s). After the last attempt the run is
+`failed` and writes nothing for any tenor. `T-0111` covers both paths: header
+only every time (failed, 3 attempts, 0 rows) and header only once (success).

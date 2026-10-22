@@ -128,6 +128,9 @@ class TestEverySourceDeclaresItsPeriod(unittest.TestCase):
             "reserves_ex_gold": "month", "sovereign_yields": "month",
             "money_supply": "year",
             "treasury_auctions": "day",
+            # Sentinel D-0111: Foreign Bonds, business-daily.
+            "foreign_bonds_de": "day", "foreign_bonds_gb": "day",
+            "foreign_bonds_jp": "day",
         }
         actual = {c["key"]: c.get("period") for c in CHECKS}
         self.assertEqual(actual, expected)

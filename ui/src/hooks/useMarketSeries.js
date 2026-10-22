@@ -14,8 +14,8 @@ export const TRACKED_CODES = [
 export const CHANGE_WINDOW_DAYS = 30;
 
 /**
- * The latest value of every tracked code, plus the observation roughly
- * `CHANGE_WINDOW_DAYS` before it.
+ * The latest value of every code in `codes`, plus the observation roughly
+ * `CHANGE_WINDOW_DAYS` before it, and the newest date any of them carries.
  *
  * `F-0055`: `prior` is found BY DATE and carries `actualDays`, the gap it
  * really found. It used to be `points.at(-2)` — the previous row, which on a
@@ -24,34 +24,48 @@ export const CHANGE_WINDOW_DAYS = 30;
  *
  * A window of 120 days is requested because the monthly series (CPI, M2, the
  * sovereign yields) need four months to contain two observations.
+ *
+ * Sentinel D-0111: generalised from `useMarketSeries` so FOREIGN-BONDS draws
+ * on the same window and the same prior-observation rule. Keyed on the joined
+ * code string, not the array's identity (F-0065).
  */
-export function useMarketSeries() {
-  const [latestAll, setLatestAll] = useState({ latest: {}, prior: {} });
+export function useSeries(codes) {
+  const [state, setState] = useState({ latest: {}, prior: {}, latestDate: null });
+  const key = (codes || []).join(",");
 
   useEffect(() => {
     let live = true;
+    const list = key ? key.split(",") : [];
     const end = new Date();
     const start = new Date();
     start.setDate(start.getDate() - 120);
 
-    apiFetch(`/timeseries?metric_codes=${TRACKED_CODES.join(",")}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
+    apiFetch(`/timeseries?metric_codes=${key}&start_date=${start.toISOString()}&end_date=${end.toISOString()}`)
       .then((response) => (response.ok ? response.json() : Promise.reject(new Error(String(response.status)))))
       .then((raw) => {
         if (!live) return;
-        const series = seriesByCode(pivotByDate(raw), TRACKED_CODES);
+        const series = seriesByCode(pivotByDate(raw), list);
         const prior = {};
-        for (const code of TRACKED_CODES) {
+        let latestDate = null;
+        for (const code of list) {
           const found = priorObservation(series[code], CHANGE_WINDOW_DAYS);
           if (found) prior[code] = found;
+          const last = series[code]?.at(-1)?.date;
+          if (last && (!latestDate || last > latestDate)) latestDate = last;
         }
-        setLatestAll({ latest: latestByCode(series), prior });
+        setState({ latest: latestByCode(series), prior, latestDate });
       })
       // The ticker is furniture: if it cannot load, the header simply carries
       // no numbers. It must not take the tab with it.
       .catch(() => {});
 
     return () => { live = false; };
-  }, []);
+  }, [key]);
 
-  return latestAll;
+  return state;
+}
+
+/** Everything the ticker and the MARKETS stat cards draw from. */
+export function useMarketSeries() {
+  return useSeries(TRACKED_CODES);
 }
