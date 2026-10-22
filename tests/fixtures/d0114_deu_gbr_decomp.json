@@ -1,0 +1,11 @@
+{
+  "_source": "PROD read-only shadow, scripts/d0114_decomp.py DEU GBR, 2026-10-22",
+  "DEU": {
+    "old": {"tic_score": 26.9, "gold_score": 8.0, "monetary_score": 0, "petro_score": 0, "cds_score": 5, "dim4_score": 0, "multiplier": 1.5, "raw_score": 39.9, "composite_score": 59.8},
+    "new": {"tic_score": 26.9, "gold_score": 8.0, "monetary_score": 0, "petro_score": 0, "cds_score": 5, "dim4_score": 5, "multiplier": 1.5, "raw_score": 44.9, "composite_score": 67.3}
+  },
+  "GBR": {
+    "old": {"tic_score": 0.0, "gold_score": 0, "monetary_score": 0, "petro_score": 0, "cds_score": 5, "dim4_score": 0, "multiplier": 1.0, "raw_score": 5.0, "composite_score": 5.0},
+    "new": {"tic_score": 0.0, "gold_score": 0, "monetary_score": 0, "petro_score": 0, "cds_score": 5, "dim4_score": 5, "multiplier": 1.0, "raw_score": 10.0, "composite_score": 10.0}
+  }
+}
