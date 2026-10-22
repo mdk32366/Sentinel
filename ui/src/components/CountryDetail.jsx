@@ -13,8 +13,6 @@ import { CDS_TIP, GOLD_TIP, RESERVES_TIP, TIC_TIP } from "../lib/countryPanelTip
 import { SeriesChart } from "./country/SeriesChart";
 import { StressContribution } from "./country/StressContribution";
 
-
-
 /**
  * One country: holdings, gold, reserves ex-gold, spread, CDS and a brief.
  *
