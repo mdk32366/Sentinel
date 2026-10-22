@@ -3304,3 +3304,18 @@ delete), composite D4, MARKETS, the country cards and the brief prompt's
 `SOVEREIGN_YIELD_CODES`. There was no API change: the tab reads the generic
 `/api/timeseries`, so the surface is the UI request and render. Tested by
 `T-0112` addendum 2.
+
+**D-0112 amendment 2 (2026-10-22): the OAT–Bund spread returns, daily.**
+Trinity's ruling on #102, 12:31 PM PT: amendment 1 lost the OAT–Bund spread
+along with the monthly legs, and it must come back built from daily data.
+"OAT–Bund 10Y (daily, BdF TEC − Bundesbank)" sits on the FOREIGN-BONDS spread
+strip where the monthly spread used to be. It is `FB_FR_10Y` minus `FB_DE_10Y`
+in basis points (the strip's only bp entry; the others stay in pp), computed
+by `oatBundDailySpread` only on dates where BOTH legs have an observation.
+There is no forward fill: a date missing either leg is a gap. The current
+value is the last date both legs share. If either leg's source is past the
+existing FOREIGN-BONDS freshness rule (watchdog status other than ok or
+anomaly), the entry stays in place and reads "—" rather than hiding, unlike
+the other spreads. `useSeries` also returns the per-code points (additive).
+**Unchanged:** scorer, DB, `SOVEREIGN_YIELD_CODES`, `TRACKED_CODES` and the
+API. Tested by `T-0112` addendum 2.

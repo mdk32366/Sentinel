@@ -20,9 +20,10 @@ const OK = new Set(["ok", "anomaly"]);
  *
  * A spread is shown only while the watchdog calls both legs' sources current;
  * one stale leg hides it rather than quoting a number against a frozen leg.
+ * The daily OAT–Bund (amendment 2) stays in place and reads "—" instead.
  */
 export function ForeignBondsTab() {
-  const { latest, prior, latestDate, dates } = useSeries(FOREIGN_BOND_CODES);
+  const { latest, prior, latestDate, dates, series } = useSeries(FOREIGN_BOND_CODES);
   const { data: freshness } = useApiResource(`/freshness`);
 
   const statusOf = {};
@@ -38,7 +39,7 @@ export function ForeignBondsTab() {
     <MarketsTab
       metrics={foreignBondCells()}
       sourceKeys={SOURCE_KEYS}
-      spreads={(l) => foreignBondSpreads(l, fresh)}
+      spreads={(l) => foreignBondSpreads(l, fresh, series)}
       defaultActive={DEFAULT_ACTIVE}
       sourceNote={`${SOURCE_NOTE} · ${bdfAttribution(dates)}`}
       lastDataPoint={latestDate}

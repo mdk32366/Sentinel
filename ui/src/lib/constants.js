@@ -256,7 +256,7 @@ const pp = (a, b) => (a != null && b != null ? a - b : null);
  * watchdog calls that leg's source stale or worse; such a spread is hidden
  * rather than shown against a leg that has stopped moving.
  */
-export function foreignBondSpreads(latest, fresh = () => true) {
+export function foreignBondSpreads(latest, fresh = () => true, series = {}) {
   const leg = (code) => (fresh(code) ? latest[code] : null);
   const lag = " The two legs can be dated a business day apart (the BoE curve is published a day late).";
   return [
@@ -276,9 +276,36 @@ export function foreignBondSpreads(latest, fresh = () => true) {
       tip: "UK curve slope: 10Y minus 2Y (BoE fitted spot). Below zero the curve is inverted." },
     { label: "JP 30Y–10Y", val: pp(leg("FB_JP_30Y"), leg("FB_JP_10Y")),
       tip: "Japan long end: 30Y minus 10Y (MOF constant-maturity), where the super-long JGB repricing shows." },
-    { label: "OAT–Bund 10Y", val: pp(leg("FB_FR_10Y"), leg("FB_DE_10Y")),
-      tip: "French 10Y (Banque de France TEC, constant-maturity) minus German 10Y (Bundesbank fitted), daily, in percentage points. Two constructions: a constant-maturity yield against a fitted zero-coupon one." },
-  ].filter((s) => s.val != null);
+  ].filter((s) => s.val != null).concat([oatBundCurrent(fresh, series)]);
+}
+
+export const OAT_BUND_LABEL = "OAT–Bund 10Y (daily, BdF TEC − Bundesbank)";
+
+/**
+ * Sentinel D-0112 amendment 2: the daily OAT–Bund 10Y, FB_FR_10Y minus
+ * FB_DE_10Y in basis points, on the dates where BOTH legs have an
+ * observation. Never forward-filled: a date missing either leg is a gap.
+ * `fr` / `de` are [{date, value}] as `seriesByCode` returns them.
+ */
+export function oatBundDailySpread(fr = [], de = []) {
+  const deByDate = new Map((de ?? []).filter((p) => p.value != null).map((p) => [p.date, p.value]));
+  return (fr ?? [])
+    .filter((p) => p.value != null && deByDate.has(p.date))
+    .map((p) => ({ date: p.date, bp: (p.value - deByDate.get(p.date)) * 100 }))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+/**
+ * The strip entry for the daily OAT–Bund. Always present on the tab: when
+ * either leg is past the FB freshness rule (`fresh`), or no shared date
+ * exists, it reads "—" instead of quoting a number.
+ */
+function oatBundCurrent(fresh, series) {
+  const tip = "French 10Y (Banque de France TEC, constant-maturity) minus German 10Y (Bundesbank fitted), daily, in basis points, only on dates both legs publish - a missing leg is a gap, never filled. Two constructions: a constant-maturity yield against a fitted zero-coupon one. Shows — when either leg is stale (Sentinel D-0112 amendment 2).";
+  const dash = { label: OAT_BUND_LABEL, unit: "bp", val: null, display: "—", tip: tip };
+  if (!fresh("FB_FR_10Y") || !fresh("FB_DE_10Y")) return dash;
+  const last = oatBundDailySpread(series.FB_FR_10Y, series.FB_DE_10Y).at(-1);
+  return last ? { label: OAT_BUND_LABEL, unit: "bp", val: last.bp, date: last.date, tip: tip } : dash;
 }
 
 // ── Shared UI ─────────────────────────────────────────────────────────────────

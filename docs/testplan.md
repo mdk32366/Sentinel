@@ -661,6 +661,19 @@ commit, where 4 of 12 FOREIGN-BONDS UI tests and 1 Python test failed.
   says nothing about a fallback; and `pipelines/fred_fetcher.py` still lists
   `IRLTLT01FRM156N` (the fetch is untouched).
 
+**T-0112 addendum 2, part 2: the daily OAT–Bund spread (2026-10-22).**
+Proves `D-0112 amendment 2`. **Red first:** the tests landed in their own
+commit, where 7 of 17 FOREIGN-BONDS UI tests failed.
+
+`ui/src/pages/ForeignBondsTab.dom.test.jsx`
+- On fixture dates the spread is `FB_FR_10Y − FB_DE_10Y` in bp (−15, −12).
+- A date where one leg is missing is absent from the series (a gap); no
+  value is carried forward; an empty or absent leg yields no points.
+- The current value is the last date both legs share, not either leg's last.
+- A stale French or German leg makes the entry read "—" with no number.
+- On the tab the entry reads −12bp when fresh and "—" when `foreign_bonds_fr`
+  is stale, under the label "OAT–Bund 10Y (daily, BdF TEC − Bundesbank)".
+
 **T-0111 addendum: manual trigger and startup fill (2026-10-22).**
 `POST /api/fetch/foreign-bonds/{source}` (`source` in
 `scheduler.FOREIGN_BOND_JOBS`: `bundesbank`, `boe`, `mof`) with optional

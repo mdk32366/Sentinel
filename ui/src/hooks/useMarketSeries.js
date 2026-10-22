@@ -31,10 +31,11 @@ export const CHANGE_WINDOW_DAYS = 30;
  *
  * Sentinel D-0112: also `dates`, the newest observation date per code, for the
  * FOREIGN-BONDS "Source: Banque de France, updated <date>" line. Additive:
- * no existing caller reads it.
+ * no existing caller reads it. Amendment 2: also `series`, the per-code
+ * points, for the daily OAT–Bund spread. Additive too.
  */
 export function useSeries(codes) {
-  const [state, setState] = useState({ latest: {}, prior: {}, latestDate: null, dates: {} });
+  const [state, setState] = useState({ latest: {}, prior: {}, latestDate: null, dates: {}, series: {} });
   const key = (codes || []).join(",");
 
   useEffect(() => {
@@ -59,7 +60,7 @@ export function useSeries(codes) {
           if (last) dates[code] = last;
           if (last && (!latestDate || last > latestDate)) latestDate = last;
         }
-        setState({ latest: latestByCode(series), prior, latestDate, dates });
+        setState({ latest: latestByCode(series), prior, latestDate, dates, series });
       })
       // The ticker is furniture: if it cannot load, the header simply carries
       // no numbers. It must not take the tab with it.
