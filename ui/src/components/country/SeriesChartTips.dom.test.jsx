@@ -32,7 +32,7 @@ const PANELS = [
   [/^TREASURY HOLDINGS/, [/TIC/, /monthly/i, /billions of US dollars/]],
   [/^GOLD RESERVES/, [/IMF/, /IRFCL/, /monthly/i, /metric tonnes/]],
   [/^5Y SOVEREIGN CDS/, [/World Government Bonds/, /daily/i, /basis points/]],
-  [/^TOTAL RESERVES EX-GOLD/, [/IMF International Financial Statistics/, /FRED/, /monthly/i, /stored in millions of US dollars, charted in billions/]],
+  [/^TOTAL RESERVES EX-GOLD \(\$B\)/, [/IMF International Financial Statistics/, /FRED/, /monthly/i, /stored in millions of US dollars, charted in billions/]],
 ];
 
 describe("country chart panels: title tooltips", () => {
