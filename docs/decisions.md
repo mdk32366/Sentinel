@@ -3289,3 +3289,18 @@ history behind the monthly OAT–Bund spread.
 that a script could read without a challenge. The Banque de France's new API
 is free with a registered key, so the gap can be filled rather than shown.
 The fixtures are synthetic until a key exists (`A-0029`).
+
+**D-0112 amendment 1 (2026-10-22): the monthly FR 10Y leaves FOREIGN-BONDS.**
+Matt, via Trinity, 12:16 PM PT: the Banque de France TEC10 daily is the only
+FR 10Y on this surface. The `FR_10Y_MONTHLY_FALLBACK` card, the monthly
+OAT–Bund 10Y spread and the tab's request for `IRLTLT01FRM156N` (and for
+`IRLTLT01DEM156N`, whose only use here was that spread's German leg) are
+removed, as is `sovereign_yields` from the tab's DataConfidence sources. With
+no daily French row the five FR cells show "—". This reverses rejection (c)
+above: the key is now set (`WEBSTAT_API_KEY`, 2026-10-22) and the first
+startup fill wrote 6,395 TEC rows, latest 2026-10-22. **Unchanged:** the
+FRED fetch list, the stored `IRLTLT01FRM156N` rows (no migration, no
+delete), composite D4, MARKETS, the country cards and the brief prompt's
+`SOVEREIGN_YIELD_CODES`. There was no API change: the tab reads the generic
+`/api/timeseries`, so the surface is the UI request and render. Tested by
+`T-0112` addendum 2.

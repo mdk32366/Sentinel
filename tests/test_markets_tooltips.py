@@ -321,7 +321,7 @@ class ForeignBondsAreNotScored(unittest.TestCase):
                     self.assertFalse(reads_code(path, code), code)
 
     def test_the_french_monthly_10y_is_off_the_foreign_bonds_surface(self):
-        # Sentinel D-0112 amendment 1 (T-0113): TEC10 daily is the only FR 10Y
+        # Sentinel D-0112 amendment 1 (T-0112 addendum 2): TEC10 daily is the only FR 10Y
         # on FOREIGN-BONDS. The monthly IRLTLT01FRM156N is not a fallback card,
         # not a spread leg and not requested by the tab. It stays in FRED's
         # fetch list and the DB, and composite D4 still scores it.

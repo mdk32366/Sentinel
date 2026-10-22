@@ -10,7 +10,7 @@
  * D-0112: 20 cards, all daily: France from the Banque de France TEC replaces
  *       the four NO SOURCE cells; the footer reads "Source: Banque de France,
  *       updated <date>".
- * D-0112 amendment 1 (T-0113): the monthly OECD FR 10Y (FRED) is gone from
+ * D-0112 amendment 1 (T-0112 addendum 2): the monthly OECD FR 10Y (FRED) is gone from
  *       this surface - no fallback card, no monthly OAT-Bund spread, and the
  *       tab does not request it. TEC10 is the only FR 10Y here.
  *
@@ -148,7 +148,7 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     expect(container.textContent).toContain("Source: Banque de France, not yet available");
   });
 
-  it("T-0113: the monthly OECD FR 10Y is not on this surface at all", () => {
+  it("T-0112 add. 2: the monthly OECD FR 10Y is not on this surface at all", () => {
     expect(constants.FR_10Y_MONTHLY_FALLBACK).toBeUndefined();
     expect(FOREIGN_BOND_CODES).not.toContain(FRA);
     expect(FOREIGN_BOND_METRICS.filter((m) => m.label === "FR 10Y").map((m) => m.code)).toEqual(["FB_FR_10Y"]);
@@ -156,7 +156,7 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     expect(labels).toEqual(["OAT\u2013Bund 10Y"]);
   });
 
-  it("T-0113: the tab never requests the monthly FR series", async () => {
+  it("T-0112 add. 2: the tab never requests the monthly FR series", async () => {
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
     const urls = fetch.mock.calls.map((c) => String(c[0])).filter((u) => u.includes("/timeseries"));

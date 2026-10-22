@@ -170,15 +170,13 @@ export function US_SPREADS(latest) {
  *   MON  monthly average, not daily (OECD via FRED) - badged MONTHLY
  *
  * Sentinel D-0112 replaced D-0111 option A's four NO SOURCE cells: France is
- * the Banque de France TEC, daily. The monthly OECD `IRLTLT01FRM156N` stays as
- * the FR 10Y FALLBACK only (`FR_10Y_MONTHLY_FALLBACK`, `foreignBondCells`),
- * shown while no daily French 10Y has been stored - e.g. before
- * WEBSTAT_API_KEY is set.
+ * the Banque de France TEC, daily. D-0112 amendment 1: TEC10 is the only FR
+ * 10Y here; the monthly OECD France series is not shown, spread or requested
+ * on this tab (it stays in FRED's fetch and composite D4).
  *
  * Every entry is `scored: false`. `tests/test_markets_tooltips.py` holds that
  * shut against both scorers, as it does for METRICS. The `FB_` codes are in
- * no ticker, no country card and no scorer; `IRLTLT01FRM156N` is read here and
- * changed nowhere.
+ * no ticker, no country card and no scorer.
  */
 const FB_COUNTRY = {
   DE: { kind: "FIT", colors: ["#8A7448", "#A38A57", "#B89A60", "#C8A96E", "#E0C690"] },
@@ -203,24 +201,6 @@ function fbTip(cc, t) {
   return `Japan ${t}-year JGB yield. CMT: Ministry of Finance constant-maturity par yield interpolated from benchmark JGBs, column ${t}年 of jgbcm.csv, business-daily. A par yield, so not the same construction as the DE and UK fitted spot rates.`;
 }
 
-/**
- * FR 10Y while no daily Banque de France 10Y is stored (Sentinel D-0112): the
- * monthly OECD series, labelled as the fallback it is. The other four French
- * tenors have no fallback and show "—".
- */
-export const FR_10Y_MONTHLY_FALLBACK = {
-  code: "IRLTLT01FRM156N",
-  key: "FR_10Y",
-  label: "FR 10Y",
-  color: "#9B8EC4",
-  unit: "%",
-  kind: "MON",
-  badge: "MONTHLY",
-  scored: false,
-  tip: "FALLBACK. No daily Banque de France 10Y is stored yet, so this card shows the OECD long-term interest rate for France, a MONTHLY average via FRED IRLTLT01FRM156N - the series Sentinel already stores. It can sit weeks behind the daily cells beside it.",
-  stressRole: "Not scored on this tab. The same monthly series already feeds composite dimension 4; this card reads it and changes nothing (Sentinel D-0112).",
-};
-
 export const FOREIGN_BOND_METRICS = [
   ...["DE", "GB", "JP", "FR"].flatMap((cc) => FB_TENORS.map((t, i) => ({
     code: `FB_${cc}_${String(t).padStart(2, "0")}Y`,
@@ -235,11 +215,9 @@ export const FOREIGN_BOND_METRICS = [
   }))),
 ];
 
-/** The cells to draw: FR 10Y swaps to the monthly fallback while the daily is missing. */
-export function foreignBondCells(latest) {
-  return FOREIGN_BOND_METRICS.map((m) => (
-    m.code === "FB_FR_10Y" && latest?.FB_FR_10Y == null ? FR_10Y_MONTHLY_FALLBACK : m
-  ));
+/** The cells to draw: the 20 daily cells, nothing swapped in (D-0112 amendment 1). */
+export function foreignBondCells() {
+  return FOREIGN_BOND_METRICS;
 }
 
 /** "Source: Banque de France, updated <YYYY-MM-DD>" from the newest French daily row (D-0112). */
@@ -258,9 +236,7 @@ export function bdfAttribution(dates) {
 /** Codes FOREIGN-BONDS reads: its own cells plus the legs of its spreads. */
 export const FOREIGN_BOND_CODES = [
   ...FOREIGN_BOND_METRICS.map((m) => m.code),
-  FR_10Y_MONTHLY_FALLBACK.code,
   "DGS10",
-  "IRLTLT01DEM156N",
 ];
 
 /** Which watchdog source vouches for a code (spec §5 / §7.7). */
@@ -269,7 +245,6 @@ export function foreignBondSourceKey(code) {
   if (code.startsWith("FB_GB_")) return "foreign_bonds_gb";
   if (code.startsWith("FB_JP_")) return "foreign_bonds_jp";
   if (code.startsWith("FB_FR_")) return "foreign_bonds_fr";
-  if (code.startsWith("IRLTLT01")) return "sovereign_yields";
   if (code.startsWith("DGS")) return "treasury_yields";
   return null;
 }
@@ -303,8 +278,6 @@ export function foreignBondSpreads(latest, fresh = () => true) {
       tip: "Japan long end: 30Y minus 10Y (MOF constant-maturity), where the super-long JGB repricing shows." },
     { label: "OAT–Bund 10Y", val: pp(leg("FB_FR_10Y"), leg("FB_DE_10Y")),
       tip: "French 10Y (Banque de France TEC, constant-maturity) minus German 10Y (Bundesbank fitted), daily, in percentage points. Two constructions: a constant-maturity yield against a fitted zero-coupon one." },
-    { label: "OAT–Bund 10Y (monthly)", val: pp(leg("IRLTLT01FRM156N"), leg("IRLTLT01DEM156N")),
-      tip: "France minus Germany 10Y, monthly, OECD (IRLTLT01FRM156N − IRLTLT01DEM156N). Monthly averages, not a daily spread; kept beside the daily OAT–Bund for the longer OECD history (Sentinel D-0112)." },
   ].filter((s) => s.val != null);
 }
 
