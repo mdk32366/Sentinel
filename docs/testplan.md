@@ -752,3 +752,40 @@ change.
 edited), seen failing, and reverted. The AC-1 default-board test stays green:
 the shared chart panel adds `aria-pressed` only on the card.
 
+### T-0114 - Dimension 4 on the daily FB 10Y, the OAT-Bund percentile, and non-FB rows byte-identical
+
+Proves `D-0114`. **Red first:** the tests landed alone in commit `35fe73e`
+(base master `cb0f460`). There, `tests/test_d0114_dim4.py` had 13 errors (no
+`FB_DIM4_CODES` and the other constants and helpers) and
+`ForeignBondsAreNotScored` failed 4 times. The non-FB baseline passed, as it
+must on master.
+
+`tests/test_d0114_dim4.py` on `tests/d0114_fixture.py` (in-memory SQLite,
+clock 2026-10-22 12:00; 5 years of business-day FB_FR/FB_DE 10Y):
+- Constants: the four codes, `FB_MAX_AGE_DAYS` equal to the watchdog,
+  `EURO_AREA` containing FRA and not GBR, and the benchmark DEU.
+- Helpers: inclusive `spread_percentile` (50 of [40,50,60,70] -> 50; top ->
+  100; empty -> None), `same_date_spread_bp` (common dates only),
+  `combine_dim4` (max; level when no spread).
+- FRA: source `FB_FR_10Y`, spread 85bp at percentile 100 -> 20.0, level 5,
+  dim 4 20.0, no flags. GBR: daily source, 128bp -> level 10. JPN: daily stale
+  -> `IRLTLT01JPM156N` with `daily_stale`.
+- FR leg stale -> monthly level and `spread_leg_stale`. FB_DE_10Y dropped ->
+  level only and `spread_leg_missing`. DEU, GBR and JPN never get a spread term.
+- `raw_score` includes `dim4_score`.
+- **Non-FB pin:** CHN and ITA payloads equal
+  `tests/fixtures/d0114_non_fb_baseline.json` (from master `cb0f460`) byte for
+  byte. ITA (a euro-area member with no FB code) has no `dim4_*` key.
+
+Amended deliberately under D-0114: `ForeignBondsAreNotScored`
+(`tests/test_markets_tooltips.py`) and `IsolationFromScoring`
+(`tests/test_foreign_bonds.py`). The composite names exactly the four
+`FB_xx_10Y` codes, never the `"foreign_bond"` category, and v2 names none.
+`tests/test_composite_dimensions.py` and `ui/src/lib/dimensions.test.js` now
+expect six dimensions and a maximum raw score of 185.
+`tests/fixtures/d0113_scorer_golden.json` was recaptured in its own commit.
+JPN and FRA gain `dim4_*` fields and a stale-source signal, and no score moved.
+
+`scripts/d0114_shadow.py`: old vs new dim 4 and composite per country on
+PROD, read-only. This is the merge gate: non-FB rows must show zero delta.
+

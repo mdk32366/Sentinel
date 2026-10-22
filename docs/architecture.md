@@ -329,3 +329,14 @@ comes from `useSeries(FOREIGN_BOND_CODES)` through the existing
 component and is byte-identical to master `be64218`
 (`marketsDefault.ac1.dom.test.jsx`).
 
+## Composite dimension 4 on the daily curves (D-0114)
+
+`pipelines/composite_stress.get_dim4_fb` scores dimension 4 for DEU, GBR,
+JPN and FRA only. It reads `FB_xx_10Y` (`country_id` NULL) while the series is
+inside its `freshness_watchdog.CHECKS` window, falls back to `IRLTLT`, and for
+France adds the same-date OAT-Bund percentile term. Every other country still
+goes through `get_sovereign_spread`, scoring 0. The freshness limits have one
+source (the watchdog), which the scorer, the D-0113 cards and the watchdog all
+read. `scripts/d0114_shadow.py` computes the old and new scores side by side
+on any `DATABASE_URL`, and writes nothing.
+

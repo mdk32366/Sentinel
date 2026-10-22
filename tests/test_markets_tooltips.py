@@ -311,14 +311,26 @@ class ForeignBondsAreNotScored(unittest.TestCase):
         self.assertIn('["DE", "GB", "JP", "FR"]', block)
 
     def test_neither_scorer_reads_a_foreign_bond(self):
+        # Sentinel D-0114 amends D-0111's no-scorer clause, deliberately: the
+        # composite scorer's dimension 4 now reads the four daily 10Y codes
+        # (FB_DE/GB/JP/FR_10Y) and nothing else from the FB_ family. The v2
+        # scorer still reads none. The FOREIGN-BONDS cells stay "scored: false"
+        # because the tab itself is display; the score lives in dimension 4.
         codes = [f"FB_{c}_{t:02d}Y" for c in ("DE", "GB", "JP", "FR") for t in (2, 5, 7, 10, 30)]
-        for path in (V2_SCORER, COMPOSITE_SCORER):
-            text = path.read_text(encoding="utf-8")
-            with self.subTest(scorer=path.name):
-                self.assertNotIn("FB_", text)
-                self.assertNotIn("foreign_bond", text)
-                for code in codes:
-                    self.assertFalse(reads_code(path, code), code)
+        scored = {f"FB_{c}_10Y" for c in ("DE", "GB", "JP", "FR")}
+        v2 = V2_SCORER.read_text(encoding="utf-8")
+        self.assertNotIn("FB_", v2)
+        self.assertNotIn("foreign_bond", v2)
+        for code in codes:
+            self.assertFalse(reads_code(V2_SCORER, code), code)
+        composite = COMPOSITE_SCORER.read_text(encoding="utf-8")
+        # No selection by the FB category: the four codes are named exactly.
+        # (The scorer does reference the watchdog's "foreign_bonds_*" keys,
+        # to share the D-0113 freshness limits.)
+        self.assertNotIn('"foreign_bond"', composite)
+        for code in codes:
+            with self.subTest(code=code):
+                self.assertEqual(code in composite, code in scored, code)
 
     def test_the_french_monthly_10y_is_off_the_foreign_bonds_surface(self):
         # Sentinel D-0112 amendment 1 (T-0112 addendum 2): TEC10 daily is the only FR 10Y

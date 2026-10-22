@@ -16,7 +16,8 @@
    "foreign_official": null,
    "highest_risk": {
     "active_signals": [
-     "T-bills: 6mo consecutive \u2193"
+     "T-bills: 6mo consecutive \u2193",
+     "Dim 4 on IRLTLT01JPM156N: daily_stale"
     ],
     "as_of": "2026-09",
     "available_points": 110,
@@ -33,6 +34,15 @@
     "country_iso": "JPN",
     "country_name": "Japan",
     "cross_asset": false,
+    "dim4_flags": [
+     "daily_stale"
+    ],
+    "dim4_level_score": 0,
+    "dim4_score": 0,
+    "dim4_source": "IRLTLT01JPM156N",
+    "dim4_spread_bp": null,
+    "dim4_spread_pctile": null,
+    "dim4_spread_score": null,
     "divergence": false,
     "gold_consecutive_quarters": 0,
     "gold_mom_pct": 0.35,
@@ -82,7 +92,8 @@
   "watch": [
    {
     "active_signals": [
-     "T-bills: 6mo consecutive \u2193"
+     "T-bills: 6mo consecutive \u2193",
+     "Dim 4 on IRLTLT01JPM156N: daily_stale"
     ],
     "as_of": "2026-09",
     "available_points": 110,
@@ -99,6 +110,15 @@
     "country_iso": "JPN",
     "country_name": "Japan",
     "cross_asset": false,
+    "dim4_flags": [
+     "daily_stale"
+    ],
+    "dim4_level_score": 0,
+    "dim4_score": 0,
+    "dim4_source": "IRLTLT01JPM156N",
+    "dim4_spread_bp": null,
+    "dim4_spread_pctile": null,
+    "dim4_spread_score": null,
     "divergence": false,
     "gold_consecutive_quarters": 0,
     "gold_mom_pct": 0.35,
@@ -141,7 +161,8 @@
    },
    {
     "active_signals": [
-     "T-bills: 6mo consecutive \u2193"
+     "T-bills: 6mo consecutive \u2193",
+     "Dim 4 on IRLTLT01FRM156N: daily_stale, spread_leg_stale"
     ],
     "as_of": "2026-09",
     "available_points": 110,
@@ -158,6 +179,16 @@
     "country_iso": "FRA",
     "country_name": "France",
     "cross_asset": false,
+    "dim4_flags": [
+     "daily_stale",
+     "spread_leg_stale"
+    ],
+    "dim4_level_score": 0,
+    "dim4_score": 0,
+    "dim4_source": "IRLTLT01FRM156N",
+    "dim4_spread_bp": null,
+    "dim4_spread_pctile": null,
+    "dim4_spread_score": null,
     "divergence": false,
     "gold_consecutive_quarters": 0,
     "gold_mom_pct": 0.12,
