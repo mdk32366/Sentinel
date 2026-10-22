@@ -49,6 +49,9 @@ class Constants(unittest.TestCase):
         self.assertEqual(cs.FB_MAX_AGE_DAYS, {"DEU": 4, "GBR": 5, "JPN": 7, "FRA": 4})
         watchdog = {c["key"][-2:].upper(): c["max_age_days"]
                     for c in freshness_watchdog.CHECKS if c["key"].startswith("foreign_bonds_")}
+        # Sentinel D-0115: batch 2a adds display-only checks (CA/SE/AU/NO/ES/EA);
+        # dimension 4 mirrors only its own four.
+        watchdog = {cc: d for cc, d in watchdog.items() if cc in ("DE", "GB", "JP", "FR")}
         self.assertEqual({cs.FB_DIM4_CODES[i][3:5]: d for i, d in cs.FB_MAX_AGE_DAYS.items()}, watchdog)
 
     def test_sovereign_yield_codes_unchanged(self):

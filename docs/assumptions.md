@@ -960,3 +960,48 @@ source change rather than on a market move.
 
 **Status:** Assumed, not measured (`D-0114`).
 
+
+### A-0032 - The Banco de España TI_1_3 CSV is Latin-1, uses `_` for missing, and its 10Y is the secondary-market yield
+
+**Relies on:** the shape of `TI_1_3.csv` as fetched on 2026-10-22: Latin-1
+encoded (accented headers do not decode as UTF-8), `_` in a cell meaning no
+observation, a `FUENTE` / `NOTAS` footer after the data, and the 10-year column
+being the secondary-market (outright) government bond yield rather than the
+primary auction yield.
+
+**Status:** Assumed (`D-0115`). `bde_ti13.decode` decodes Latin-1, `_` is
+skipped rather than read as zero, and parsing stops at the footer
+(T-0127 to T-0130).
+
+**Falsified by:** a UTF-8 file, a different missing marker, or BdE
+documentation that the column is the auction yield.
+
+**Consequence if wrong:** mojibake headers fail the column match and the run
+fails closed (no wrong rows); a primary-market 10Y would sit a few bp off the
+other daily curves.
+
+### A-0033 - Bank of Canada's LONG benchmark is shown as the 30Y
+
+**Relies on:** Valet's `BD.CDN.LONG.DQ.YLD` being the long benchmark bond
+(currently near 30 years remaining), not a fixed 30-year point.
+
+**Status:** Assumed (`D-0115`). It is stored as `FB_CA_30Y` so the Canadian
+curve lines up with the others; the 10s30s tooltip says "10s-long".
+
+**Falsified by:** the benchmark rolling to a materially shorter bond.
+
+**Consequence if wrong:** CAN 10s30s understates the true 10s30s slope.
+
+### A-0034 - The ECB yield-curve data may be redisplayed with attribution
+
+**Relies on:** the ECB's general statistics reuse terms, which allow reuse
+with the source cited. Not verified against a licence specific to the
+Svensson yield-curve dataset.
+
+**Status:** Unverified (`D-0115`). The EA panel cites "Source: ECB" and the
+update date.
+
+**Falsified by:** ECB terms that restrict the YC dataset.
+
+**Consequence if wrong:** the EA panel would need to come down; nothing
+scored depends on it.

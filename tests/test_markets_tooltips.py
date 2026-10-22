@@ -308,7 +308,8 @@ class ForeignBondsAreNotScored(unittest.TestCase):
         # Sentinel D-0112: one generated entry covers DE, GB, JP and FR. The
         # monthly French fallback literal is gone (D-0112 amendment 1).
         self.assertEqual(block.count("scored: false"), 1)
-        self.assertIn('["DE", "GB", "JP", "FR"]', block)
+        # Sentinel D-0115: batch 2a joins the generated entry.
+        self.assertIn('["DE", "GB", "JP", "FR", "CA", "SE", "AU", "NO", "ES"]', block)
 
     def test_neither_scorer_reads_a_foreign_bond(self):
         # Sentinel D-0114 amends D-0111's no-scorer clause, deliberately: the

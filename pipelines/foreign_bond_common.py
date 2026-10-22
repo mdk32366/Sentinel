@@ -84,8 +84,37 @@ def code_for(country: str, tenor: int) -> str:
     return f"FB_{country}_{tenor:02d}Y"
 
 
-def all_codes(country: str) -> list:
-    return [code_for(country, t) for t in TENORS]
+def all_codes(country: str, tenors: Iterable[int] = TENORS) -> list:
+    return [code_for(country, t) for t in tenors]
+
+
+def reject_html(body: bytes, where: str) -> None:
+    """An HTML page where data was asked for is SchemaDrift (T-0119, D-0115).
+
+    Catches a 200 maintenance / consent / WAF page served instead of CSV/JSON.
+    """
+    head = body.lstrip()[:64].lower()
+    if head.startswith(b"\xef\xbb\xbf"):
+        head = head[3:].lstrip()
+    if head.startswith(b"<!doctype") or head.startswith(b"<html"):
+        raise SchemaDrift(f"{where}: body is HTML, not data")
+
+
+def make_metrics(country: str, tenors: Iterable[int], name_fmt: str,
+                 source: str, desc_fmt: str) -> list:
+    """METRICS dicts in the house shape; ``{t}`` and ``{code}`` are filled."""
+    out = []
+    for t in tenors:
+        code = code_for(country, t)
+        out.append({
+            "code": code,
+            "name": name_fmt.format(t=t, code=code),
+            "category": CATEGORY,
+            "unit": "%",
+            "source": source,
+            "description": desc_fmt.format(t=t, code=code)[:500],
+        })
+    return out
 
 
 def to_value(raw, where: str) -> Optional[Decimal]:

@@ -45,6 +45,13 @@ EXPECTED_CRON_JOBS = {
     "boe_yields",
     # Sentinel D-0112: Banque de France TEC, weekdays 10:00 UTC.
     "bdf_tec",
+    # Sentinel D-0115 (batch 2a), weekdays, UTC (T-0117).
+    "riksbank_yields",
+    "norges_yields",
+    "rba_f2",
+    "boc_valet",
+    "ecb_yc",
+    "bde_ti13",
 }
 EXPECTED_ONE_SHOTS = {"startup_fetches", "startup_cds_fetch"}
 
@@ -110,6 +117,21 @@ class TestJobRegistration(SchedulerHarness):
         for job_id, hour, minute in (("mof_jgb", "10", "0"),
                                      ("bundesbank_yields", "18", "0"),
                                      ("boe_yields", "18", "30")):
+            with self.subTest(job=job_id):
+                trigger = str(jobs[job_id].trigger)
+                self.assertIn("day_of_week='mon-fri'", trigger)
+                self.assertIn(f"hour='{hour}'", trigger)
+                self.assertIn(f"minute='{minute}'", trigger)
+
+    def test_batch2a_jobs_run_weekdays_at_their_utc_times(self):
+        """T-0117, Sentinel D-0115 spec@0.3 §15 times."""
+        jobs = self._register()
+        for job_id, hour, minute in (("riksbank_yields", "16", "30"),
+                                     ("norges_yields", "16", "45"),
+                                     ("rba_f2", "8,20", "0"),
+                                     ("boc_valet", "23", "0"),
+                                     ("ecb_yc", "7", "30"),
+                                     ("bde_ti13", "10", "30")):
             with self.subTest(job=job_id):
                 trigger = str(jobs[job_id].trigger)
                 self.assertIn("day_of_week='mon-fri'", trigger)

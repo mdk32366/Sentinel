@@ -31,3 +31,18 @@ error bodies are real (below); they need no key to capture.
 | `bdf_tec_header_only.csv` | the header line of `bdf_tec.csv` | header only, no observation (a 200 that must fail closed) |
 | `bdf_tec_404.json` | **Real response, not synthetic.** `GET https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/csv?where=series_key%20in%20(%22FM.D.FR.EUR.FR2.BB.FRMOYTEC10.HSTA%22)&limit=1` with **no** key, from the box 2026-10-22 16:06:29 UTC (9:06:29 AM PT): HTTP 404, 105 B, sha256 `31a2ec0e474b8cbb…`. Matches the guide's "Authentification" note: an absent or unknown key answers `NotFoundResource` / "The requested dataset observations does not exist." | bytes preserved |
 | `bdf_tec_401.json` | **Real response, not synthetic.** The same endpoint with header `Authorization: Apikey not-a-real-key`, same time: HTTP 401, 33 B, sha256 `0d81b5f645b6f216…`. The guide does not document this answer; it was measured (`F-0118`). No secret: the key sent was a made-up string | bytes preserved |
+
+## Sentinel D-0115 (FB batch 2a) fixtures
+
+All synthetic, hand-built from the shapes in each source's documentation and
+a read-only shape probe on 2026-10-22. No value is a real observation.
+
+| File | Shape of |
+|---|---|
+| boc_valet.json, boc_valet_empty.json | BoC Valet `group/bond_yields_benchmark/json` (observations[{d, SERIES:{v}}]); one blank 7Y cell |
+| riksbank_SEGVB10YC.json, riksbank_empty.json | Riksbank SWEA `Observations/{series}/{from}/{to}` ([{date, value}]) |
+| rba_f2.csv, rba_f2_header_only.csv | RBA F2 `f02d.csv`: metadata, `Series ID` row, CRLF, blank and comma-only tails |
+| norges_govt.csv, norges_header_only.csv | Norges Bank SDMX `GOVT_GENERIC_RATES/B..GBON` CSV, `;`-separated |
+| bde_ti_1_3.csv, bde_ti_1_3_shuffled.csv | BdE `ti_1_3.csv`, Latin-1, 6 metadata rows, `"_"` missing, FUENTE/NOTAS footer (a row after the footer must be ignored); the shuffled file reorders columns |
+| ecb_yc.csv, ecb_yc_header_only.csv | ECB Data Portal `YC/B.U2.EUR.4F.G_N_A+G_N_C.SV_C_YM.SR_2Y+…` csvdata, trimmed columns |
+| html_body.html | an HTML page returned where CSV was expected (spec@0.3 anomaly, T-0119) |

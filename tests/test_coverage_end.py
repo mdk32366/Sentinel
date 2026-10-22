@@ -133,6 +133,10 @@ class TestEverySourceDeclaresItsPeriod(unittest.TestCase):
             "foreign_bonds_jp": "day",
             # Sentinel D-0112: France, Banque de France TEC, business-daily.
             "foreign_bonds_fr": "day",
+            # Sentinel D-0115 (batch 2a).
+            "foreign_bonds_ca": "day", "foreign_bonds_se": "day",
+            "foreign_bonds_au": "day", "foreign_bonds_no": "day",
+            "foreign_bonds_es": "day", "foreign_bonds_ea": "day",
         }
         actual = {c["key"]: c.get("period") for c in CHECKS}
         self.assertEqual(actual, expected)

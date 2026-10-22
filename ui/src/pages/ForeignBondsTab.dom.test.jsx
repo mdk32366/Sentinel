@@ -91,6 +91,7 @@ const settle = (container) => waitFor(() => {
 function sections(body) {
   return [...body.children].map((el) => {
     const t = el.textContent;
+    if (el.dataset?.testid === "ea-benchmark-panel") return "ea";
     if (t.includes("DATA CONFIDENCE")) return "confidence";
     if (el.style.display === "grid") return "cards";
     if (t.includes("% CHANGE")) return "chart";
@@ -107,9 +108,10 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
     const grid = [...container.querySelectorAll("div")].find((d) => d.style.display === "grid");
-    expect(grid.children.length).toBe(20);
-    expect(FOREIGN_BOND_METRICS.length).toBe(20);
-    expect(FOREIGN_BOND_METRICS.filter((m) => m.code?.startsWith("FB_")).length).toBe(20);
+    // Sentinel D-0115: batch 2a adds CA (6), SE, AU, NO and ES (4 each) after FR.
+    expect(grid.children.length).toBe(42);
+    expect(FOREIGN_BOND_METRICS.length).toBe(42);
+    expect(FOREIGN_BOND_METRICS.filter((m) => m.code?.startsWith("FB_")).length).toBe(42);
     expect(grid.style.gridTemplateColumns).toBe("repeat(5, 1fr)");
 
     const cards = [...grid.children];
@@ -120,11 +122,16 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
       "GB 2Y", "GB 5Y", "GB 7Y", "GB 10Y", "GB 30Y",
       "JP 2Y", "JP 5Y", "JP 7Y", "JP 10Y", "JP 30Y",
       "FR 2Y", "FR 5Y", "FR 7Y", "FR 10Y", "FR 30Y",
+      "CA 2Y", "CA 3Y", "CA 5Y", "CA 7Y", "CA 10Y", "CA 30Y",
+      "SE 2Y", "SE 5Y", "SE 7Y", "SE 10Y",
+      "AU 2Y", "AU 3Y", "AU 5Y", "AU 10Y",
+      "NO 3Y", "NO 5Y", "NO 7Y", "NO 10Y",
+      "ES 3Y", "ES 5Y", "ES 10Y", "ES 15Y",
     ]);
     expect(cards[3].textContent).toContain("3.47%");
     expect(cards[13].textContent).toContain("2.93%");
 
-    const fr = cards.slice(15);
+    const fr = cards.slice(15, 20);
     // No NO SOURCE cell is left, and the daily French 10Y is shown, not the monthly.
     expect(fr.filter((c) => c.textContent.includes("—")).length).toBe(0);
     expect(fr[0].textContent).toContain("2.22%");
@@ -140,8 +147,8 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
     await settle(container);
     const grid = [...container.querySelectorAll("div")].find((d) => d.style.display === "grid");
     const cards = [...grid.children];
-    expect(cards.length).toBe(20);
-    const fr = cards.slice(15);
+    expect(cards.length).toBe(42);
+    const fr = cards.slice(15, 20);
     expect(fr[3].querySelector("span").textContent).toBe("FR 10Y");
     expect(fr.filter((c) => c.textContent.includes("\u2014")).length).toBe(5);
     expect(container.textContent).not.toContain("MONTHLY");
@@ -177,6 +184,20 @@ describe("§8 / AC-5 / D-0112: the twenty cells", () => {
       } else if (m.code.startsWith("FB_JP_")) {
         expect(m.tip).toContain("CMT");
         expect(m.tip).toContain("jgbcm.csv");
+      } else if (m.code.startsWith("FB_CA_")) {
+        expect(m.tip).toContain("Bank of Canada");
+        expect(m.tip).toMatch(/BD\.CDN\.(\d+YR|LONG)\.DQ\.YLD/);
+      } else if (m.code.startsWith("FB_SE_")) {
+        expect(m.tip).toMatch(/Riksbank SWEA series SEGVB\d+YC/);
+      } else if (m.code.startsWith("FB_AU_")) {
+        expect(m.kind).toBe("CMT");
+        expect(m.tip).toMatch(/RBA statistical table F2.*FCMYGBAG\d+D/);
+      } else if (m.code.startsWith("FB_NO_")) {
+        expect(m.kind).toBe("CMT");
+        expect(m.tip).toContain("Norges Bank");
+      } else if (m.code.startsWith("FB_ES_")) {
+        expect(m.tip).toContain("Banco de España");
+        expect(m.tip).toMatch(/D_G0B1F0Z[NOPQ]/);
       } else {
         expect(m.code).toMatch(/^FB_FR_\d\dY$/);
         expect(m.kind).toBe("CMT");
@@ -212,7 +233,9 @@ describe("§7.7: the spread strip", () => {
     // OAT-Bund daily, in pp like the rest of the strip (D-0113 follow-up):
     // FB_FR_10Y 3.35 - FB_DE_10Y 3.47
     expect(container.textContent).toContain("-0.12pp");
-    expect(container.textContent).not.toMatch(/\dbp/);
+    // The strip is in pp; only the EA benchmark panel's slopes are in bp.
+    const strip = [...container.querySelectorAll("div")].find((d) => d.textContent.startsWith("SPREAD") && d.children.length > 1);
+    expect(strip.textContent).not.toMatch(/\dbp/);
   });
 
   // D-0113 follow-up (Trinity): a stale leg keeps the spread in place and
@@ -263,12 +286,13 @@ describe("AC-3: FOREIGN-BONDS has MARKETS' structure and interactions", () => {
     const bonds = await open("#/foreign-bonds");
     const fSections = sections(bonds.body);
     expect(mSections).toEqual(["confidence", "cards", "chart", "spreads", "footer"]);
-    expect(fSections).toEqual(mSections);
+    // Sentinel D-0115: the EA benchmark panel heads the tab; the rest mirrors MARKETS.
+    expect(fSections).toEqual(["ea", ...mSections]);
     expect(bonds.body.textContent).toContain("Source: Deutsche Bundesbank");
   });
 
   it("the same controls: series toggles, % CHANGE, the four ranges", async () => {
-    for (const [hash, toggles] of [["#/markets", 12], ["#/foreign-bonds", 20]]) {
+    for (const [hash, toggles] of [["#/markets", 12], ["#/foreign-bonds", 42]]) {
       const { body } = await open(hash);
       const chart = [...body.children].find((el) => el.textContent.includes("% CHANGE"));
       const buttons = [...chart.querySelectorAll("button")].map((b) => b.textContent);

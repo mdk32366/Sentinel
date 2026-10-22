@@ -3433,3 +3433,50 @@ level and spread: they are two views of one sovereign risk.
 D-0113), and the OAT-Bund spread is the euro-area stress signal that the
 monthly OECD series cannot see. `A-0028` is closed by this.
 
+
+### D-0115 - Foreign Bonds batch 2a: six keyless daily sources (CA / SE / AU / NO / ES / EA), country cards for five, an EA benchmark panel; display only
+
+**Ruling.** Trinity's spec `2026-10-22-sentinel-foreign-bonds-batch2-spec@0.3`
+§15, with rulings T-0117, T-0131 and T-0132 (2026-10-22 2:52 PM PT). Extends
+`D-0111` / `D-0113`. Does not amend `D-0114`: dimension 4 still reads exactly
+the four `FB_DIM4_CODES`, and `pipelines/composite_stress.py` is untouched.
+
+**Choice.**
+- **Six fetchers, all keyless, all fail closed** (an HTML body, an empty or
+  header-only answer, a non-2xx, or a 429 writes a `failed` run and no rows):
+
+  | Job id | Module | Source | Codes |
+  |---|---|---|---|
+  | `boc_valet` | `pipelines/boc_valet.py` | Bank of Canada Valet | `FB_CA_02Y/03Y/05Y/07Y/10Y/30Y` |
+  | `riksbank_yields` | `pipelines/riksbank_swea.py` | Riksbank SWEA | `FB_SE_02Y/05Y/07Y/10Y` |
+  | `rba_f2` | `pipelines/rba_f2.py` | RBA statistical table F2 (CSV) | `FB_AU_02Y/03Y/05Y/10Y` |
+  | `norges_yields` | `pipelines/norges_govt.py` | Norges Bank (SDMX CSV) | `FB_NO_03Y/05Y/07Y/10Y` |
+  | `bde_ti13` | `pipelines/bde_ti13.py` | Banco de España TI_1_3 (CSV) | `FB_ES_03Y/05Y/10Y/15Y` |
+  | `ecb_yc` | `pipelines/ecb_yc.py` | ECB Data Portal YC (Svensson spot) | `FB_EA_AAA_xxY`, `FB_EA_ALL_xxY` at 2/5/7/10/30 |
+
+  Codes are zero-padded like the batch 1 codes. `FOREIGN_BOND_JOBS` has
+  exactly 10 keys (T-0117).
+- **Schedule** (UTC, Mon-Fri): `ecb_yc` 07:30; `rba_f2` 08:00 and 20:00;
+  `bde_ti13` 10:30; `riksbank_yields` 16:30; `norges_yields` 16:45;
+  `boc_valet` 23:00.
+- **Freshness** (`freshness_watchdog.CHECKS`, read by the cards): CA, SE, NO,
+  ES, EA 4 days; AU 12 days (the RBA publishes F2 weekly with a lag, `F-0123`).
+- **Cards.** CAN, SWE, AUS, NOR, ESP join `FB_CARD_COUNTRY` (now 9). Slope
+  chips follow the tenors each source has: CAN 2s10s and 10s30s, where the
+  "30Y" is Valet's LONG benchmark (`A-0033`, the tooltip says "10s-long");
+  SWE and AUS 2s10s; NOR and ESP 3s10s. Only CAN shows 10s30s.
+- **ESP (T-0132).** Daily from `FB_ES_10Y`; when it is stale or missing, the
+  card falls back to the monthly OECD `IRLTLT01ESM156N` with the MONTHLY badge,
+  as `D-0113` does for the batch 1 countries. No monthly BdE 10Y code is added.
+- **EA (T-0131).** Not a country. It never enters `FB_CARD_COUNTRY`, the
+  41-country list, or the composite. FOREIGN-BONDS shows an EA benchmark panel
+  (AAA and all-issuer curves, AAA 2s10s and 10s30s in bp) above the grid.
+- **Nothing scored moves.** `tests/fixtures/d0113_scorer_golden.json` and
+  `pipelines/composite_stress.py` are byte-identical to `48b6ea0` (T-0121,
+  T-0122).
+
+**Not in this decision.** Batch 2b/2c (ECB IRS, Korea ECOS: T-0124 to T-0126),
+Switzerland, Denmark and New Zealand (`F-0122`).
+
+**Assumptions.** `A-0032` (BdE CSV), `A-0033` (Valet LONG as 30Y), `A-0034`
+(ECB data licence).

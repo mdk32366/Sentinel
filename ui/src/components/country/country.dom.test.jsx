@@ -250,13 +250,17 @@ function deLatest(over = {}) {
 
 describe("D-0113: the FB card mapping", () => {
   it("maps exactly the four FB countries to their FB codes", () => {
-    expect(FB_CARD_COUNTRY).toEqual({ DEU: "DE", GBR: "GB", JPN: "JP", FRA: "FR" });
+    // Sentinel D-0115 adds CAN/SWE/AUS/NOR/ESP; never EA (T-0131).
+    expect(FB_CARD_COUNTRY).toEqual({ DEU: "DE", GBR: "GB", JPN: "JP", FRA: "FR",
+      CAN: "CA", SWE: "SE", AUS: "AU", NOR: "NO", ESP: "ES" });
+    expect(Object.values(FB_CARD_COUNTRY)).not.toContain("EA");
     expect(fbCardCodes("JPN")).toEqual(["FB_JP_02Y", "FB_JP_05Y", "FB_JP_07Y", "FB_JP_10Y", "FB_JP_30Y"]);
     expect(fbCardCodes("ITA")).toEqual([]);
   });
 
   it("mirrors the watchdog's per-source freshness limits (freshness_watchdog.py)", () => {
-    expect(FB_MAX_AGE_DAYS).toEqual({ DE: 4, GB: 5, JP: 7, FR: 4 });
+    expect(FB_MAX_AGE_DAYS).toEqual({ DE: 4, GB: 5, JP: 7, FR: 4,
+      CA: 4, SE: 4, AU: 12, NO: 4, ES: 4, EA: 4 });
   });
 
   it("returns null for a non-FB country, so ITA is unchanged", () => {

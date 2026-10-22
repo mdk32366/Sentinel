@@ -457,6 +457,13 @@ FB_CODES = [f"FB_{c}_{t:02d}Y" for c in ("DE", "GB", "JP") for t in TENORS]
 # Sentinel D-0112: France joins, daily, from the Banque de France. Every
 # isolation guard below runs over all twenty codes.
 FB_CODES_ALL = FB_CODES + [f"FB_FR_{t:02d}Y" for t in TENORS]
+# Sentinel D-0115 (batch 2a): each source at its own tenors, plus the ECB
+# euro-area benchmark curves. The same isolation guards run over all of them.
+BATCH2A_TENORS = {"CA": (2, 3, 5, 7, 10, 30), "SE": (2, 5, 7, 10), "AU": (2, 3, 5, 10),
+                  "NO": (3, 5, 7, 10), "ES": (3, 5, 10, 15),
+                  "EA_AAA": TENORS, "EA_ALL": TENORS}
+FB_CODES_2A = [f"FB_{c}_{t:02d}Y" for c, ts in BATCH2A_TENORS.items() for t in ts]
+FB_CODES_ALL = FB_CODES_ALL + FB_CODES_2A
 
 
 class IsolationFromScoring(unittest.TestCase):
@@ -505,19 +512,27 @@ class IsolationFromScoring(unittest.TestCase):
         from pipelines.freshness_watchdog import CHECKS
         fb = [c for c in CHECKS if c["key"].startswith("foreign_bonds_")]
         self.assertEqual(sorted(c["key"] for c in fb),
-                         ["foreign_bonds_de", "foreign_bonds_fr", "foreign_bonds_gb", "foreign_bonds_jp"])
+                         ["foreign_bonds_au", "foreign_bonds_ca", "foreign_bonds_de",
+                          "foreign_bonds_ea", "foreign_bonds_es", "foreign_bonds_fr",
+                          "foreign_bonds_gb", "foreign_bonds_jp", "foreign_bonds_no",
+                          "foreign_bonds_se"])
         for c in CHECKS:
             for p in c["patterns"]:
                 owned = [code for code in FB_CODES_ALL if _like(p, code)]
                 if c["key"].startswith("foreign_bonds_"):
-                    self.assertEqual(len(owned), 5, (c["key"], p))
+                    cc = c["key"][-2:].upper()
+                    mine = [code for code in FB_CODES_ALL if code.startswith(f"FB_{cc}_")]
+                    self.assertEqual(owned, mine, (c["key"], p))
+                    self.assertGreaterEqual(len(owned), 4, (c["key"], p))
                 else:
                     self.assertEqual(owned, [], (c["key"], p))
 
 
 # ----------------------------------------------------------------------- scheduler
 class Scheduled(unittest.TestCase):
-    NAMES = {"Bundesbank_Yields", "BoE_Yields", "MOF_JGB", "BdF_TEC"}
+    NAMES = {"Bundesbank_Yields", "BoE_Yields", "MOF_JGB", "BdF_TEC",
+             # Sentinel D-0115 (batch 2a).
+             "BoC_Valet", "Riksbank_SWEA", "RBA_F2", "Norges_GOVT", "BdE_TI13", "ECB_YC"}
 
     def test_names_declared(self):
         from pipelines import scheduler as sched
@@ -532,6 +547,13 @@ class Scheduled(unittest.TestCase):
             "foreign_bonds_gb": (["BoE_Yields"], 5, "day", ["FB\\_GB\\_%"]),
             "foreign_bonds_jp": (["MOF_JGB"], 7, "day", ["FB\\_JP\\_%"]),
             "foreign_bonds_fr": (["BdF_TEC"], 4, "day", ["FB\\_FR\\_%"]),
+            # Sentinel D-0115 spec@0.3 §15 limits (T-0118).
+            "foreign_bonds_ca": (["BoC_Valet"], 4, "day", ["FB\\_CA\\_%"]),
+            "foreign_bonds_se": (["Riksbank_SWEA"], 4, "day", ["FB\\_SE\\_%"]),
+            "foreign_bonds_au": (["RBA_F2"], 12, "day", ["FB\\_AU\\_%"]),
+            "foreign_bonds_no": (["Norges_GOVT"], 4, "day", ["FB\\_NO\\_%"]),
+            "foreign_bonds_es": (["BdE_TI13"], 4, "day", ["FB\\_ES\\_%"]),
+            "foreign_bonds_ea": (["ECB_YC"], 4, "day", ["FB\\_EA\\_%"]),
         })
 
     def test_declared_by_the_modules(self):
