@@ -1,6 +1,7 @@
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 import { formatDate } from "../../lib/format";
+import { InfoTip } from "../InfoTip";
 
 /**
  * One panel of the country detail: a title, a line, and a footnote.
@@ -13,18 +14,29 @@ import { formatDate } from "../../lib/format";
  *
  * Renders nothing when there are no rows, which is what each caller's
  * `length > 0` guard did.
+ *
+ * T-0073b: an optional `tip` (with `tipTitle` for the bubble heading) wraps
+ * the title in the shared `InfoTip`, focusable and `role="tooltip"` exactly
+ * like the stat tiles above it. Without `tip` the title renders as before.
  */
 export function SeriesChart({
   title, rows, dataKey, stroke, axisWidth = 48,
-  tickFormat, tooltipFormat, tooltipLabel, footnote,
+  tickFormat, tooltipFormat, tooltipLabel, footnote, tip, tipTitle,
 }) {
   if (!rows?.length) return null;
 
   return (
     <div style={{ background: "#0F1923", border: "1px solid #1A2530", borderRadius: 2, padding: "16px 20px" }}>
-      <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 12, letterSpacing: "0.1em" }}>
-        {title}
-      </div>
+      {tip ? (
+        <InfoTip as="div" title={tipTitle ?? title} tip={tip} placement="below" align="left"
+          style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 12, letterSpacing: "0.1em", cursor: "help", outline: "none" }}>
+          <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>{title}</span>
+        </InfoTip>
+      ) : (
+        <div style={{ fontFamily: "monospace", fontSize: 11, color: "#5A6878", marginBottom: 12, letterSpacing: "0.1em" }}>
+          {title}
+        </div>
+      )}
       <ResponsiveContainer width="100%" height={160}>
         <LineChart data={rows} margin={{ top: 4, right: 8, bottom: 4, left: 8 }}>
           <CartesianGrid strokeDasharray="2 6" stroke="#0A1520" vertical={false} />

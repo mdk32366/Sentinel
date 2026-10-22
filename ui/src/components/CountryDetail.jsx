@@ -9,8 +9,11 @@ import { AnalystBrief } from "./country/AnalystBrief";
 import { CountryBondCurve } from "./country/CountryBondCurve";
 import { CountryStatCards } from "./country/CountryStatCards";
 import { LiquidationBanner } from "./country/LiquidationBanner";
+import { CDS_TIP, GOLD_TIP, RESERVES_TIP, TIC_TIP } from "../lib/countryPanelTips";
 import { SeriesChart } from "./country/SeriesChart";
 import { StressContribution } from "./country/StressContribution";
+
+
 
 /**
  * One country: holdings, gold, reserves ex-gold, spread, CDS and a brief.
@@ -103,6 +106,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `$${v.toFixed(0)}B`}
           tooltipFormat={(v) => `$${v.toFixed(1)}B`}
           tooltipLabel="Holdings"
+          tipTitle="Treasury Holdings"
+          tip={TIC_TIP}
         />
         <SeriesChart
           // D-0076: the IMF series is monthly. It said "quarters".
@@ -113,6 +118,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `${v.toFixed(0)}t`}
           tooltipFormat={(v) => `${v.toFixed(1)}t`}
           tooltipLabel="Gold"
+          tipTitle="Gold Reserves"
+          tip={GOLD_TIP}
         />
         <SeriesChart
           title={`5Y SOVEREIGN CDS (bps) — ${cdsRows.length} observations`}
@@ -122,6 +129,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `${v.toFixed(0)}`}
           tooltipFormat={(v) => `${v.toFixed(1)} bps`}
           tooltipLabel="5Y CDS"
+          tipTitle="5Y Sovereign CDS"
+          tip={CDS_TIP}
           footnote="The market's own price for insuring this sovereign's default · dimension 7 of the composite score"
         />
         <SeriesChart
@@ -133,6 +142,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `$${(v / 1000).toFixed(0)}B`}
           tooltipFormat={(v) => `$${(v / 1000).toFixed(1)}B`}
           tooltipLabel="Reserves ex-Gold"
+          tipTitle="Total Reserves ex-Gold"
+          tip={RESERVES_TIP}
           footnote="Source: IMF IFS · Includes FX, SDRs, IMF positions · Excludes gold · Monthly"
         />
       </div>
