@@ -42,7 +42,7 @@ export const SOURCES = [
     lag: "Same day (Bundesbank, MOF, Banque de France); one business day (BoE)",
     coverage: "Germany, UK, Japan, France at 2/5/7/10/30Y; France 10Y falls back to the monthly OECD series when no daily value is stored",
     metrics: ["German Bund yields (Bundesbank Svensson fitted)", "UK gilt yields (BoE GLC fitted spot)", "Japan JGB yields (MOF constant-maturity)", "French OAT yields (Banque de France TEC constant-maturity)"],
-    notes: "FOREIGN-BONDS tab (Sentinel D-0111, D-0112). Four official sources, one fetcher each, weekdays at 10:00 (MOF, Banque de France), 18:00 (Bundesbank) and 18:30 UTC (BoE). Display only: no scorer reads them. France is the Banque de France Webstat TEC (free, needs an API key, WEBSTAT_API_KEY); without a key the job skips and FR 10Y shows the monthly OECD 10Y from FRED, labelled as a fallback.",
+    notes: "FOREIGN-BONDS tab (Sentinel D-0111, D-0112). Four official sources, one fetcher each, weekdays at 10:00 (MOF, Banque de France), 18:00 (Bundesbank) and 18:30 UTC (BoE). Display only: no scorer reads them. France is the Banque de France Webstat TEC (free, needs an API key, WEBSTAT_API_KEY); without a key the job skips and the French cells show \u2014 (D-0112 amendment 1: no monthly stand-in).",
     manual: false,
   },
   {

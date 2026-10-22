@@ -21,7 +21,7 @@ import { MarketsChartPanel } from "./MarketsChartPanel";
  *   metrics       cards in grid order; an entry with `code: null` is a NO
  *                 SOURCE cell: it renders "—" and its tip, and has no toggle
  *   sourceKeys    watchdog sources for DataConfidence
- *   spreads       (latest) => [{label, val, tip, inverts?}] | null; null or
+ *   spreads       (latest) => [{label, val, tip, inverts?, unit?, display?}] | null; null or
  *                 empty hides the strip
  *   defaultActive codes drawn on the chart at first
  *   sourceNote    footer text
@@ -80,7 +80,9 @@ export function MarketsTab({
               <InfoTip title={s.label} tip={s.tip} placement="above" style={{ fontSize: 11, color: "#3A4D5C", marginRight: 8 }}>
                 <span style={{ borderBottom: "1px dashed #2A3D50", paddingBottom: 1 }}>{s.label}</span>
               </InfoTip>
-              <span style={{ fontSize: 15, color: s.val < 0 ? "#E07B5A" : "#5DB87A", fontWeight: 600 }}>{s.val > 0 ? "+" : ""}{s.val.toFixed(2)}pp</span>
+              {s.val == null
+                ? <span style={{ fontSize: 15, color: "#3A4D5C", fontWeight: 600 }}>{s.display ?? "—"}</span>
+                : <span style={{ fontSize: 15, color: s.val < 0 ? "#E07B5A" : "#5DB87A", fontWeight: 600 }}>{s.val > 0 ? "+" : ""}{s.unit === "bp" ? `${s.val.toFixed(0)}bp` : `${s.val.toFixed(2)}pp`}</span>}
               {s.inverts && s.val < 0 && <span style={{ marginLeft: 8, fontSize: 10, color: "#E07B5A88" }}>INVERTED</span>}
             </div>
           ))}

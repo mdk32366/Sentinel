@@ -3292,6 +3292,36 @@ that a script could read without a challenge. The Banque de France's new API
 is free with a registered key, so the gap can be filled rather than shown.
 The fixtures are synthetic until a key exists (`A-0029`).
 
+**D-0112 amendment 1 (2026-10-22): the monthly FR 10Y leaves FOREIGN-BONDS.**
+Matt, via Trinity, 12:16 PM PT: the Banque de France TEC10 daily is the only
+FR 10Y on this surface. The `FR_10Y_MONTHLY_FALLBACK` card, the monthly
+OAT–Bund 10Y spread and the tab's request for `IRLTLT01FRM156N` (and for
+`IRLTLT01DEM156N`, whose only use here was that spread's German leg) are
+removed, as is `sovereign_yields` from the tab's DataConfidence sources. With
+no daily French row the five FR cells show "—". This reverses rejection (c)
+above: the key is now set (`WEBSTAT_API_KEY`, 2026-10-22) and the first
+startup fill wrote 6,395 TEC rows, latest 2026-10-22. **Unchanged:** the
+FRED fetch list, the stored `IRLTLT01FRM156N` rows (no migration, no
+delete), composite D4, MARKETS, the country cards and the brief prompt's
+`SOVEREIGN_YIELD_CODES`. There was no API change: the tab reads the generic
+`/api/timeseries`, so the surface is the UI request and render. Tested by
+`T-0112` addendum 2.
+
+**D-0112 amendment 2 (2026-10-22): the OAT–Bund spread returns, daily.**
+Trinity's ruling on #102, 12:31 PM PT: amendment 1 lost the OAT–Bund spread
+along with the monthly legs, and it must come back built from daily data.
+"OAT–Bund 10Y (daily, BdF TEC − Bundesbank)" sits on the FOREIGN-BONDS spread
+strip where the monthly spread used to be. It is `FB_FR_10Y` minus `FB_DE_10Y`
+in basis points (the strip's only bp entry; the others stay in pp), computed
+by `oatBundDailySpread` only on dates where BOTH legs have an observation.
+There is no forward fill: a date missing either leg is a gap. The current
+value is the last date both legs share. If either leg's source is past the
+existing FOREIGN-BONDS freshness rule (watchdog status other than ok or
+anomaly), the entry stays in place and reads "—" rather than hiding, unlike
+the other spreads. `useSeries` also returns the per-code points (additive).
+**Unchanged:** scorer, DB, `SOVEREIGN_YIELD_CODES`, `TRACKED_CODES` and the
+API. Tested by `T-0112` addendum 2.
+
 ### D-0113 - Country cards for DEU / GBR / JPN / FRA read the daily FB curve, with a curve row, slopes and the Foreign Bonds chart; display only
 
 Amends `D-0111`'s card clause ("country cards ... byte-identical"). Trinity's
