@@ -890,6 +890,11 @@ could have seen daily.
 names an `FB_` code or the `foreign_bond` category. Changing this needs its
 own spec with a backtest.
 
+**Closed by `D-0114`** (2026-10-22): dimension 4 now reads the four
+`FB_xx_10Y` codes, with the monthly series kept only as the stale fallback,
+so nothing is double-counted. No backtest was run; the D-0114 shadow table is
+the review gate instead.
+
 ### A-0029 - The Webstat CSV export has the shape the Bank's guide documents
 
 **Relies on:** `exports/csv` on the observations table returning a
@@ -911,3 +916,47 @@ cells are simply missing until the parser is fixed.
 
 **Status:** Open (`D-0112`). Close it by capturing the first keyed response
 as a real fixture (PROVENANCE.md says which file to replace).
+
+### A-0030 - The OAT-Bund term is scored as an inclusive percentile of France's own 5-year history
+
+**Relies on:** five years of same-date FR-DE 10Y spreads being a fair
+reference for "how wide is wide" for France. The percentile is
+`count(history <= today) / len(history) * 100`. The ties-inclusive rank means
+today's own value always counts, so a new 5-year high scores 100. It needs at
+least 250 same-date observations, about a year, or the term is not scored.
+
+**Caveat, stated:** a percentile has no level. In a calm five years, a modest
+widening reads as the 100th percentile and scores the full 20. That is the
+spec's intent (relative stress), but it is not the same as "the spread is
+dangerous".
+
+**Falsified by:** the shadow table, or a later backtest, showing France
+pinned near 20 while nothing else in its row moves.
+
+**Consequence if wrong:** France's composite reads up to 20 points high.
+
+**Status:** Assumed (`D-0114`). The window and the minimum are constants
+(`SPREAD_HISTORY_DAYS`, `SPREAD_MIN_HISTORY`).
+
+### A-0031 - A level score on FIT, CMT and TEC 10Y yields is comparable across the four countries
+
+**Relies on:** `A-0027`'s premise, extended to scoring. The dim 4 level
+compares the German and UK fitted zero-coupon 10Y (FIT), the Japanese MOF
+constant-maturity par 10Y (CMT) and the French Banque de France TEC 10Y
+(CMT-like) against the US 10Y (DGS10, CMT). It then applies one bp ladder
+whose bands are 50bp wide.
+
+**Caveat, stated:** zero-coupon versus par yields differ by a few bp at 10Y,
+and more on a steep curve. The fallback (`IRLTLT`) is yet another
+construction, a benchmark-bond average. A country can cross a 50bp band by
+changing source alone. `dim4_source` records which one scored. The OAT-Bund
+term is the cleaner of the two, since both legs share a curve family.
+
+**Falsified by:** a same-day comparison of FIT/CMT and benchmark-bond yields
+at 10Y that shows gaps near a band edge.
+
+**Consequence if wrong:** a GBR or DEU level score flips 5 points on a
+source change rather than on a market move.
+
+**Status:** Assumed, not measured (`D-0114`).
+

@@ -1427,6 +1427,8 @@ measures for roughly the same countries — `A-0014`'s third objection, which
 was hypothetical while the dimension was dead and would become real the moment
 it was revived. Retiring it is the choice that does not create that problem.
 
+Amended by D-0114 (dimension 4 scored again for DEU/GBR/JPN/FRA only).
+
 ### D-0067 — The CDS ladder is re-spaced to 200 / 350 / 600
 
 **Ruling.** The owner smoothed the ladder.
@@ -3230,6 +3232,8 @@ challenge are these three. France has none, so its gap is shown, not filled
 
 Amended by D-0113 (country cards).
 
+Amended by D-0114 (the four FB_xx_10Y codes feed composite dimension 4).
+
 ### D-0112 - France on FOREIGN-BONDS: Banque de France TEC daily, the monthly OECD 10Y as a labelled fallback
 
 Supersedes `D-0111` option A for France only. Owner GO 2026-10-22 8:48 AM PT
@@ -3375,4 +3379,57 @@ JGB data MONTHLY. (d) Interpolating a missing tenor or a cross-date slope.
 
 **What forced the call.** The four cards showed a monthly 10Y that can sit
 weeks behind while the same countries' daily curves were one tab away.
+
+### D-0114 - Composite dimension 4 is scored again for DEU / GBR / JPN / FRA, on the daily FB 10Y plus an OAT-Bund percentile term
+
+**Ruling.** Trinity's spec under the owner's design GO, 2026-10-22 12:42 PM
+PT. Amends `D-0066` (dimension 4 retired) and `D-0111` (no scorer reads an
+`FB_` code), for these four countries only.
+
+**Choice.** In `pipelines/composite_stress.py`, for `FB_DIM4_CODES`
+(DEU/GBR/JPN/FRA -> `FB_xx_10Y`):
+- **Level.** The `D-0066` ladder, unchanged (vs the US 10Y: >50bp 5, >100bp
+  10, >200bp 15; +5 for >30bp widening over 120 days; cap 20), run on the
+  daily `FB_xx_10Y` while its newest row is inside the D-0113 freshness limit
+  (`FB_MAX_AGE_DAYS`, read from `freshness_watchdog.CHECKS`: DE 4, GB 5, JP 7,
+  FR 4 days). Otherwise it runs on the monthly `IRLTLT01xxM156N`, flag
+  `daily_stale`. `dim4_source` names the code used.
+- **Spread term.** Only for members of `EURO_AREA` (a literal frozenset) other
+  than the benchmark (`SPREAD_BENCHMARK = "DEU"`) with both legs, which today
+  means France. FR10Y - DE10Y on the **same date** (no forward-fill), scored
+  as the inclusive percentile of today's value within France's own trailing
+  5-year daily spread history (`A-0030`), and mapped onto dim 4's 0-20 points
+  (`pctile / 100 * 20`). A missing leg gives `spread_leg_missing`; a leg
+  outside its freshness limit gives `spread_leg_stale`; fewer than 250
+  same-date observations gives `spread_history_short`. In each case dim 4 is
+  level only.
+- **dim4 = max(level, spread)**, added to `raw_score`. Germany and the
+  non-euro countries get the level only.
+- Each FB country's row carries `dim4_score`, `dim4_source`,
+  `dim4_level_score`, `dim4_spread_score`, `dim4_spread_bp`,
+  `dim4_spread_pctile` and `dim4_flags`, declared Optional on
+  `CompositeCountry` (`F-0079`). `spread_bps` reports the source used. The
+  UI's `STRESS_DIMENSIONS` lists `dim4_score` (max 20, max raw 185).
+- **Every other country is unchanged:** measured, 0 points, no `dim4_*` keys.
+  `tests/fixtures/d0114_non_fb_baseline.json` (from master `cb0f460`) pins
+  that byte for byte.
+
+**Why scale the percentile to 20.** The spec says "mapped to 0-100". Taken
+literally, it would add up to 100 composite points from one spread and
+outweigh Treasury (50). Dim 4's cap has been 20 since before `D-0066`, so the
+0-100 percentile is scaled onto it.
+
+**Not changed.** `available_points` / `DIMENSION_MAX` and
+`ui/src/lib/coverage.js`: coverage still treats dim 4 as unscored. That
+understates available points for the four countries by 20, and should be
+fixed as a follow-up.
+
+**Rejected.** (a) The percentile against a pooled euro-area history:
+France's own history is the spec. (b) Forward-filling the Bund across
+holidays: that manufactures a spread on dates when one leg did not trade. (c) Summing
+level and spread: they are two views of one sovereign risk.
+
+**What forced the call.** The daily curves are now in production (D-0111 to
+D-0113), and the OAT-Bund spread is the euro-area stress signal that the
+monthly OECD series cannot see. `A-0028` is closed by this.
 
