@@ -56,6 +56,13 @@ def not_found(url="https://" + EXPORT):
     return urllib.error.HTTPError(url, 404, "Not Found", Message(), io.BytesIO(body))
 
 
+def rejected(url="https://" + EXPORT):
+    # Measured 2026-10-22 (F-0118): a key the gateway does not know, sent in
+    # the documented header, answers 401 - not the guide's 404.
+    body = fixture("bdf_tec_401.json")
+    return urllib.error.HTTPError(url, 401, "Unauthorized", Message(), io.BytesIO(body))
+
+
 def query_of(url):
     q = parse_qs(urlparse(url).query)
     return {k: unquote(v[0]) for k, v in q.items()}
@@ -225,6 +232,29 @@ class FailClosed(unittest.TestCase):
         self.assertIn("WEBSTAT_API_KEY", log.error_message)
         self.assertNotIn(KEY, log.error_message)
         self.assertNotIn(KEY, " ".join(result["errors"]))
+
+    def test_401_invalid_key_fails_at_once_and_names_the_key(self):
+        from pipelines.bdf_tec import PIPELINE_NAME, run_bdf_tec
+        db = session()
+        opener = HeaderOpener([("observations/exports/csv", [rejected()])])
+        sleeps = Sleeps()
+        result = run_bdf_tec(db, api_key=KEY, opener=opener, sleep=sleeps)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(len(opener.calls), 1)
+        self.assertEqual(list(sleeps), [])
+        self.assertEqual(ts_count(db), 0)
+        log = db.query(UpdateLog).one()
+        self.assertEqual((log.pipeline_name, log.status, log.records_inserted), (PIPELINE_NAME, "failed", 0))
+        self.assertIn("http=401", log.error_message)
+        self.assertIn("WEBSTAT_API_KEY", log.error_message)
+        self.assertNotIn(KEY, log.error_message)
+
+    def test_the_error_fixtures_are_the_measured_bodies(self):
+        import json
+        self.assertEqual(json.loads(fixture("bdf_tec_404.json")),
+                         {"error_code": "NotFoundResource",
+                          "message": "The requested dataset observations does not exist."})
+        self.assertEqual(json.loads(fixture("bdf_tec_401.json")), {"error": "API key is not valid"})
 
     def test_header_only_200_is_retried_then_failed(self):
         from pipelines.bdf_tec import PIPELINE_NAME, run_bdf_tec

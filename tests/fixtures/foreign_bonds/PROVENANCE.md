@@ -19,13 +19,15 @@ sources takes a key. Tests read only these files - no live network in CI.
 
 These are **not** real responses. No Webstat API key was available to the
 build (`WEBSTAT_API_KEY` is a secret Sentinel has not been given), so nothing
-was fetched. The shapes come from Banque de France's own API guide,
+was fetched. The CSV shapes come from Banque de France's own API guide,
 <https://webstat.banque-france.fr/pages/guide-migration-api/?flg=fr-fr>, read
 2026-10-22. The values are invented and sit near plausible October 2026 French
-TEC levels. Replace these with a captured response once a key exists.
+TEC levels. Replace the CSVs with a captured response once a key exists. The two
+error bodies are real (below); they need no key to capture.
 
 | Fixture | Shaped from (guide section) | Synthetic content |
 |---|---|---|
 | `bdf_tec.csv` | "Observations d'une série": fields `series_key`, `time_period`, `time_period_start`, `obs_value`; "Exports EXCEL": `exports/json` -> `exports/csv`; the guide's CSV example is `;`-separated with a header line | 40 rows: series `FM.D.FR.EUR.FR2.BB.FRMOYTEC{2,5,7,10,30}.HSTA` x 8 business days 2026-10-12..2026-10-21, values invented |
 | `bdf_tec_header_only.csv` | the header line of `bdf_tec.csv` | header only, no observation (a 200 that must fail closed) |
-| `bdf_tec_404.json` | "Authentification": the body the guide documents for an absent or unknown key, `NotFoundResource` / "The requested dataset observations does not exist." | verbatim from the guide |
+| `bdf_tec_404.json` | **Real response, not synthetic.** `GET https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/csv?where=series_key%20in%20(%22FM.D.FR.EUR.FR2.BB.FRMOYTEC10.HSTA%22)&limit=1` with **no** key, from the box 2026-10-22 16:06:29 UTC (9:06:29 AM PT): HTTP 404, 105 B, sha256 `31a2ec0e474b8cbb…`. Matches the guide's "Authentification" note: an absent or unknown key answers `NotFoundResource` / "The requested dataset observations does not exist." | bytes preserved |
+| `bdf_tec_401.json` | **Real response, not synthetic.** The same endpoint with header `Authorization: Apikey not-a-real-key`, same time: HTTP 401, 33 B, sha256 `0d81b5f645b6f216…`. The guide does not document this answer; it was measured (`F-0118`). No secret: the key sent was a made-up string | bytes preserved |
