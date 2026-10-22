@@ -16,7 +16,8 @@ Seven-dimension scoring system:
     >30% YoY M2 growth:       20 pts
     >50% YoY M2 growth:       35 pts
 
-  DIMENSION 4 — Sovereign Spread (RETIRED from scoring, D-0066)
+  DIMENSION 4 — Sovereign Spread (RETIRED from scoring, D-0066; SCORED again
+    for DEU/GBR/JPN/FRA on the daily FB 10Y plus the OAT-Bund term, D-0114)
     Measured and displayed, worth 0 pts. It scored a country more than 50bps
     ABOVE the US 10Y and held yields only for the fourteen developed markets
     in SOVEREIGN_YIELD_CODES, every one of which trades BELOW the US:
@@ -287,6 +288,152 @@ def get_sovereign_spread(db: Session, iso: str, us_10y: float | None) -> dict:
     }
 
 
+# ── D-0114: dimension 4 on the daily FB 10Y ──────────────────────────────────
+# Amends D-0066 (dim 4 retired) and D-0111 (no scorer reads FB_). For the four
+# countries with a daily official 10Y, dimension 4 is SCORED again:
+#   level  = the D-0066 ladder (vs US 10Y, +5 widening) on the daily 10Y while
+#            it is inside its D-0113 freshness limit, else on the monthly
+#            IRLTLT series, with the source recorded;
+#   spread = euro-area members with both legs only (today FRA): the 10Y minus
+#            the Bund on the SAME date, no forward-fill, as the percentile of
+#            today's value within the country's own trailing 5y daily history,
+#            0-100, mapped onto dim 4's 0-20 points (A-0030);
+#   dim4   = max(level, spread), so either signal shows and none is counted
+#            twice. Every other country keeps the D-0066 behaviour: measured,
+#            0 points, and byte-identical output.
+FB_DIM4_CODES = {"DEU": "FB_DE_10Y", "GBR": "FB_GB_10Y", "JPN": "FB_JP_10Y", "FRA": "FB_FR_10Y"}
+SPREAD_BENCHMARK = "DEU"
+EURO_AREA = frozenset({
+    "AUT", "BEL", "BGR", "HRV", "CYP", "EST", "FIN", "FRA", "DEU", "GRC", "IRL",
+    "ITA", "LVA", "LTU", "LUX", "MLT", "NLD", "PRT", "SVK", "SVN", "ESP",
+})
+DIM4_MAX = 20
+SPREAD_HISTORY_DAYS = 5 * 365
+SPREAD_MIN_HISTORY = 250  # about a year of business days before a percentile means anything
+
+
+def _fb_max_age_days():
+    # One source of truth: the watchdog's foreign_bonds_* windows, which the
+    # D-0113 cards already mirror (tests/test_d0113_card_freshness.py).
+    from pipelines.freshness_watchdog import CHECKS
+    by_cc = {c["key"][-2:].upper(): c["max_age_days"]
+             for c in CHECKS if c["key"].startswith("foreign_bonds_")}
+    return {iso: by_cc[code[3:5]] for iso, code in FB_DIM4_CODES.items()}
+
+
+FB_MAX_AGE_DAYS = _fb_max_age_days()
+
+
+def spread_percentile(current, history):
+    """Percent of ``history`` at or below ``current`` (inclusive rank), 0-100."""
+    if not history:
+        return None
+    return round(sum(1 for v in history if v <= current) / len(history) * 100, 1)
+
+
+def same_date_spread_bp(a_rows, b_rows):
+    """(date, (a-b)*100) on dates where BOTH legs printed. No forward-fill."""
+    b = {d: float(v) for d, v in b_rows}
+    return [(d, (float(v) - b[d]) * 100) for d, v in a_rows if d in b]
+
+
+def combine_dim4(level_score, spread_score):
+    return level_score if spread_score is None else max(level_score, spread_score)
+
+
+def _daily_rows(db, code, since):
+    metric = _metrics_by_code(db).get(code)
+    if not metric:
+        return []
+    q = db.query(TimeSeries.date, TimeSeries.value).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == None,
+        TimeSeries.date >= since,
+    ).order_by(TimeSeries.date.asc())
+    return [(d, float(v)) for d, v in q.all()]
+
+
+def _fresh(rows, iso, now):
+    return bool(rows) and (now.date() - rows[-1][0].date()).days <= FB_MAX_AGE_DAYS[iso]
+
+
+def _ladder(history_values, us_10y):
+    """The D-0066 ladder, unchanged, on a yield history (oldest first)."""
+    spread_bps = (history_values[-1] - us_10y) * 100
+    widening = None
+    if len(history_values) >= 2:
+        widening = spread_bps - (history_values[0] - us_10y) * 100
+    score = 0
+    if spread_bps > 200:
+        score = 15
+    elif spread_bps > 100:
+        score = 10
+    elif spread_bps > 50:
+        score = 5
+    if widening is not None and widening > 30:
+        score += 5
+    return {
+        "spread_bps": round(spread_bps, 1),
+        "widening_bps": round(widening, 1) if widening is not None else None,
+        "score": min(score, 20),
+    }
+
+
+def get_dim4_fb(db: Session, iso: str, us_10y: float | None) -> dict:
+    """D-0114 dimension 4 for a country in FB_DIM4_CODES."""
+    now = datetime.utcnow()
+    flags = []
+    own = _daily_rows(db, FB_DIM4_CODES[iso], now - timedelta(days=SPREAD_HISTORY_DAYS + 10))
+    if _fresh(own, iso, now) and us_10y is not None:
+        source = FB_DIM4_CODES[iso]
+        cutoff = now - timedelta(days=120)
+        level = _ladder([v for d, v in own if d >= cutoff], us_10y)
+    else:
+        if own:
+            flags.append("daily_stale")
+        else:
+            flags.append("daily_missing")
+        source = SOVEREIGN_YIELD_CODES[iso]
+        level = get_sovereign_spread(db, iso, us_10y)
+        if level["spread_bps"] is None:
+            source = None
+
+    spread_bp = pctile = spread_score = None
+    if iso in EURO_AREA and iso != SPREAD_BENCHMARK:
+        bench = _daily_rows(db, FB_DIM4_CODES[SPREAD_BENCHMARK],
+                            now - timedelta(days=SPREAD_HISTORY_DAYS + 10))
+        if not own or not bench:
+            flags.append("spread_leg_missing")
+        elif not (_fresh(own, iso, now) and _fresh(bench, SPREAD_BENCHMARK, now)):
+            flags.append("spread_leg_stale")
+        else:
+            series = same_date_spread_bp(own, bench)
+            if not series or not _fresh(series, iso, now):
+                flags.append("spread_leg_stale")
+            else:
+                cur_date, cur = series[-1]
+                start = cur_date - timedelta(days=SPREAD_HISTORY_DAYS)
+                hist = [v for d, v in series if d >= start]
+                if len(hist) < SPREAD_MIN_HISTORY:
+                    flags.append("spread_history_short")
+                else:
+                    spread_bp = round(cur, 1)
+                    pctile = spread_percentile(cur, hist)
+                    spread_score = round(pctile / 100 * DIM4_MAX, 1)
+
+    return {
+        "spread_bps": level["spread_bps"],
+        "widening_bps": level["widening_bps"],
+        "dim4_source": source,
+        "dim4_level_score": level["score"],
+        "dim4_spread_score": spread_score,
+        "dim4_spread_bp": spread_bp,
+        "dim4_spread_pctile": pctile,
+        "dim4_score": combine_dim4(level["score"], spread_score),
+        "dim4_flags": flags,
+    }
+
+
 # D-0065: the 5Y level at which CDS starts contributing.
 #
 # It was 100bps, which is an ordinary emerging-market spread rather than a
@@ -521,6 +668,23 @@ def get_spot_gold_trend(db: Session, months: int = 3) -> dict:
         "trend_3m_pct": round(trend_3m_pct, 2) if trend_3m_pct is not None else None,
         "rising": trend_3m_pct > 2 if trend_3m_pct is not None else None,
     }
+
+
+def composite_from_parts(parts: dict, multiplier: float):
+    """(raw_score, composite_score) from the per-dimension scores.
+
+    Each dimension enters the raw sum exactly once; the whole raw sum is then
+    scaled by the cross-asset/divergence multiplier (module docstring,
+    MULTIPLIERS). So under D-0114 a dim-4 score of 5 is worth 7.5 composite
+    points to a cross-asset (1.5x) country such as Germany and 5.0 to an
+    unmultiplied one such as the UK. Pinned by tests/test_d0114_decomposition.py.
+    """
+    tic_score, gold_score = parts["tic_score"], parts["gold_score"]
+    monetary_score, petro_score = parts["monetary_score"], parts["petro_score"]
+    cds_score, dim4_score = parts["cds_score"], parts["dim4_score"]
+    # D-0066 / D-0114: the one place the dimensions are summed (F-0076 reads this line).
+    raw_score = tic_score + gold_score + monetary_score + petro_score + cds_score + dim4_score
+    return raw_score, raw_score * multiplier
 
 
 def compute_composite_stress(db: Session) -> dict:
@@ -773,7 +937,15 @@ def compute_composite_stress(db: Session) -> dict:
         # D-0066: still MEASURED, no longer SCORED. The spread itself is
         # worth showing - Japan sitting 300bps below the US 10Y is a real
         # fact about the world - but it cannot earn points.
-        spread_data = get_sovereign_spread(db, iso, us_10y)
+        # D-0114: except the four FB countries, which are scored again.
+        dim4 = None
+        dim4_score = 0
+        if iso in FB_DIM4_CODES:
+            dim4 = get_dim4_fb(db, iso, us_10y)
+            spread_data = dim4
+            dim4_score = dim4["dim4_score"]
+        else:
+            spread_data = get_sovereign_spread(db, iso, us_10y)
         spread_bps = spread_data["spread_bps"]
         spread_widening = spread_data["widening_bps"]
 
@@ -803,8 +975,11 @@ def compute_composite_stress(db: Session) -> dict:
 
         # D-0066: spread_score is gone from the sum. See the note on
         # DIMENSION 4 above - it could not fire for any country.
-        raw_score = tic_score + gold_score + monetary_score + petro_score + cds_score
-        composite_score = raw_score * multiplier
+        raw_score, composite_score = composite_from_parts({
+            "tic_score": tic_score, "gold_score": gold_score,
+            "monetary_score": monetary_score, "petro_score": petro_score,
+            "cds_score": cds_score, "dim4_score": dim4_score,
+        }, multiplier)
 
         # Don't skip EXITED countries even if raw score is low —
         # tic_score will be set after signals block if no_tic_holdings
@@ -849,6 +1024,22 @@ def compute_composite_stress(db: Session) -> dict:
             signals.append(f"Spread: +{spread_bps:.0f}bps vs US")
         if spread_widening and spread_widening > 30:
             signals.append(f"Spread widening: +{spread_widening:.0f}bps (3M)")
+        dim4_fields = {
+            "dim4_score": dim4["dim4_score"],
+            "dim4_source": dim4["dim4_source"],
+            "dim4_level_score": dim4["dim4_level_score"],
+            "dim4_spread_score": dim4["dim4_spread_score"],
+            "dim4_spread_bp": dim4["dim4_spread_bp"],
+            "dim4_spread_pctile": dim4["dim4_spread_pctile"],
+            "dim4_flags": dim4["dim4_flags"],
+        } if dim4 is not None else {}
+        if dim4 is not None and dim4["dim4_spread_bp"] is not None:
+            signals.append(
+                f"OAT–Bund 10Y: {dim4['dim4_spread_bp']:.0f}bp "
+                f"(p{dim4['dim4_spread_pctile']:.0f} of 5y)"
+            )
+        if dim4 is not None and dim4["dim4_flags"]:
+            signals.append(f"Dim 4 on {dim4['dim4_source']}: {', '.join(dim4['dim4_flags'])}")
         if oil_signal:
             signals.append(f"🛢 {oil_signal}")
         if cds_data["signal"]:
@@ -911,6 +1102,9 @@ def compute_composite_stress(db: Session) -> dict:
             # Spread
             "spread_bps": spread_bps,
             "spread_widening_bps": spread_widening,
+            # D-0114: present only for FB_DIM4_CODES countries, so every
+            # other country's row is byte-identical to D-0066.
+            **dim4_fields,
             # Petrodollar
             "oil_dependent": oil_dependent,
             "oil_signal": oil_signal,

@@ -492,12 +492,14 @@ class IsolationFromScoring(unittest.TestCase):
         for code in FB_CODES_ALL + ["FB_"]:
             with self.subTest(code=code):
                 self.assertNotIn(code, V2_SCORER.read_text(encoding="utf-8"))
-                self.assertNotIn(code, COMPOSITE_SCORER.read_text(encoding="utf-8"))
+                # D-0114 amends D-0111: the composite scorer reads exactly the
+                # four FB_xx_10Y codes for dimension 4, and nothing else FB_.
+                # tests/test_markets_tooltips.py pins that set.
                 self.assertNotIn(code, metrics_block)
                 self.assertNotIn(code, sov)
                 self.assertNotIn(code, tracked)
         self.assertNotIn("foreign_bond", V2_SCORER.read_text(encoding="utf-8"))
-        self.assertNotIn("foreign_bond", COMPOSITE_SCORER.read_text(encoding="utf-8"))
+        self.assertNotIn('"foreign_bond"', COMPOSITE_SCORER.read_text(encoding="utf-8"))
 
     def test_the_watchdog_patterns_do_not_overlap(self):
         from pipelines.freshness_watchdog import CHECKS

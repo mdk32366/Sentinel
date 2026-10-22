@@ -4,6 +4,12 @@ Both scorers run on a fixed offline fixture (tests/composite_golden_fixture.py,
 which includes FB_ daily bond rows) with the clock frozen, and their output must
 equal the golden captured from master 0680d4b byte for byte. Regenerate only
 under a decision that changes scoring: `python tests/test_d0113_scorer_golden.py --write`.
+
+Recaptured under D-0114 (dimension 4 scored for DEU/GBR/JPN/FRA), from master
+cb0f460 plus the D-0114 scorer. The fixture's FB_ rows end in September, so at
+the frozen clock they are stale: JPN and FRA gain dim4_* fields and a
+"daily_stale" signal on the monthly fallback, and every score, tier and v2
+value is unchanged.
 """
 import json
 import sys
