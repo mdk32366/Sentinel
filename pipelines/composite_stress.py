@@ -1004,6 +1004,15 @@ def compute_composite_stress(db: Session) -> dict:
             signals.append(f"Spread: +{spread_bps:.0f}bps vs US")
         if spread_widening and spread_widening > 30:
             signals.append(f"Spread widening: +{spread_widening:.0f}bps (3M)")
+        dim4_fields = {
+            "dim4_score": dim4["dim4_score"],
+            "dim4_source": dim4["dim4_source"],
+            "dim4_level_score": dim4["dim4_level_score"],
+            "dim4_spread_score": dim4["dim4_spread_score"],
+            "dim4_spread_bp": dim4["dim4_spread_bp"],
+            "dim4_spread_pctile": dim4["dim4_spread_pctile"],
+            "dim4_flags": dim4["dim4_flags"],
+        } if dim4 is not None else {}
         if dim4 is not None and dim4["dim4_spread_bp"] is not None:
             signals.append(
                 f"OAT–Bund 10Y: {dim4['dim4_spread_bp']:.0f}bp "
@@ -1075,10 +1084,7 @@ def compute_composite_stress(db: Session) -> dict:
             "spread_widening_bps": spread_widening,
             # D-0114: present only for FB_DIM4_CODES countries, so every
             # other country's row is byte-identical to D-0066.
-            **({k: dim4[k] for k in ("dim4_score", "dim4_source", "dim4_level_score",
-                                     "dim4_spread_score", "dim4_spread_bp",
-                                     "dim4_spread_pctile", "dim4_flags")}
-               if dim4 is not None else {}),
+            **dim4_fields,
             # Petrodollar
             "oil_dependent": oil_dependent,
             "oil_signal": oil_signal,
