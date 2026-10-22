@@ -358,7 +358,7 @@ def scheduled_bdf_tec_fetch():
 
     No WEBSTAT_API_KEY: run_bdf_tec logs and returns ``skipped``; nothing raises.
     """
-    _scheduled_foreign_bonds("Banque de France TEC", run_bdf_tec, BDF_TEC_METRICS)
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["bdf"])
 
 # Sentinel D-0111. Every Foreign Bonds source, keyed by the name the manual
 # trigger takes (POST /api/fetch/foreign-bonds/{source}). Adding a source is
@@ -367,6 +367,7 @@ FOREIGN_BOND_JOBS = {
     "bundesbank": ("Bundesbank yields", run_bundesbank_yields, BUNDESBANK_METRICS),
     "boe": ("BoE yields", run_boe_yields, BOE_METRICS),
     "mof": ("MOF JGB", run_mof_jgb, MOF_METRICS),
+    "bdf": ("Banque de France TEC", run_bdf_tec, BDF_TEC_METRICS),
 }
 
 

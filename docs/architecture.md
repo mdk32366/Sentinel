@@ -294,15 +294,19 @@ fallback stays on `sovereign_yields`.
 updated, latest_date}`. A failed run answers `failed` with zero counts, never
 a 500. `?backfill=1` forces the five-year read; without it, the backfill
 happens only when the series is empty. The sources are the keys of
-`scheduler.FOREIGN_BOND_JOBS` (`bundesbank`, `boe`, `mof`): adding a source is
+`scheduler.FOREIGN_BOND_JOBS` (`bundesbank`, `boe`, `mof`, `bdf`): adding a source is
 one line there, and an unknown name is a 404. The route sits behind Basic
 Auth, and the proof cookie is read-only (403). ADMIN has one button per
 source. `scheduled_startup_fetches` runs every `FOREIGN_BOND_JOBS` entry after
 FRED/TIC/gold/stress, so a redeploy fills the tab without waiting for the
 weekday crons.
 
-**Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb` and
-`_jp` (patterns `FB\_DE\_%` etc.). France stays on `sovereign_yields`.
+**Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb`,
+`_jp` and `_fr` (patterns `FB\_DE\_%` etc.). France's daily TEC comes from
+the Banque de France Webstat v2.1 API as the `bdf` `FOREIGN_BOND_JOBS` entry
+(D-0112): it needs `WEBSTAT_API_KEY`, logs and skips when the key is missing,
+and `_fr` goes stale after 4 days. Only the monthly French 10Y fallback stays
+on `sovereign_yields`.
 
 **UI.** `pages/ForeignBondsTab.jsx` renders `pages/MarketsTab.jsx` with
 `foreignBondCells(latest)` in a 5-column grid (20 daily cells; FR 10Y swaps to

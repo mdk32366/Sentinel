@@ -95,6 +95,8 @@ export const MANUAL_TRIGGERS = [
     desc: "Force the gilt spot-curve pull. Add ?backfill=1 for the archive zip (D-0111)." },
   { name: "Foreign Bonds: MOF", endpoint: "/fetch/foreign-bonds/mof", method: "POST",
     desc: "Force the JGB constant-maturity pull. Add ?backfill=1 for jgbcm_all.csv (D-0111)." },
+  { name: "Foreign Bonds: Banque de France", endpoint: "/fetch/foreign-bonds/bdf", method: "POST",
+    desc: "Force the French OAT TEC pull (Webstat). Add ?backfill=1 for five years. No WEBSTAT_API_KEY answers skipped (D-0112)." },
   { name: "Sovereign CDS", endpoint: "/cds/fetch", method: "POST",
     desc: "Force the CDS scrape." },
   { name: "Composite Snapshot", endpoint: "/snapshot/composite", method: "POST",

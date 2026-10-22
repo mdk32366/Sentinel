@@ -106,7 +106,7 @@ class Routing(Base_):
     async def test_every_registered_source_is_one_line_in_the_table(self):
         self.assertRouteExists()
         from pipelines.scheduler import FOREIGN_BOND_JOBS
-        self.assertEqual(set(FOREIGN_BOND_JOBS), {"bundesbank", "boe", "mof"})
+        self.assertEqual(set(FOREIGN_BOND_JOBS), {"bundesbank", "boe", "mof", "bdf"})
 
 
 class FailsClosed(Base_):
@@ -165,6 +165,62 @@ class FailsClosed(Base_):
         self.assertEqual(response.status_code, 200, response.text)
         self.assertEqual(response.json(), {"status": "success", "inserted": 40,
                                            "updated": 0, "latest_date": "2026-10-21"})
+
+
+class BdfManualFetch(Base_):
+    """D-0112 follow-up: Banque de France TEC on the manual trigger (T-0112 addendum)."""
+    def setUp(self):
+        engine = create_engine("sqlite://", connect_args={"check_same_thread": False},
+                               poolclass=StaticPool)
+        Base.metadata.create_all(engine)
+        self.Session = sessionmaker(bind=engine)
+
+    async def test_bdf_without_a_key_is_skipped_not_a_crash(self):
+        self.assertRouteExists()
+        import pipelines.bdf_tec as bdf
+
+        def no_request(*a, **k):
+            raise AssertionError("no request without a key")
+
+        with mock.patch("pipelines.scheduler.get_session", side_effect=self.Session), \
+                mock.patch.object(bdf, "fetch_bytes", no_request), \
+                mock.patch.object(bdf.settings, "webstat_api_key", ""):
+            response = await _send("POST", "/api/fetch/foreign-bonds/bdf", headers=_basic())
+        self.assertEqual(response.status_code, 200, response.text)
+        body = response.json()
+        self.assertIn(body["status"], {"skipped", "failed"})
+        self.assertNotEqual(body["status"], "success")
+        self.assertEqual((body["inserted"], body["updated"], body["latest_date"]), (0, 0, None))
+        self.assertEqual(self.Session().query(TimeSeries).count(), 0)
+
+    async def test_a_good_bdf_run_reports_its_counts(self):
+        """The positive twin: with a key, the fixture CSV lands through the route."""
+        self.assertRouteExists()
+        import pipelines.bdf_tec as bdf
+        from pipelines.foreign_bond_common import fetch_bytes as real_fetch
+        seen = []
+
+        def opener(url, headers=None):
+            seen.append(headers or {})
+            return _Resp((FIX / "bdf_tec.csv").read_bytes())
+
+        fetch = functools.partial(real_fetch, opener=opener, sleep=lambda s: None)
+        with mock.patch("pipelines.scheduler.get_session", side_effect=self.Session), \
+                mock.patch.object(bdf, "fetch_bytes", fetch), \
+                mock.patch.object(bdf.settings, "webstat_api_key", "test-webstat-key-not-real"):
+            response = await _send("POST", "/api/fetch/foreign-bonds/bdf?backfill=1",
+                                   headers=_basic())
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {"status": "success", "inserted": 40,
+                                           "updated": 0, "latest_date": "2026-10-21"})
+        self.assertEqual(seen[0].get("Authorization"), "Apikey test-webstat-key-not-real")
+
+    def test_the_bdf_cron_runs_the_table_entry(self):
+        from pipelines import scheduler
+        self.assertIn("bdf", scheduler.FOREIGN_BOND_JOBS)
+        with mock.patch.object(scheduler, "_scheduled_foreign_bonds") as job:
+            scheduler.scheduled_bdf_tec_fetch()
+        job.assert_called_once_with(*scheduler.FOREIGN_BOND_JOBS["bdf"])
 
 
 class StartupFill(unittest.TestCase):
