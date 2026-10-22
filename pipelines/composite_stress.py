@@ -670,6 +670,20 @@ def get_spot_gold_trend(db: Session, months: int = 3) -> dict:
     }
 
 
+def composite_from_parts(parts: dict, multiplier: float):
+    """(raw_score, composite_score) from the per-dimension scores.
+
+    Each dimension enters the raw sum exactly once; the whole raw sum is then
+    scaled by the cross-asset/divergence multiplier (module docstring,
+    MULTIPLIERS). So under D-0114 a dim-4 score of 5 is worth 7.5 composite
+    points to a cross-asset (1.5x) country such as Germany and 5.0 to an
+    unmultiplied one such as the UK. Pinned by tests/test_d0114_decomposition.py.
+    """
+    raw = (parts["tic_score"] + parts["gold_score"] + parts["monetary_score"]
+           + parts["petro_score"] + parts["cds_score"] + parts["dim4_score"])
+    return raw, raw * multiplier
+
+
 def compute_composite_stress(db: Session) -> dict:
     """
     Compute five-dimension composite stress scores for all countries.
@@ -958,8 +972,11 @@ def compute_composite_stress(db: Session) -> dict:
 
         # D-0066: spread_score is gone from the sum. See the note on
         # DIMENSION 4 above - it could not fire for any country.
-        raw_score = tic_score + gold_score + monetary_score + petro_score + cds_score + dim4_score
-        composite_score = raw_score * multiplier
+        raw_score, composite_score = composite_from_parts({
+            "tic_score": tic_score, "gold_score": gold_score,
+            "monetary_score": monetary_score, "petro_score": petro_score,
+            "cds_score": cds_score, "dim4_score": dim4_score,
+        }, multiplier)
 
         # Don't skip EXITED countries even if raw score is low —
         # tic_score will be set after signals block if no_tic_holdings
