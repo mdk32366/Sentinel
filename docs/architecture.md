@@ -301,8 +301,12 @@ source. `scheduled_startup_fetches` runs every `FOREIGN_BOND_JOBS` entry after
 FRED/TIC/gold/stress, so a redeploy fills the tab without waiting for the
 weekday crons.
 
-**Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb` and
-`_jp` (patterns `FB\_DE\_%` etc.). France stays on `sovereign_yields`.
+**Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb`,
+`_jp` and `_fr` (patterns `FB\_DE\_%` etc.). France's daily TEC comes from
+the Banque de France Webstat v2.1 API as the `bdf` `FOREIGN_BOND_JOBS` entry
+(D-0112): it needs `WEBSTAT_API_KEY`, logs and skips when the key is missing,
+and `_fr` goes stale after 4 days. Only the monthly French 10Y fallback stays
+on `sovereign_yields`.
 
 **UI.** `pages/ForeignBondsTab.jsx` renders `pages/MarketsTab.jsx` with
 `foreignBondCells(latest)` in a 5-column grid (20 daily cells; FR 10Y swaps to
