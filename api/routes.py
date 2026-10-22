@@ -24,6 +24,7 @@ from api.schemas import (
     UpdateLogResponse,
     HealthResponse,
 )
+from pipelines import scheduler as scheduler_module
 from pipelines.scheduler import scheduler
 from pipelines.cds_fetcher import (
     run_cds_fetch,
@@ -266,6 +267,23 @@ def trigger_fred_fetch(db: Session = Depends(get_db)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/fetch/foreign-bonds/{source}")
+def trigger_foreign_bonds_fetch(source: str, backfill: bool = Query(False)):
+    """Sentinel D-0111: run one Foreign Bonds source now.
+
+    The same wrapper the weekday cron runs. ``?backfill=1`` reads five years;
+    otherwise only the current window. Answers {status, inserted, updated,
+    latest_date}; a failed run is ``failed`` with zero counts, never a 500.
+    Writes need Basic Auth; the proof cookie is read-only (403).
+    """
+    if source not in scheduler_module.FOREIGN_BOND_JOBS:
+        raise HTTPException(status_code=404, detail=f"unknown foreign-bond source: {source}")
+    label, run, metrics = scheduler_module.FOREIGN_BOND_JOBS[source]
+    return scheduler_module._scheduled_foreign_bonds(
+        label, run, metrics, backfill=True if backfill else None
+    )
 
 
 @router.get("/holdings", response_model=HoldingsResponse)

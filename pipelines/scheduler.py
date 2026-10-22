@@ -307,49 +307,78 @@ def scheduled_gold_price_fetch():
             db.close()
 
 
-def _scheduled_foreign_bonds(label, run, metrics):
-    """Sentinel D-0111. One wrapper body for the three Foreign Bonds jobs.
+def _scheduled_foreign_bonds(label, run, metrics, backfill=None):
+    """Sentinel D-0111. One wrapper body for every Foreign Bonds job.
 
-    The first run against an empty series backfills five years (Bundesbank
-    startPeriod, BoE archive zip, MOF jgbcm_all.csv); every later run reads
-    only the current window.
+    ``backfill=None`` (the scheduler) backfills five years only when no row of
+    the source is stored yet (Bundesbank startPeriod, BoE archive zip, MOF
+    jgbcm_all.csv); every later run reads only the current window. The manual
+    trigger can force it with ``backfill=True``.
+
+    Returns {status, inserted, updated, latest_date}. Never raises: a failure
+    is logged and answered as ``failed`` with zero counts.
     """
     db = None
     try:
         db = get_session()
-        from database.models import Metric, TimeSeries
-        codes = [m["code"] for m in metrics]
-        stored = (
-            db.query(TimeSeries.id)
-            .join(Metric, Metric.id == TimeSeries.metric_id)
-            .filter(Metric.code.in_(codes))
-            .first()
-        )
-        result = run(db, backfill=stored is None)
+        if backfill is None:
+            from database.models import Metric, TimeSeries
+            codes = [m["code"] for m in metrics]
+            stored = (
+                db.query(TimeSeries.id)
+                .join(Metric, Metric.id == TimeSeries.metric_id)
+                .filter(Metric.code.in_(codes))
+                .first()
+            )
+            backfill = stored is None
+        result = run(db, backfill=backfill)
         logger.info(
             f"{label}: {result['status']} - {result['inserted']} inserted, "
             f"{result['updated']} updated, latest={result.get('latest_date')}"
         )
+        return {
+            "status": result["status"],
+            "inserted": result["inserted"],
+            "updated": result["updated"],
+            "latest_date": result.get("latest_date"),
+        }
     except Exception as e:
         logger.error(f"Scheduled {label} fetch failed: {e}", exc_info=True)
+        return {"status": "failed", "inserted": 0, "updated": 0, "latest_date": None}
     finally:
         if db is not None:
             db.close()
 
 
+# Sentinel D-0111. Every Foreign Bonds source, keyed by the name the manual
+# trigger takes (POST /api/fetch/foreign-bonds/{source}). Adding a source is
+# one line here: (log label, run function, METRICS).
+FOREIGN_BOND_JOBS = {
+    "bundesbank": ("Bundesbank yields", run_bundesbank_yields, BUNDESBANK_METRICS),
+    "boe": ("BoE yields", run_boe_yields, BOE_METRICS),
+    "mof": ("MOF JGB", run_mof_jgb, MOF_METRICS),
+}
+
+
+def run_foreign_bond_source(source, backfill=None):
+    """The manual trigger's entry point. KeyError for an unknown source."""
+    label, run, metrics = FOREIGN_BOND_JOBS[source]
+    return _scheduled_foreign_bonds(label, run, metrics, backfill=backfill)
+
+
 def scheduled_bundesbank_yields_fetch():
     """Bundesbank Svensson Bund yields, weekdays 18:00 UTC (Sentinel D-0111)."""
-    _scheduled_foreign_bonds("Bundesbank yields", run_bundesbank_yields, BUNDESBANK_METRICS)
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["bundesbank"])
 
 
 def scheduled_boe_yields_fetch():
     """BoE GLC nominal spot curve, weekdays 18:30 UTC (Sentinel D-0111)."""
-    _scheduled_foreign_bonds("BoE yields", run_boe_yields, BOE_METRICS)
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["boe"])
 
 
 def scheduled_mof_jgb_fetch():
     """MOF JGB constant-maturity yields, weekdays 10:00 UTC (Sentinel D-0111)."""
-    _scheduled_foreign_bonds("MOF JGB", run_mof_jgb, MOF_METRICS)
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["mof"])
 
 
 def scheduled_treasury_auctions_fetch():
@@ -395,8 +424,10 @@ def scheduled_freshness_check():
 
 
 def scheduled_startup_fetches():
-    """One-shot cold-start FRED → TIC → gold → stress. Must not raise."""
-    logger.info("Running startup FRED/TIC/gold/stress fetches in background")
+    """One-shot cold-start FRED → TIC → gold → stress, then every Foreign
+    Bonds source (D-0111), so a redeploy fills the FOREIGN-BONDS tab without
+    waiting for the weekday crons. Must not raise."""
+    logger.info("Running startup FRED/TIC/gold/stress/foreign-bond fetches in background")
     for name, func in (
         ("FRED", scheduled_fred_fetch),
         ("TIC", scheduled_treasury_fetch),
@@ -407,6 +438,11 @@ def scheduled_startup_fetches():
             func()
         except Exception as e:
             logger.error(f"Startup {name} fetch failed: {e}", exc_info=True)
+    for source, job in FOREIGN_BOND_JOBS.items():
+        try:
+            _scheduled_foreign_bonds(*job)
+        except Exception as e:
+            logger.error(f"Startup foreign bonds {source} fetch failed: {e}", exc_info=True)
 
 
 def start_scheduler():
