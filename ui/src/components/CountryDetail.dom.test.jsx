@@ -147,8 +147,8 @@ describe("D-0113: the country card embeds the Foreign Bonds chart", () => {
     expect(screen.getByText("% CHANGE").getAttribute("aria-pressed")).toBe("true");
   });
 
-  it("ITA has no chart and no FB request", async () => {
-    render(<CountryDetail iso="ITA" latestAll={{ DGS10: 4.2 }} now={D0113_NOW} />);
+  it("BEL has no chart and no FB request (ITA joined in D-0116)", async () => {
+    render(<CountryDetail iso="BEL" latestAll={{ DGS10: 4.2 }} now={D0113_NOW} />);
     await waitFor(() => expect(screen.getByText("Spread vs US 10Y")).toBeTruthy());
     expect(screen.queryByTestId("country-bond-chart")).toBeNull();
     expect(screen.queryByText("% CHANGE")).toBeNull();

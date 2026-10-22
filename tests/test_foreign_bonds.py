@@ -464,6 +464,10 @@ BATCH2A_TENORS = {"CA": (2, 3, 5, 7, 10, 30), "SE": (2, 5, 7, 10), "AU": (2, 3, 
                   "EA_AAA": TENORS, "EA_ALL": TENORS}
 FB_CODES_2A = [f"FB_{c}_{t:02d}Y" for c, ts in BATCH2A_TENORS.items() for t in ts]
 FB_CODES_ALL = FB_CODES_ALL + FB_CODES_2A
+# Sentinel D-0116 (batch 2b-1): PL auctions, IT BMK, and the ECB IRS monthly 10Y.
+FB_CODES_2B1 = ([f"FB_PL_{t:02d}Y" for t in (2, 5, 10)] + [f"FB_IT_{t:02d}Y" for t in (3, 5, 10, 30)]
+                + [f"FB_{c}_10Y_ECB_M" for c in ("IT", "ES", "GR", "PT", "PL")])
+FB_CODES_ALL = FB_CODES_ALL + FB_CODES_2B1
 
 
 class IsolationFromScoring(unittest.TestCase):
@@ -514,16 +518,24 @@ class IsolationFromScoring(unittest.TestCase):
         self.assertEqual(sorted(c["key"] for c in fb),
                          ["foreign_bonds_au", "foreign_bonds_ca", "foreign_bonds_de",
                           "foreign_bonds_ea", "foreign_bonds_es", "foreign_bonds_fr",
-                          "foreign_bonds_gb", "foreign_bonds_jp", "foreign_bonds_no",
-                          "foreign_bonds_se"])
+                          "foreign_bonds_gb", "foreign_bonds_it", "foreign_bonds_jp",
+                          "foreign_bonds_no", "foreign_bonds_pl", "foreign_bonds_se"])
+        # D-0116: the ECB IRS monthly fallbacks have their own check, outside
+        # the per-country prefix, and own exactly the five _ECB_M codes.
+        irs = [c for c in CHECKS if c["key"] == "ecb_irs_monthly"]
+        self.assertEqual(len(irs), 1)
         for c in CHECKS:
             for p in c["patterns"]:
                 owned = [code for code in FB_CODES_ALL if _like(p, code)]
                 if c["key"].startswith("foreign_bonds_"):
                     cc = c["key"][-2:].upper()
-                    mine = [code for code in FB_CODES_ALL if code.startswith(f"FB_{cc}_")]
+                    mine = [code for code in FB_CODES_ALL
+                            if code.startswith(f"FB_{cc}_") and not code.endswith("_ECB_M")]
                     self.assertEqual(owned, mine, (c["key"], p))
-                    self.assertGreaterEqual(len(owned), 4, (c["key"], p))
+                    # PL has three tenors (D-0116); every other country four or more.
+                    self.assertGreaterEqual(len(owned), 3, (c["key"], p))
+                elif c["key"] == "ecb_irs_monthly":
+                    self.assertEqual(owned, [code for code in FB_CODES_ALL if code.endswith("_ECB_M")])
                 else:
                     self.assertEqual(owned, [], (c["key"], p))
 
@@ -532,7 +544,9 @@ class IsolationFromScoring(unittest.TestCase):
 class Scheduled(unittest.TestCase):
     NAMES = {"Bundesbank_Yields", "BoE_Yields", "MOF_JGB", "BdF_TEC",
              # Sentinel D-0115 (batch 2a).
-             "BoC_Valet", "Riksbank_SWEA", "RBA_F2", "Norges_GOVT", "BdE_TI13", "ECB_YC"}
+             "BoC_Valet", "Riksbank_SWEA", "RBA_F2", "Norges_GOVT", "BdE_TI13", "ECB_YC",
+             # Sentinel D-0116 (batch 2b-1).
+             "MinFin_PL", "BdI_BMK", "ECB_IRS"}
 
     def test_names_declared(self):
         from pipelines import scheduler as sched
@@ -552,8 +566,12 @@ class Scheduled(unittest.TestCase):
             "foreign_bonds_se": (["Riksbank_SWEA"], 4, "day", ["FB\\_SE\\_%"]),
             "foreign_bonds_au": (["RBA_F2"], 12, "day", ["FB\\_AU\\_%"]),
             "foreign_bonds_no": (["Norges_GOVT"], 4, "day", ["FB\\_NO\\_%"]),
-            "foreign_bonds_es": (["BdE_TI13"], 4, "day", ["FB\\_ES\\_%"]),
+            # D-0116: %Y so the ES card check does not own FB_ES_10Y_ECB_M.
+            "foreign_bonds_es": (["BdE_TI13"], 4, "day", ["FB\\_ES\\_%Y"]),
             "foreign_bonds_ea": (["ECB_YC"], 4, "day", ["FB\\_EA\\_%"]),
+            # Sentinel D-0116 (batch 2b-1).
+            "foreign_bonds_pl": (["MinFin_PL"], 40, "day", ["FB\\_PL\\_%Y"]),
+            "foreign_bonds_it": (["BdI_BMK"], 45, "month", ["FB\\_IT\\_%Y"]),
         })
 
     def test_declared_by_the_modules(self):

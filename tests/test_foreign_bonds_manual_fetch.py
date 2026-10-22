@@ -140,17 +140,18 @@ class Routing(Base_):
     async def test_an_unknown_source_is_404(self):
         self.assertRouteExists()
         with mock.patch("pipelines.scheduler._scheduled_foreign_bonds") as job:
-            response = await _send("POST", "/api/fetch/foreign-bonds/ecb_irs", headers=_basic())
+            response = await _send("POST", "/api/fetch/foreign-bonds/nz_rbnz", headers=_basic())
         self.assertEqual(response.status_code, 404)
         job.assert_not_called()
 
     async def test_every_registered_source_is_one_line_in_the_table(self):
         self.assertRouteExists()
         from pipelines.scheduler import FOREIGN_BOND_JOBS
-        # T-0117 (Sentinel D-0115, amended): exactly ten sources.
+        # T-0117 (Sentinel D-0115, amended by D-0116): exactly thirteen sources.
         self.assertEqual(set(FOREIGN_BOND_JOBS), {"bundesbank", "boe", "mof", "bdf",
-                                                  "boc", "riksbank", "rba", "norges", "bde", "ecb"})
-        self.assertEqual(len(FOREIGN_BOND_JOBS), 10)
+                                                  "boc", "riksbank", "rba", "norges", "bde", "ecb",
+                                                  "minfin_auctions", "bdi_bmk", "ecb_irs"})
+        self.assertEqual(len(FOREIGN_BOND_JOBS), 13)
 
 
 class FailsClosed(Base_):

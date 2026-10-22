@@ -52,6 +52,11 @@ EXPECTED_CRON_JOBS = {
     "boc_valet",
     "ecb_yc",
     "bde_ti13",
+    # Sentinel D-0116 (batch 2b-1), UTC (T-0141).
+    "minfin_auctions",
+    "bdi_bmk",
+    "ecb_irs",
+    "ecb_irs_mondays",
 }
 EXPECTED_ONE_SHOTS = {"startup_fetches", "startup_cds_fetch"}
 
