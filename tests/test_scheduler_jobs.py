@@ -43,6 +43,8 @@ EXPECTED_CRON_JOBS = {
     "mof_jgb",
     "bundesbank_yields",
     "boe_yields",
+    # Sentinel D-0112: Banque de France TEC, weekdays 10:00 UTC.
+    "bdf_tec",
 }
 EXPECTED_ONE_SHOTS = {"startup_fetches", "startup_cds_fetch"}
 

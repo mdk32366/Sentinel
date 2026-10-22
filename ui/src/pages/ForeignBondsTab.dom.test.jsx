@@ -5,10 +5,12 @@
  * AC-3: same component, same section order (DataConfidence -> StatCard grid ->
  *       chart panel with toggles, % CHANGE and ranges -> spread strip ->
  *       source footer), same interactions, hash route and Back.
- * AC-5: NO SOURCE cells render "—" with the reason; the monthly French 10Y is
- *       badged MONTHLY; FIT / CMT / MON named in the tips.
+ * AC-5: FIT / CMT / MON named in the tips.
  * §7.7: a spread with a stale leg is hidden, not quoted.
- * §8:   20 cards = 15 values + FR 10Y monthly + 4 NO SOURCE.
+ * D-0112: 20 cards, all daily: France from the Banque de France TEC replaces
+ *       the four NO SOURCE cells. With no daily French 10Y the FR 10Y card
+ *       falls back to the monthly OECD series, badged MONTHLY and labelled a
+ *       fallback; the footer reads "Source: Banque de France, updated <date>".
  *
  * Every network call is stubbed.
  */
@@ -16,11 +18,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import App from "../App";
-import { FOREIGN_BOND_METRICS, SOVEREIGN_YIELD_CODES, TABS } from "../lib/constants";
+import {
+  FOREIGN_BOND_METRICS, FR_10Y_MONTHLY_FALLBACK, SOVEREIGN_YIELD_CODES, TABS, foreignBondCells,
+} from "../lib/constants";
 import { parseRoute } from "../lib/countryRoute";
 import { ForeignBondsTab } from "./ForeignBondsTab";
 
 let freshness;
+let omit;
 // Spelled through the shared map: constants.test.js forbids the literal codes
 // anywhere but constants.js.
 const FRA = SOVEREIGN_YIELD_CODES.FRA;
@@ -32,9 +37,10 @@ function timeseries(url) {
   const level = (code) => ({
     FB_DE_02Y: 3.08, FB_DE_10Y: 3.47, FB_DE_30Y: 3.86,
     FB_GB_02Y: 4.72, FB_GB_10Y: 5.384, FB_JP_10Y: 2.927, FB_JP_30Y: 3.992,
+    FB_FR_02Y: 2.22, FB_FR_10Y: 3.35, FB_FR_30Y: 4.26,
     DGS10: 4.1, DGS2: 3.6, [FRA]: 4.44, [DEU]: 3.5,
   }[code] ?? 2.5);
-  return codes.flatMap((code) => [
+  return codes.filter((code) => !omit.has(code)).flatMap((code) => [
     { metric_code: code, date: "2026-09-21T00:00:00", value: level(code) - 0.1 },
     { metric_code: code, date: "2026-10-20T00:00:00", value: level(code) },
   ]);
@@ -51,12 +57,13 @@ function stubResponse(url) {
 const src = (key, status = "ok") => ({ key, label: key, status, age_days: 1, max_age_days: 5, note: "" });
 const allFresh = () => ({
   counts: {},
-  sources: ["foreign_bonds_de", "foreign_bonds_gb", "foreign_bonds_jp", "sovereign_yields",
+  sources: ["foreign_bonds_de", "foreign_bonds_gb", "foreign_bonds_jp", "foreign_bonds_fr", "sovereign_yields",
     "treasury_yields", "oil", "dollar_index", "gold_price"].map((k) => src(k)),
 });
 
 beforeEach(() => {
   freshness = allFresh();
+  omit = new Set();
   vi.stubGlobal("fetch", vi.fn((url) => Promise.resolve({
     ok: true, status: 200, statusText: "OK",
     json: () => Promise.resolve(stubResponse(String(url))),
@@ -89,14 +96,16 @@ function sections(body) {
   });
 }
 
-describe("§8 / AC-5: the twenty cells", () => {
-  it("renders 20 cards: 15 values, FR 10Y monthly, 4 NO SOURCE", async () => {
+const FR_DAILY = [2, 5, 7, 10, 30].map((t) => `FB_FR_${String(t).padStart(2, "0")}Y`);
+
+describe("§8 / AC-5 / D-0112: the twenty cells", () => {
+  it("renders 20 daily cards: DE, GB, JP and FR from the Banque de France", async () => {
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
     const grid = [...container.querySelectorAll("div")].find((d) => d.style.display === "grid");
     expect(grid.children.length).toBe(20);
     expect(FOREIGN_BOND_METRICS.length).toBe(20);
-    expect(FOREIGN_BOND_METRICS.filter((m) => m.code?.startsWith("FB_")).length).toBe(15);
+    expect(FOREIGN_BOND_METRICS.filter((m) => m.code?.startsWith("FB_")).length).toBe(20);
     expect(grid.style.gridTemplateColumns).toBe("repeat(5, 1fr)");
 
     const cards = [...grid.children];
@@ -112,45 +121,74 @@ describe("§8 / AC-5: the twenty cells", () => {
     expect(cards[13].textContent).toContain("2.93%");
 
     const fr = cards.slice(15);
-    const dash = fr.filter((c) => c.textContent.includes("—"));
-    expect(dash.map(label)).toEqual(["FR 2Y", "FR 5Y", "FR 7Y", "FR 30Y"]);
+    // No NO SOURCE cell is left, and the daily French 10Y is shown, not the monthly.
+    expect(fr.filter((c) => c.textContent.includes("—")).length).toBe(0);
+    expect(fr[0].textContent).toContain("2.22%");
+    expect(fr[3].textContent).toContain("3.35%");
+    expect(fr[4].textContent).toContain("4.26%");
+    expect(cards.filter((c) => c.textContent.includes("MONTHLY")).length).toBe(0);
+    expect(container.textContent).toContain("Source: Banque de France, updated 2026-10-20");
+  });
+
+  it("with no daily French 10Y, FR 10Y falls back to the monthly OECD series, labelled", async () => {
+    omit = new Set(FR_DAILY);
+    const { container } = render(<ForeignBondsTab />);
+    await settle(container);
+    const grid = [...container.querySelectorAll("div")].find((d) => d.style.display === "grid");
+    const cards = [...grid.children];
+    expect(cards.length).toBe(20);
+    const fr = cards.slice(15);
+    expect(fr[3].querySelector("span").textContent).toBe("FR 10Y");
     expect(fr[3].textContent).toContain("MONTHLY");
     expect(fr[3].textContent).toContain("4.44%");
-    // MONTHLY appears on no other card.
     expect(cards.filter((c) => c.textContent.includes("MONTHLY")).length).toBe(1);
+    // The other four French cells have no fallback: "—", never a monthly number.
+    expect(fr.filter((c) => c.textContent.includes("—")).length).toBe(4);
+    expect(container.textContent).not.toContain("Source: Banque de France, updated");
+    expect(container.textContent).toContain("Source: Banque de France, not yet available");
+  });
+
+  it("the fallback is only the 10Y, and only while the daily 10Y is missing", () => {
+    expect(foreignBondCells({ FB_FR_10Y: 3.35 }).find((m) => m.label === "FR 10Y").code).toBe("FB_FR_10Y");
+    const fb = foreignBondCells({}).find((m) => m.label === "FR 10Y");
+    expect(fb).toBe(FR_10Y_MONTHLY_FALLBACK);
+    expect(fb.code).toBe(FRA);
+    expect(fb.badge).toBe("MONTHLY");
+    expect(fb.tip).toMatch(/^FALLBACK\./);
+    expect(foreignBondCells({}).filter((m) => m.code === FRA).length).toBe(1);
+    expect(foreignBondCells({}).length).toBe(20);
   });
 
   it("every tip names what the number is and where it comes from", () => {
     for (const m of FOREIGN_BOND_METRICS) {
       expect(m.scored).toBe(false);
-      if (m.code?.startsWith("FB_DE_")) {
+      if (m.code.startsWith("FB_DE_")) {
         expect(m.tip).toContain("FIT");
         expect(m.tip).toMatch(/BBSIS\/D\.I\.ZST\.ZI\.EUR\.S1311\.B\.A604\.R\d\dXX/);
-      } else if (m.code?.startsWith("FB_GB_")) {
+      } else if (m.code.startsWith("FB_GB_")) {
         expect(m.tip).toContain("FIT");
         expect(m.tip).toContain("4. spot curve");
-      } else if (m.code?.startsWith("FB_JP_")) {
+      } else if (m.code.startsWith("FB_JP_")) {
         expect(m.tip).toContain("CMT");
         expect(m.tip).toContain("jgbcm.csv");
-      } else if (m.code === FRA) {
-        expect(m.kind).toBe("MON");
-        expect(m.badge).toBe("MONTHLY");
-        expect(m.tip).toContain(FRA);
       } else {
-        expect(m.code).toBeNull();
-        expect(m.kind).toBe("NONE");
-        expect(m.tip).toMatch(/^NO SOURCE\./);
-        expect(m.tip).toContain("Cloudflare");
+        expect(m.code).toMatch(/^FB_FR_\d\dY$/);
+        expect(m.kind).toBe("CMT");
+        expect(m.tip).toContain("Banque de France");
+        expect(m.tip).toMatch(/FM\.D\.FR\.EUR\.FR2\.BB\.FRMOYTEC\d+\.HSTA/);
       }
     }
+    expect(FR_10Y_MONTHLY_FALLBACK.kind).toBe("MON");
+    expect(FR_10Y_MONTHLY_FALLBACK.scored).toBe(false);
+    expect(FR_10Y_MONTHLY_FALLBACK.tip).toContain(FRA);
   });
 
-  it("a NO SOURCE cell has no chart toggle", async () => {
+  it("every cell has a chart toggle", async () => {
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
     const labels = [...container.querySelectorAll("button")].map((b) => b.textContent);
-    expect(labels.filter((l) => /^(DE|GB|JP|FR) \d+Y$/.test(l)).length).toBe(16);
-    expect(labels).not.toContain("FR 2Y");
+    expect(labels.filter((l) => /^(DE|GB|JP|FR) \d+Y$/.test(l)).length).toBe(20);
+    expect(labels).toContain("FR 2Y");
     expect(labels).toContain("FR 10Y");
   });
 });
@@ -160,13 +198,15 @@ describe("§7.7: the spread strip", () => {
     const { container } = render(<ForeignBondsTab />);
     await settle(container);
     for (const label of ["Bund–UST 10Y", "Gilt–UST 10Y", "JGB–UST 10Y", "Gilt–Bund 10Y",
-      "Gilt–Bund 2Y", "DE 10Y–2Y", "GB 10Y–2Y", "JP 30Y–10Y", "OAT–Bund 10Y (monthly)"]) {
+      "Gilt–Bund 2Y", "DE 10Y–2Y", "GB 10Y–2Y", "JP 30Y–10Y", "OAT–Bund 10Y", "OAT–Bund 10Y (monthly)"]) {
       expect(screen.getByText(label)).toBeTruthy();
     }
     // FB_DE_10Y 3.47 - DGS10 4.10
     expect(container.textContent).toContain("-0.63pp");
     // OAT-Bund monthly: 4.44 - 3.50
     expect(container.textContent).toContain("+0.94pp");
+    // OAT-Bund daily (D-0112): FB_FR_10Y 3.35 - FB_DE_10Y 3.47
+    expect(container.textContent).toContain("-0.12pp");
   });
 
   it("hides a spread whose leg is stale, and keeps the rest", async () => {
@@ -203,7 +243,7 @@ describe("AC-3: FOREIGN-BONDS has MARKETS' structure and interactions", () => {
   });
 
   it("the same controls: series toggles, % CHANGE, the four ranges", async () => {
-    for (const [hash, toggles] of [["#/markets", 12], ["#/foreign-bonds", 16]]) {
+    for (const [hash, toggles] of [["#/markets", 12], ["#/foreign-bonds", 20]]) {
       const { body } = await open(hash);
       const chart = [...body.children].find((el) => el.textContent.includes("% CHANGE"));
       const buttons = [...chart.querySelectorAll("button")].map((b) => b.textContent);

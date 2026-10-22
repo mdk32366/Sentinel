@@ -454,6 +454,9 @@ def _like(pattern, code):
 
 
 FB_CODES = [f"FB_{c}_{t:02d}Y" for c in ("DE", "GB", "JP") for t in TENORS]
+# Sentinel D-0112: France joins, daily, from the Banque de France. Every
+# isolation guard below runs over all twenty codes.
+FB_CODES_ALL = FB_CODES + [f"FB_FR_{t:02d}Y" for t in TENORS]
 
 
 class IsolationFromScoring(unittest.TestCase):
@@ -471,7 +474,7 @@ class IsolationFromScoring(unittest.TestCase):
 
     def test_no_fb_code_matches_a_scored_pattern(self):
         for pattern in ("IRLTLT01%", "%\\_CDS\\_%"):
-            for code in FB_CODES:
+            for code in FB_CODES_ALL:
                 self.assertFalse(_like(pattern, code), f"{code} LIKE {pattern}")
         # the matcher itself can go red
         self.assertTrue(_like("IRLTLT01%", "IRLTLT01FRM156N"))
@@ -486,7 +489,7 @@ class IsolationFromScoring(unittest.TestCase):
         tracked = MARKET_SERIES.read_text(encoding="utf-8")
         tracked = tracked[tracked.index("export const TRACKED_CODES"):]
         tracked = tracked[: tracked.index("];")]
-        for code in FB_CODES + ["FB_"]:
+        for code in FB_CODES_ALL + ["FB_"]:
             with self.subTest(code=code):
                 self.assertNotIn(code, V2_SCORER.read_text(encoding="utf-8"))
                 self.assertNotIn(code, COMPOSITE_SCORER.read_text(encoding="utf-8"))
@@ -500,10 +503,10 @@ class IsolationFromScoring(unittest.TestCase):
         from pipelines.freshness_watchdog import CHECKS
         fb = [c for c in CHECKS if c["key"].startswith("foreign_bonds_")]
         self.assertEqual(sorted(c["key"] for c in fb),
-                         ["foreign_bonds_de", "foreign_bonds_gb", "foreign_bonds_jp"])
+                         ["foreign_bonds_de", "foreign_bonds_fr", "foreign_bonds_gb", "foreign_bonds_jp"])
         for c in CHECKS:
             for p in c["patterns"]:
-                owned = [code for code in FB_CODES if _like(p, code)]
+                owned = [code for code in FB_CODES_ALL if _like(p, code)]
                 if c["key"].startswith("foreign_bonds_"):
                     self.assertEqual(len(owned), 5, (c["key"], p))
                 else:
@@ -512,7 +515,7 @@ class IsolationFromScoring(unittest.TestCase):
 
 # ----------------------------------------------------------------------- scheduler
 class Scheduled(unittest.TestCase):
-    NAMES = {"Bundesbank_Yields", "BoE_Yields", "MOF_JGB"}
+    NAMES = {"Bundesbank_Yields", "BoE_Yields", "MOF_JGB", "BdF_TEC"}
 
     def test_names_declared(self):
         from pipelines import scheduler as sched
@@ -526,6 +529,7 @@ class Scheduled(unittest.TestCase):
             "foreign_bonds_de": (["Bundesbank_Yields"], 4, "day", ["FB\\_DE\\_%"]),
             "foreign_bonds_gb": (["BoE_Yields"], 5, "day", ["FB\\_GB\\_%"]),
             "foreign_bonds_jp": (["MOF_JGB"], 7, "day", ["FB\\_JP\\_%"]),
+            "foreign_bonds_fr": (["BdF_TEC"], 4, "day", ["FB\\_FR\\_%"]),
         })
 
     def test_declared_by_the_modules(self):
