@@ -285,8 +285,8 @@ series backfills five years from the archives (F-0116), or, for Webstat,
 from a `time_period_start>=date'…'` filter.
 
 **Freshness.** `freshness_watchdog.CHECKS` has `foreign_bonds_de`, `_gb`,
-`_jp` and `_fr` (patterns `FB\_DE\_%` etc.). The monthly French 10Y
-fallback stays on `sovereign_yields`.
+`_jp` and `_fr` (patterns `FB\_DE\_%` etc.). FOREIGN-BONDS no longer reads
+`sovereign_yields` (D-0112 amendment 1).
 
 **Manual trigger and startup fill.** `POST /api/fetch/foreign-bonds/{source}`
 (`api/routes.py`) runs one source now through the same wrapper the cron uses,
@@ -305,13 +305,14 @@ weekday crons.
 `_jp` and `_fr` (patterns `FB\_DE\_%` etc.). France's daily TEC comes from
 the Banque de France Webstat v2.1 API as the `bdf` `FOREIGN_BOND_JOBS` entry
 (D-0112): it needs `WEBSTAT_API_KEY`, logs and skips when the key is missing,
-and `_fr` goes stale after 4 days. Only the monthly French 10Y fallback stays
-on `sovereign_yields`.
+and `_fr` goes stale after 4 days. The monthly OECD France 10Y
+(`IRLTLT01FRM156N`) is off this tab (D-0112 amendment 1); it is still fetched
+by FRED and scored in composite D4.
 
 **UI.** `pages/ForeignBondsTab.jsx` renders `pages/MarketsTab.jsx` with
-`foreignBondCells(latest)` in a 5-column grid (20 daily cells; FR 10Y swaps to
-`FR_10Y_MONTHLY_FALLBACK`, the monthly OECD series badged MONTHLY, while no
-daily French 10Y is stored), DataConfidence on the five sources, the
+`foreignBondCells()` in a 5-column grid (20 daily cells; with no daily French
+row the FR cells show "—", with no monthly stand-in), DataConfidence on the
+four `foreign_bonds_*` sources, the
 `foreignBondSpreads` strip, and a footer ending
 "Source: Banque de France, updated <date>" (`bdfAttribution`). A spread whose leg is stale is hidden. Data
 comes from `useSeries(FOREIGN_BOND_CODES)` through the existing

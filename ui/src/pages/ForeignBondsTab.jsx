@@ -5,9 +5,9 @@ import {
 } from "../lib/constants";
 import { MarketsTab } from "./MarketsTab";
 
-const SOURCE_KEYS = ["foreign_bonds_de", "foreign_bonds_gb", "foreign_bonds_jp", "foreign_bonds_fr", "sovereign_yields"];
+const SOURCE_KEYS = ["foreign_bonds_de", "foreign_bonds_gb", "foreign_bonds_jp", "foreign_bonds_fr"];
 const DEFAULT_ACTIVE = ["FB_DE_10Y", "FB_GB_10Y", "FB_JP_10Y"];
-const SOURCE_NOTE = "Source: Deutsche Bundesbank · Bank of England · Ministry of Finance Japan · FRED/OECD (FR 10Y monthly fallback)";
+const SOURCE_NOTE = "Source: Deutsche Bundesbank · Bank of England · Ministry of Finance Japan";
 const OK = new Set(["ok", "anomaly"]);
 
 /**
@@ -15,14 +15,15 @@ const OK = new Set(["ok", "anomaly"]);
  *
  * MARKETS with different inputs: Germany, UK, Japan and France at
  * 2/5/7/10/30Y from official published curves (France: Banque de France TEC,
- * Sentinel D-0112, with the monthly OECD 10Y as the labelled FR 10Y fallback).
+ * Sentinel D-0112; amendment 1 took the monthly OECD FR 10Y off this tab).
  * Display only - nothing here feeds a score.
  *
  * A spread is shown only while the watchdog calls both legs' sources current;
  * one stale leg hides it rather than quoting a number against a frozen leg.
+ * The daily OAT–Bund (amendment 2) stays in place and reads "—" instead.
  */
 export function ForeignBondsTab() {
-  const { latest, prior, latestDate, dates } = useSeries(FOREIGN_BOND_CODES);
+  const { latest, prior, latestDate, dates, series } = useSeries(FOREIGN_BOND_CODES);
   const { data: freshness } = useApiResource(`/freshness`);
 
   const statusOf = {};
@@ -36,9 +37,9 @@ export function ForeignBondsTab() {
 
   return (
     <MarketsTab
-      metrics={foreignBondCells(latest)}
+      metrics={foreignBondCells()}
       sourceKeys={SOURCE_KEYS}
-      spreads={(l) => foreignBondSpreads(l, fresh)}
+      spreads={(l) => foreignBondSpreads(l, fresh, series)}
       defaultActive={DEFAULT_ACTIVE}
       sourceNote={`${SOURCE_NOTE} · ${bdfAttribution(dates)}`}
       lastDataPoint={latestDate}

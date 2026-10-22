@@ -642,6 +642,38 @@ without it); `test_bdf_tec.Wiring.test_first_run_backfills` patches the
 `bdf` table entry instead of the module name, with the same `[True]`
 assertion.
 
+**T-0112 addendum 2: TEC10 is the only FR 10Y on FOREIGN-BONDS (2026-10-22).**
+Proves `D-0112 amendment 1`. **Red first:** the tests landed in their own
+commit, where 4 of 12 FOREIGN-BONDS UI tests and 1 Python test failed.
+
+`ui/src/pages/ForeignBondsTab.dom.test.jsx`
+- With every `FB_FR_` series missing, all five FR cells show "—"; no card
+  says MONTHLY and the monthly value (4.44%) appears nowhere.
+- `FR_10Y_MONTHLY_FALLBACK` is no longer exported, `FOREIGN_BOND_CODES` does
+  not contain `IRLTLT01FRM156N`, the only FR 10Y metric is `FB_FR_10Y`, and
+  given both French series the only French spread is the daily OAT–Bund 10Y.
+- No `/timeseries` request the tab makes names `IRLTLT01FRM156N`.
+- The spread strip no longer shows "OAT–Bund 10Y (monthly)" (+0.94pp).
+
+`tests/test_markets_tooltips.py`
+- The FOREIGN-BONDS block of `constants.js` does not mention
+  `IRLTLT01FRM156N`; `FR_10Y_MONTHLY_FALLBACK` is gone; `ForeignBondsTab.jsx`
+  says nothing about a fallback; and `pipelines/fred_fetcher.py` still lists
+  `IRLTLT01FRM156N` (the fetch is untouched).
+
+**T-0112 addendum 2, part 2: the daily OAT–Bund spread (2026-10-22).**
+Proves `D-0112 amendment 2`. **Red first:** the tests landed in their own
+commit, where 7 of 17 FOREIGN-BONDS UI tests failed.
+
+`ui/src/pages/ForeignBondsTab.dom.test.jsx`
+- On fixture dates the spread is `FB_FR_10Y − FB_DE_10Y` in bp (−15, −12).
+- A date where one leg is missing is absent from the series (a gap); no
+  value is carried forward; an empty or absent leg yields no points.
+- The current value is the last date both legs share, not either leg's last.
+- A stale French or German leg makes the entry read "—" with no number.
+- On the tab the entry reads −12bp when fresh and "—" when `foreign_bonds_fr`
+  is stale, under the label "OAT–Bund 10Y (daily, BdF TEC − Bundesbank)".
+
 **T-0111 addendum: manual trigger and startup fill (2026-10-22).**
 `POST /api/fetch/foreign-bonds/{source}` (`source` in
 `scheduler.FOREIGN_BOND_JOBS`: `bundesbank`, `boe`, `mof`) with optional
