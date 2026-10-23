@@ -7,7 +7,7 @@
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { SOVEREIGN_YIELD_CODES, countryBond, fbCardCodes, fbCardFetchCodes } from "../../lib/constants";
+import { ECB_IRS_MAX_AGE_DAYS, SOVEREIGN_YIELD_CODES, countryBond, fbCardCodes, fbCardFetchCodes } from "../../lib/constants";
 import { CountryBondCurve } from "./CountryBondCurve";
 
 afterEach(cleanup);
@@ -51,12 +51,24 @@ describe("T-0145: monthly badges, no-curve cards", () => {
     expect(b.showCurve).toBe(true);
   });
 
-  it("ITA past 45 days falls to ECB IRS, then to IRLTLT", () => {
-    const { latest, dates } = fresh("ITA", [3.1, 3.3, 3.9, 4.6], "2026-08-31");
+  it("ITA past 55 days falls to ECB IRS, then to IRLTLT", () => {
+    const { latest, dates } = fresh("ITA", [3.1, 3.3, 3.9, 4.6], "2026-07-31");
     const irs = countryBond("ITA", { ...latest, FB_IT_10Y_ECB_M: 4.0 }, { ...dates, FB_IT_10Y_ECB_M: "2026-09-30" }, NOW);
     expect(irs.tenYear).toMatchObject({ value: 4.0, code: "FB_IT_10Y_ECB_M", badge: "MONTHLY" });
     const oecd = countryBond("ITA", { ...latest, [SOVEREIGN_YIELD_CODES.ITA]: 3.7 }, dates, NOW);
     expect(oecd.tenYear).toMatchObject({ value: 3.7, code: SOVEREIGN_YIELD_CODES.ITA });
+  });
+
+  it("T-0152: ITA and ECB IRS fresh at 55 days, stale at 56 (F-0129)", () => {
+    // NOW is 2026-10-22: 2026-08-28 is 55 days old, 2026-08-27 is 56.
+    expect(ECB_IRS_MAX_AGE_DAYS).toBe(55);
+    const at55 = fresh("ITA", [3.1, 3.3, 3.9, 4.6], "2026-08-28");
+    expect(countryBond("ITA", at55.latest, at55.dates, NOW).tenYear).toMatchObject({ code: "FB_IT_10Y", value: 3.9 });
+    const at56 = fresh("ITA", [3.1, 3.3, 3.9, 4.6], "2026-08-27");
+    expect(countryBond("ITA", at56.latest, at56.dates, NOW).tenYear.code).not.toBe("FB_IT_10Y");
+    const grc = (d) => countryBond("GRC", { FB_GR_10Y_ECB_M: 3.8 }, { FB_GR_10Y_ECB_M: d }, NOW).tenYear;
+    expect(grc("2026-08-28")).toMatchObject({ value: 3.8, code: "FB_GR_10Y_ECB_M" });
+    expect(grc("2026-08-27").code).not.toBe("FB_GR_10Y_ECB_M");
   });
 
   it("POL: AS OF LAST AUCTION badge with the auction date, 2s10s only", () => {

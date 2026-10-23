@@ -92,5 +92,66 @@ class IngestBodyCap(unittest.TestCase):
             self.assertEqual((req.body_calls, req.chunks_read), (0, 0), r.path)
 
 
+class T0150FullAppBasicAuth(unittest.TestCase):
+    """Through the whole app: BasicAuthMiddleware runs before the route, and
+    an authenticated oversized upload still gets the early 413. The credential
+    is a throwaway set only here (settings patched), never the real secret."""
+
+    USER, PASSWORD = "t0150-user", "t0150-not-a-real-password"
+
+    def setUp(self):
+        from config import settings
+        from database.connection import get_db
+        from main import app
+        for name, val in (("auth_username", self.USER), ("auth_password", self.PASSWORD)):
+            p = mock.patch.object(settings, name, val)
+            p.start()
+            self.addCleanup(p.stop)
+
+        def _no_db():
+            yield object()
+
+        app.dependency_overrides[get_db] = _no_db
+        self.addCleanup(app.dependency_overrides.pop, get_db, None)
+        self.app = app
+
+    def post(self, body, auth):
+        import httpx
+
+        async def go():
+            transport = httpx.ASGITransport(app=self.app, raise_app_exceptions=False)
+            async with httpx.AsyncClient(transport=transport, base_url="http://test") as c:
+                return await c.post("/api/ingest/bdi-mfn-bmk", content=body, auth=auth)
+        return asyncio.run(go())
+
+    def test_t0150_auth_then_413(self):
+        big = b"x" * (CAP + 1)
+        with mock.patch.object(bdi_bmk, "ingest") as ing:
+            self.assertEqual(self.post(big, None).status_code, 401)
+            self.assertEqual(self.post(big, (self.USER, "wrong")).status_code, 401)
+            r = self.post(big, (self.USER, self.PASSWORD))
+        self.assertEqual(r.status_code, 413, r.text)
+        ing.assert_not_called()
+
+
+class T0151MonthlyLimit55(unittest.TestCase):
+    """F-0129: Italy BMK0100 and ECB IRS monthly are fresh to 55 days after
+    the month ends, stale at 56 (the F-0089 precedent)."""
+
+    def test_t0151_fresh_at_55_stale_at_56(self):
+        from datetime import datetime, timedelta
+        from pipelines.freshness_watchdog import CHECKS, _age_from_coverage, _classify, coverage_end
+        got = {c["key"]: c for c in CHECKS}
+        start = datetime(2026, 9, 1)
+        end = coverage_end(start, "month")
+        self.assertEqual(end, datetime(2026, 9, 30))
+        for key in ("foreign_bonds_it", "ecb_irs_monthly"):
+            c = got[key]
+            self.assertEqual((c["period"], c["max_age_days"]), ("month", 55), key)
+            for days, want in ((55, "ok"), (56, "stale")):
+                age = _age_from_coverage(start, c["period"], end + timedelta(days=days))
+                self.assertEqual(_classify(age, c["max_age_days"]), want, f"{key} at {days}")
+
+
 if __name__ == "__main__":
     unittest.main()
