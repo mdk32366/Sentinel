@@ -4059,6 +4059,7 @@ October observation is published after about 14 November, the watchdog flags
 Italy stale though nothing is broken; `ecb_irs_monthly` (also 45 days) has the
 same exposure for the IRS fallback.
 
-**Handled.** Not changed. Watch the first November release date; if BdI
-routinely publishes after day 14, widen to 55 as `F-0089` did, or age from
-publication. Open.
+**Handled.** Both limits widened to 55 days, as `F-0089` did:
+`foreign_bonds_it`, `ecb_irs_monthly`, `FB_MAX_AGE_DAYS.IT` and
+`ECB_IRS_MAX_AGE_DAYS`. Pinned by `T-0151` (55 ok, 56 stale) and `T-0152` (cards).
+Resolved 2026-10-22.

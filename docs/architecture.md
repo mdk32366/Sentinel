@@ -361,5 +361,5 @@ Three more keyless fetchers through `pipelines/foreign_bond_common`:
 `bdi_bmk`: same parser, all or nothing, and a row in the new
 `ingest_provenance` table per accepted upload (the table is created by
 `create_all` on deploy: a new table is additive, no DDL). `countryBond`
-falls back own series -> ECB IRS (45 days) -> OECD monthly -> dash; GRC and PRT
+falls back own series -> ECB IRS (55 days, F-0129) -> OECD monthly -> dash; GRC and PRT
 cards have no curve (`showCurve: false`). No scorer reads any 2b-1 code.
