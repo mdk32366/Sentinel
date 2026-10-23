@@ -571,7 +571,7 @@ class Scheduled(unittest.TestCase):
             "foreign_bonds_ea": (["ECB_YC"], 4, "day", ["FB\\_EA\\_%"]),
             # Sentinel D-0116 (batch 2b-1).
             "foreign_bonds_pl": (["MinFin_PL"], 40, "day", ["FB\\_PL\\_%Y"]),
-            "foreign_bonds_it": (["BdI_BMK"], 45, "month", ["FB\\_IT\\_%Y"]),
+            "foreign_bonds_it": (["BdI_BMK"], 55, "month", ["FB\\_IT\\_%Y"]),
         })
 
     def test_declared_by_the_modules(self):

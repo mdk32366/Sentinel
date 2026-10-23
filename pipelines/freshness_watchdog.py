@@ -354,7 +354,7 @@ CHECKS = [
         "period": "month",
         "label": "Italy benchmark BTP yields (Banca d'Italia)",
         "patterns": ["FB\\_IT\\_%Y"],
-        "max_age_days": 45,
+        "max_age_days": 55,  # F-0129: 55 per the F-0089 precedent
         "pipelines": ["BdI_BMK"],
         "note": "BMK0100 3/5/10/30Y, monthly. Manual backup POST /api/ingest/bdi-mfn-bmk. Display only (Sentinel D-0116).",
     },
@@ -363,7 +363,7 @@ CHECKS = [
         "period": "month",
         "label": "ECB IRS long-term 10Y yields, monthly (IT/ES/GR/PT/PL)",
         "patterns": ["FB\\_%\\_10Y\\_ECB\\_M"],
-        "max_age_days": 45,
+        "max_age_days": 55,  # F-0129: 55 per the F-0089 precedent
         "pipelines": ["ECB_IRS"],
         "note": "Convergence-criterion 10Y yields, monthly; the card fallback after a stale daily series. Display only (Sentinel D-0116).",
     },
