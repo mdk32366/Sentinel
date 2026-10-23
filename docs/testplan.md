@@ -938,3 +938,30 @@ maturities refused; month end (leap February).
 **Case T-0145: MONTHLY badge, no curve.** GRC/PRT show the IRS 10Y MONTHLY with
 no curve and no slopes, a dash when stale; ITA MONTHLY with 3s10s and 10s30s;
 ITA/POL/ESP fall back to IRS, then IRLTLT; POL shows "AS OF LAST AUCTION <date>".
+
+**Case T-0146: ingest 413 before reading.** POST /api/ingest/bdi-mfn-bmk with
+Content-Length over the 2 MB cap is 413; the body is never read; nothing ingested.
+
+**Case T-0147: malformed Content-Length.** Non-integer or negative is 400
+before reading.
+
+**Case T-0148: chunked upload over the cap.** No Content-Length: the stream is
+read only until it passes 2 MB, then 413; never buffered whole.
+
+**Case T-0149: at the cap still ingests.** Exactly 2 MB reaches the parser
+intact. Every POST `/ingest/` route is checked for the early 413. Tests:
+`tests/test_ingest_body_cap.py` (self-contained, no fixtures).
+
+**Case T-0150: Basic Auth runs before the cap.** Through the whole app with a
+throwaway credential patched into settings inside the test: an oversized
+upload with no or wrong credentials gets 401, with the right ones 413, and
+the parser is never called. Tests: `tests/test_ingest_body_cap.py`.
+
+**Case T-0151: Italy and ECB IRS monthly fresh at 55 days (F-0129).**
+`foreign_bonds_it` and `ecb_irs_monthly` allow 55 days after the month end:
+55 days reads ok, 56 reads stale. Tests: `tests/test_ingest_body_cap.py`.
+
+**Case T-0152: the cards agree at 55.** `FB_MAX_AGE_DAYS.IT` and
+`ECB_IRS_MAX_AGE_DAYS` are 55; an ITA 10Y 55 days old shows, 56 days old falls
+back, and the GRC ECB IRS 10Y does the same. Tests:
+`ui/src/components/country/fbBatch2b1.dom.test.jsx`.

@@ -459,8 +459,8 @@ class T0142Freshness(unittest.TestCase):
         from pipelines.freshness_watchdog import CHECKS
         got = {c["key"]: c for c in CHECKS}
         self.assertEqual(got["foreign_bonds_pl"]["max_age_days"], 40)
-        self.assertEqual(got["foreign_bonds_it"]["max_age_days"], 45)
-        self.assertEqual(got["ecb_irs_monthly"]["max_age_days"], 45)
+        self.assertEqual(got["foreign_bonds_it"]["max_age_days"], 55)
+        self.assertEqual(got["ecb_irs_monthly"]["max_age_days"], 55)
         self.assertEqual(got["foreign_bonds_it"]["period"], "month")
         self.assertEqual(got["ecb_irs_monthly"]["pipelines"], ["ECB_IRS"])
 
@@ -541,7 +541,7 @@ class T0145MonthlyCards(unittest.TestCase):
     def test_constants(self):
         js = CONSTANTS.read_text(encoding="utf-8")
         self.assertIn("FB_NO_CURVE", js)
-        self.assertIn("ECB_IRS_MAX_AGE_DAYS = 45", js)
+        self.assertIn("ECB_IRS_MAX_AGE_DAYS = 55", js)
         for iso in ("ITA", "POL", "GRC", "PRT"):
             self.assertIn(iso, js[js.index("FB_CARD_COUNTRY"):])
 

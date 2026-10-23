@@ -261,7 +261,7 @@ describe("D-0113: the FB card mapping", () => {
 
   it("mirrors the watchdog's per-source freshness limits (freshness_watchdog.py)", () => {
     expect(FB_MAX_AGE_DAYS).toEqual({ DE: 4, GB: 5, JP: 7, FR: 4,
-      CA: 4, SE: 4, AU: 12, NO: 4, ES: 4, EA: 4, PL: 40, IT: 45 });
+      CA: 4, SE: 4, AU: 12, NO: 4, ES: 4, EA: 4, PL: 40, IT: 55 });
   });
 
   it("returns null for a non-FB country, so BEL is unchanged (ITA joined in D-0116)", () => {

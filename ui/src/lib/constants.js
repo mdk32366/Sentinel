@@ -485,9 +485,9 @@ export function fbCardMetrics(iso) {
  * Foreign Bonds tab's spreads already follow; tests/test_d0113_card_freshness.py
  * fails if the two disagree.
  */
-export const FB_MAX_AGE_DAYS = { DE: 4, GB: 5, JP: 7, FR: 4, CA: 4, SE: 4, AU: 12, NO: 4, ES: 4, EA: 4, PL: 40, IT: 45 };
+export const FB_MAX_AGE_DAYS = { DE: 4, GB: 5, JP: 7, FR: 4, CA: 4, SE: 4, AU: 12, NO: 4, ES: 4, EA: 4, PL: 40, IT: 55 };
 /** Sentinel D-0116: the ECB IRS monthly fallback; mirrors ecb_irs_monthly in the watchdog. */
-export const ECB_IRS_MAX_AGE_DAYS = 45;
+export const ECB_IRS_MAX_AGE_DAYS = 55; // F-0129
 
 const FB_CARD_SOURCE = {
   DE: "FIT: Deutsche Bundesbank Svensson fitted zero-coupon curve, daily",
@@ -538,7 +538,7 @@ export function countryBond(iso, latest = {}, dates = {}, now = new Date()) {
     const out = { label, bp: ok ? Math.round((l.value - s.value) * 10000) / 100 : null };
     return tip ? { ...out, tip } : out;
   };
-  // Sentinel D-0116: own series while fresh -> ECB IRS monthly within 45 days
+  // Sentinel D-0116: own series while fresh -> ECB IRS monthly within 55 days
   // -> the monthly OECD series via FRED (a dash where there is none).
   const ten = noCurve ? null : leg(10);
   const cadence = FB_COUNTRY[cc]?.cadence ?? "daily";

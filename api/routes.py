@@ -298,20 +298,44 @@ def _basic_username(request: Request) -> str:
         return "unknown"
 
 
+async def _read_capped_body(request: Request, cap: int) -> bytes:
+    """Read an upload body, refusing anything over ``cap`` bytes early.
+
+    D-0116 follow-up: a Content-Length over the cap is a 413 before a byte
+    is read; a malformed one is a 400. Without Content-Length (chunked) the
+    stream is read only until it passes the cap, never buffered whole.
+    """
+    raw = request.headers.get("content-length")
+    if raw is not None:
+        try:
+            declared = int(raw)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="malformed Content-Length")
+        if declared < 0:
+            raise HTTPException(status_code=400, detail="malformed Content-Length")
+        if declared > cap:
+            raise HTTPException(status_code=413, detail=f"upload over {cap} bytes")
+    parts, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > cap:
+            raise HTTPException(status_code=413, detail=f"upload over {cap} bytes")
+        parts.append(chunk)
+    return b"".join(parts)
+
+
 @router.post("/ingest/bdi-mfn-bmk")
 async def ingest_bdi_mfn_bmk(request: Request, db: Session = Depends(get_db)):
     """Sentinel D-0116: manual backup for Italy's BMK0100 (Banca d'Italia).
 
     The body is the BMK0100 export as downloaded: the ZIP, or the CSV inside
     it. Parsed by the same function the scheduled ``bdi_bmk`` job uses.
-    All or nothing: over 2 MB -> 413, anything the parser rejects -> 422,
+    All or nothing: over 2 MB -> 413 (on Content-Length, before reading), anything the parser rejects -> 422,
     and in both cases nothing is written. Idempotent. Writes need Basic Auth;
     the proof cookie is read-only (403).
     """
     from pipelines import bdi_bmk
-    body = await request.body()
-    if len(body) > bdi_bmk.MAX_BODY_BYTES:
-        raise HTTPException(status_code=413, detail=f"upload over {bdi_bmk.MAX_BODY_BYTES} bytes")
+    body = await _read_capped_body(request, bdi_bmk.MAX_BODY_BYTES)
     try:
         return bdi_bmk.ingest(db, body, _basic_username(request))
     except bdi_bmk.IngestRejected as exc:
