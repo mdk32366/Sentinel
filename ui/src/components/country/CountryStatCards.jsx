@@ -28,7 +28,7 @@ function cdsBandColor(bps) {
  * so a tile with nothing to show is `#3A4D5C` — the same grey as a label,
  * deliberately not failure-red. Missing coverage is not a fault.
  */
-export function CountryStatCards({ latestTic, ticMom, latestGold, ticHistory, countryYield, us10y, cds }) {
+export function CountryStatCards({ latestTic, ticMom, latestGold, ticHistory, countryYield, us10y, cds, yieldSource = null }) {
   const exited = ticHistory?.data_points === 0;
   const spreadBps = spreadBasisPoints(countryYield, us10y);
 
@@ -56,13 +56,17 @@ export function CountryStatCards({ latestTic, ticMom, latestGold, ticHistory, co
       label: "Sovereign Yield",
       val: countryYield != null ? `${countryYield.toFixed(2)}%` : "—",
       color: "#7EB8C9",
-      tip: "This country's 10-year government bond yield, where FRED publishes one — fourteen developed markets do, most emerging markets do not. A dash means no series exists, not a yield of zero.",
+      // Sentinel D-0113: DEU/GBR/JPN/FRA read the daily FB 10Y, or the monthly
+      // fallback badged MONTHLY; `yieldSource` says which. Display only.
+      sub: yieldSource ? (yieldSource.daily ? `DAILY · ${yieldSource.kind}` : yieldSource.badge) : null,
+      tip: (yieldSource ? `${yieldSource.tip} ` : "") + "This country's 10-year government bond yield, where FRED publishes one — fourteen developed markets do, most emerging markets do not. A dash means no series exists, not a yield of zero.",
     },
     {
       label: "Spread vs US 10Y",
       val: spreadBps != null ? `${signed(spreadBps, 0)}bps` : "—",
       color: spreadColor(spreadBps),
-      tip: "This sovereign's 10-year yield minus the US 10-year, in basis points. Positive means investors demand more to lend here than to Washington. MEASURED ONLY — D-0066 retired this from scoring: it awarded points for trading above the US 10Y while holding yields for only fourteen developed markets, every one of which trades below it. Across all 48 scored countries it awarded zero points to zero countries.",
+      sub: yieldSource && !yieldSource.daily ? yieldSource.badge : null,
+      tip: (yieldSource ? `${yieldSource.tip} ` : "") + "This sovereign's 10-year yield minus the US 10-year, in basis points. Positive means investors demand more to lend here than to Washington. MEASURED ONLY — D-0066 retired this from scoring: it awarded points for trading above the US 10Y while holding yields for only fourteen developed markets, every one of which trades below it. Across all 48 scored countries it awarded zero points to zero countries.",
     },
     {
       label: "5Y CDS",

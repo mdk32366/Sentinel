@@ -1,12 +1,15 @@
-import { SOVEREIGN_YIELD_CODES } from "../lib/constants";
+import { SOVEREIGN_YIELD_CODES, countryBond, fbCardFetchCodes } from "../lib/constants";
 import { goldSeries, momChange, reservesSeries, ticSeries } from "../lib/countrySeries";
 import { useApiResource } from "../hooks/useApiResource";
+import { useSeries } from "../hooks/useMarketSeries";
 import { useCountryDetail } from "../hooks/useCountryDetail";
 import { useCountryNarrative } from "../hooks/useCountryNarrative";
 import { DataConfidence } from "./DataConfidence";
 import { AnalystBrief } from "./country/AnalystBrief";
+import { CountryBondCurve } from "./country/CountryBondCurve";
 import { CountryStatCards } from "./country/CountryStatCards";
 import { LiquidationBanner } from "./country/LiquidationBanner";
+import { CDS_TIP, GOLD_TIP, RESERVES_TIP, TIC_TIP } from "../lib/countryPanelTips";
 import { SeriesChart } from "./country/SeriesChart";
 import { StressContribution } from "./country/StressContribution";
 
@@ -21,12 +24,16 @@ import { StressContribution } from "./country/StressContribution";
  * different things, and the one passing `{}` showed every country's spread
  * as a dash, indistinguishable from a country FRED does not cover.
  */
-export function CountryDetail({ iso, onClose, standalone = false, latestAll = {} }) {
+export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}, now }) {
   const { ticHistory, goldHistory, reservesHistory, cds, loading } = useCountryDetail(iso);
   const { narrative, loading: narrativeLoading, provider, generate } = useCountryNarrative(iso);
   // D-0071: which providers this deployment can authenticate. Fetched once
   // rather than assumed, so the panel never offers a key that is not there.
   const { data: providerInfo } = useApiResource(`/analyze/providers`);
+  // Sentinel D-0113: the four FB countries also read their daily FB curve,
+  // through its own request. MARKETS' TRACKED_CODES is untouched; every other
+  // country asks for nothing (fbCardCodes is []).
+  const fb = useSeries(fbCardFetchCodes(iso));
 
   if (loading) {
     return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
@@ -46,6 +53,7 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
   const hasAnySeries = Boolean(ticRows.length || goldRows.length || reservesRows.length || cdsRows.length);
 
   const yieldCode = SOVEREIGN_YIELD_CODES[iso];
+  const bond = countryBond(iso, { ...latestAll, ...fb.latest }, fb.dates, now ?? new Date());
 
   return (
     <div style={container}>
@@ -64,7 +72,9 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
       </div>
 
       <DataConfidence
-        sourceKeys={["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields"]}
+        sourceKeys={bond
+          ? ["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields", bond.sourceKey]
+          : ["tic", "gold_reserves", "reserves_ex_gold", "cds", "sovereign_yields"]}
         label="Sources on this panel"
       />
 
@@ -75,10 +85,13 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
         ticMom={momChange(ticRows)}
         latestGold={goldRows[goldRows.length - 1]}
         ticHistory={ticHistory}
-        countryYield={yieldCode ? latestAll[yieldCode] : null}
+        countryYield={bond ? bond.tenYear.value : yieldCode ? latestAll[yieldCode] : null}
+        yieldSource={bond ? bond.tenYear : null}
         us10y={latestAll["DGS10"]}
         cds={cds}
       />
+
+      {bond && <CountryBondCurve key={iso} iso={iso} bond={bond} chart />}
 
       <StressContribution iso={iso} />
 
@@ -91,6 +104,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `$${v.toFixed(0)}B`}
           tooltipFormat={(v) => `$${v.toFixed(1)}B`}
           tooltipLabel="Holdings"
+          tipTitle="Treasury Holdings"
+          tip={TIC_TIP}
         />
         <SeriesChart
           // D-0076: the IMF series is monthly. It said "quarters".
@@ -101,6 +116,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `${v.toFixed(0)}t`}
           tooltipFormat={(v) => `${v.toFixed(1)}t`}
           tooltipLabel="Gold"
+          tipTitle="Gold Reserves"
+          tip={GOLD_TIP}
         />
         <SeriesChart
           title={`5Y SOVEREIGN CDS (bps) — ${cdsRows.length} observations`}
@@ -110,10 +127,12 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `${v.toFixed(0)}`}
           tooltipFormat={(v) => `${v.toFixed(1)} bps`}
           tooltipLabel="5Y CDS"
+          tipTitle="5Y Sovereign CDS"
+          tip={CDS_TIP}
           footnote="The market's own price for insuring this sovereign's default · dimension 7 of the composite score"
         />
         <SeriesChart
-          title="TOTAL RESERVES EX-GOLD ($M) — non-dollar reserve diversification"
+          title="TOTAL RESERVES EX-GOLD ($B) — non-dollar reserve diversification"
           rows={reservesRows}
           dataKey="value"
           stroke="#7EB8C9"
@@ -121,6 +140,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
           tickFormat={(v) => `$${(v / 1000).toFixed(0)}B`}
           tooltipFormat={(v) => `$${(v / 1000).toFixed(1)}B`}
           tooltipLabel="Reserves ex-Gold"
+          tipTitle="Total Reserves ex-Gold"
+          tip={RESERVES_TIP}
           footnote="Source: IMF IFS · Includes FX, SDRs, IMF positions · Excludes gold · Monthly"
         />
       </div>

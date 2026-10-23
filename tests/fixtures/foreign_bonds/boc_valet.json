@@ -1,0 +1,78 @@
+{
+ "terms": {
+  "url": "synthetic"
+ },
+ "seriesDetail": {
+  "BD.CDN.2YR.DQ.YLD": {
+   "label": "2YR"
+  },
+  "BD.CDN.3YR.DQ.YLD": {
+   "label": "3YR"
+  },
+  "BD.CDN.5YR.DQ.YLD": {
+   "label": "5YR"
+  },
+  "BD.CDN.7YR.DQ.YLD": {
+   "label": "7YR"
+  },
+  "BD.CDN.10YR.DQ.YLD": {
+   "label": "10YR"
+  },
+  "BD.CDN.LONG.DQ.YLD": {
+   "label": "LONG"
+  },
+  "BD.CDN.RRB.DQ.YLD": {
+   "label": "RRB"
+  }
+ },
+ "observations": [
+  {
+   "d": "2026-10-19",
+   "BD.CDN.2YR.DQ.YLD": {
+    "v": "3.00"
+   },
+   "BD.CDN.3YR.DQ.YLD": {
+    "v": "3.10"
+   },
+   "BD.CDN.5YR.DQ.YLD": {
+    "v": "3.20"
+   },
+   "BD.CDN.7YR.DQ.YLD": {
+    "v": "3.30"
+   },
+   "BD.CDN.10YR.DQ.YLD": {
+    "v": "3.40"
+   },
+   "BD.CDN.LONG.DQ.YLD": {
+    "v": "3.50"
+   },
+   "BD.CDN.RRB.DQ.YLD": {
+    "v": "3.60"
+   }
+  },
+  {
+   "d": "2026-10-20",
+   "BD.CDN.2YR.DQ.YLD": {
+    "v": "3.10"
+   },
+   "BD.CDN.3YR.DQ.YLD": {
+    "v": "3.20"
+   },
+   "BD.CDN.5YR.DQ.YLD": {
+    "v": "3.30"
+   },
+   "BD.CDN.7YR.DQ.YLD": {
+    "v": ""
+   },
+   "BD.CDN.10YR.DQ.YLD": {
+    "v": "3.50"
+   },
+   "BD.CDN.LONG.DQ.YLD": {
+    "v": "3.60"
+   },
+   "BD.CDN.RRB.DQ.YLD": {
+    "v": "3.70"
+   }
+  }
+ ]
+}

@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     # inputs, so deleting the field stops the app booting anywhere that
     # variable is still present. Unread, retained, and documented as such.
     grok_api_key: str = ""
+    # Sentinel D-0112: Banque de France Webstat key, sent as
+    # "Authorization: Apikey <key>". Empty = the BdF_TEC job logs and skips.
+    # Set only as a Fly secret, never in fly.toml [env].
+    webstat_api_key: str = ""
 
     # Basic Auth (set via Fly.io secrets)
     auth_username: str = "sentinel"

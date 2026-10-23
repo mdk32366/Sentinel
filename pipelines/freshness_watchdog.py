@@ -235,6 +235,138 @@ CHECKS = [
         "pipelines": ["FRED"],
         "note": "Feeds composite dimension 4.",
     },
+    # Sentinel D-0111 (vault:D-0057): Foreign Bonds, display only. Windows are
+    # Trinity's judgment from the lags observed on 2026-10-21 (ESTIMATE), not
+    # measured over a year: a weekend plus the source's own lag plus slack.
+    # A holiday that trips one is a STALE badge, not an outage. France stays
+    # on `sovereign_yields` above (monthly OECD, 70 d).
+    {
+        "key": "foreign_bonds_de",
+        "period": "day",
+        "label": "German Bund yields (Bundesbank)",
+        "patterns": ["FB\\_DE\\_%"],
+        "max_age_days": 4,       # same-day publication + weekend + 1
+        "pipelines": ["Bundesbank_Yields"],
+        "note": "Svensson fitted zero-coupon yields, 2/5/7/10/30Y, business-daily. Display only (Sentinel D-0111).",
+    },
+    {
+        "key": "foreign_bonds_gb",
+        "period": "day",
+        "label": "UK gilt yields (Bank of England)",
+        "patterns": ["FB\\_GB\\_%"],
+        "max_age_days": 5,       # one-day publication lag + weekend + 1
+        "pipelines": ["BoE_Yields"],
+        "note": "GLC nominal fitted spot curve, 2/5/7/10/30Y, published one business day late. Display only (Sentinel D-0111).",
+    },
+    {
+        "key": "foreign_bonds_jp",
+        "period": "day",
+        "label": "Japan JGB yields (Ministry of Finance)",
+        "patterns": ["FB\\_JP\\_%"],
+        "max_age_days": 7,       # Golden Week / New Year closures
+        "pipelines": ["MOF_JGB"],
+        "note": "Constant-maturity par yields, 2/5/7/10/30Y, business-daily. Display only (Sentinel D-0111).",
+    },
+    # Sentinel D-0112: France daily, Banque de France TEC. Same window as the
+    # Bundesbank (same-day publication + weekend + 1). Until WEBSTAT_API_KEY is
+    # set this source has no rows and reads as such; the FR 10Y card shows the
+    # monthly sovereign_yields series as its labelled fallback.
+    {
+        "key": "foreign_bonds_fr",
+        "period": "day",
+        "label": "French OAT yields (Banque de France)",
+        "patterns": ["FB\\_FR\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["BdF_TEC"],
+        "note": "TEC constant-maturity OAT yields, 2/5/7/10/30Y, business-daily. Display only (Sentinel D-0112).",
+    },
+    # Sentinel D-0115: Foreign Bonds batch 2a, keyless. Windows from spec@0.3
+    # §15: same-day publication + weekend + 1, except RBA F2 (published
+    # weekly, ~8-day lag observed 2026-10-22) at 12. EA is the ECB benchmark
+    # panel, not a country; its key still ends in a 2-letter tag so the cc
+    # mapping in composite_stress._fb_max_age_days stays well-formed, and
+    # FB_DIM4_CODES never reads it.
+    {
+        "key": "foreign_bonds_ca",
+        "period": "day",
+        "label": "Canada GoC bond yields (Bank of Canada)",
+        "patterns": ["FB\\_CA\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["BoC_Valet"],
+        "note": "Benchmark bond yields, 2/3/5/7/10/long(30)Y, business-daily. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_se",
+        "period": "day",
+        "label": "Sweden government bond yields (Riksbank)",
+        "patterns": ["FB\\_SE\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["Riksbank_SWEA"],
+        "note": "SWEA SEGVB 2/5/7/10Y, business-daily. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_au",
+        "period": "day",
+        "label": "Australia government bond yields (RBA F2)",
+        "patterns": ["FB\\_AU\\_%"],
+        "max_age_days": 12,       # weekly publication, ~8-day lag
+        "pipelines": ["RBA_F2"],
+        "note": "Table F2 2/3/5/10Y, daily values published weekly (~8-day lag). Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_no",
+        "period": "day",
+        "label": "Norway government bond yields (Norges Bank)",
+        "patterns": ["FB\\_NO\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["Norges_GOVT"],
+        "note": "Generic government rates 3/5/7/10Y, business-daily. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_es",
+        "period": "day",
+        "label": "Spain government bond yields (Banco de Espana)",
+        "patterns": ["FB\\_ES\\_%Y"],
+        "max_age_days": 4,
+        "pipelines": ["BdE_TI13"],
+        "note": "TI_1_3 secondary-market 3/5/10/15Y, business-daily. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_ea",
+        "period": "day",
+        "label": "Euro area AAA / all-issuer yield curves (ECB)",
+        "patterns": ["FB\\_EA\\_%"],
+        "max_age_days": 4,
+        "pipelines": ["ECB_YC"],
+        "note": "Svensson spot rates, AAA and all issuers, 2/5/7/10/30Y, business-daily. Benchmark panel, not a country. Display only (Sentinel D-0115).",
+    },
+    {
+        "key": "foreign_bonds_pl",
+        "period": "day",
+        "label": "Poland government bond auction yields (MinFin)",
+        "patterns": ["FB\\_PL\\_%Y"],
+        "max_age_days": 40,
+        "pipelines": ["MinFin_PL"],
+        "note": "2/5/10Y average yield at the last regular auction (AS), as of last auction, not daily. Display only (Sentinel D-0116).",
+    },
+    {
+        "key": "foreign_bonds_it",
+        "period": "month",
+        "label": "Italy benchmark BTP yields (Banca d'Italia)",
+        "patterns": ["FB\\_IT\\_%Y"],
+        "max_age_days": 55,  # F-0129: 55 per the F-0089 precedent
+        "pipelines": ["BdI_BMK"],
+        "note": "BMK0100 3/5/10/30Y, monthly. Manual backup POST /api/ingest/bdi-mfn-bmk. Display only (Sentinel D-0116).",
+    },
+    {
+        "key": "ecb_irs_monthly",
+        "period": "month",
+        "label": "ECB IRS long-term 10Y yields, monthly (IT/ES/GR/PT/PL)",
+        "patterns": ["FB\\_%\\_10Y\\_ECB\\_M"],
+        "max_age_days": 55,  # F-0129: 55 per the F-0089 precedent
+        "pipelines": ["ECB_IRS"],
+        "note": "Convergence-criterion 10Y yields, monthly; the card fallback after a stale daily series. Display only (Sentinel D-0116).",
+    },
     {
         "key": "reserves_ex_gold",
         "period": "month",

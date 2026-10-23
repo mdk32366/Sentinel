@@ -62,10 +62,11 @@ class TheUiListsEveryScoredDimension(unittest.TestCase):
             f"the panel lists {sorted(extra)} but the scorer does not sum them",
         )
 
-    def test_there_are_five_of_them(self):
-        # Six until D-0066 retired Sovereign Spread from scoring (F-0079).
-        self.assertEqual(len(declared_dimensions()), 5)
-        self.assertEqual(len(summed_terms()), 5)
+    def test_there_are_six_of_them(self):
+        # Six until D-0066 retired Sovereign Spread from scoring (F-0079);
+        # six again since D-0114 scores it for DEU/GBR/JPN/FRA.
+        self.assertEqual(len(declared_dimensions()), 6)
+        self.assertEqual(len(summed_terms()), 6)
 
 
 class TheDeclaredMaximaMatchTheScorer(unittest.TestCase):
@@ -77,6 +78,7 @@ class TheDeclaredMaximaMatchTheScorer(unittest.TestCase):
         "monetary_score": 35,
         "petro_score": 20,
         "cds_score": 20,
+        "dim4_score": 20,  # D-0114
     }
 
     def test_the_ui_maxima_are_the_documented_ones(self):
@@ -96,8 +98,9 @@ class TheDeclaredMaximaMatchTheScorer(unittest.TestCase):
     def test_the_raw_maximum_is_the_sum_of_the_parts(self):
         source = DIMENSIONS_JS.read_text(encoding="utf-8")
         self.assertIn("MAX_RAW_SCORE", source)
-        # 185 until D-0066 retired the 20-point spread dimension.
-        self.assertEqual(sum(self.EXPECTED.values()), 165)
+        # 185 until D-0066 retired the 20-point spread dimension; 185 again
+        # since D-0114 scores it for the four daily-10Y countries.
+        self.assertEqual(sum(self.EXPECTED.values()), 185)
 
 
 class CdsIsPresentedAsScored(unittest.TestCase):

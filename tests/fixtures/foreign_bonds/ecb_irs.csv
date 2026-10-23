@@ -1,0 +1,11 @@
+KEY,FREQ,REF_AREA,IR_TYPE,TR_TYPE,MATURITY_CAT,BS_COUNT_SECTOR,CURRENCY_TRANS,IR_BUS_COV,IR_FV_TYPE,TIME_PERIOD,OBS_VALUE,OBS_STATUS,TITLE
+IRS.M.ES.L.L40.CI.0000.EUR.N.Z,M,ES,L,L40,CI,0000,EUR,N,Z,2026-08,3.50,A,"Long-term interest rate for convergence purposes, ES"
+IRS.M.ES.L.L40.CI.0000.EUR.N.Z,M,ES,L,L40,CI,0000,EUR,N,Z,2026-09,3.60,A,"Long-term interest rate for convergence purposes, ES"
+IRS.M.GR.L.L40.CI.0000.EUR.N.Z,M,GR,L,L40,CI,0000,EUR,N,Z,2026-08,3.70,A,"Long-term interest rate for convergence purposes, GR"
+IRS.M.GR.L.L40.CI.0000.EUR.N.Z,M,GR,L,L40,CI,0000,EUR,N,Z,2026-09,3.80,A,"Long-term interest rate for convergence purposes, GR"
+IRS.M.IT.L.L40.CI.0000.EUR.N.Z,M,IT,L,L40,CI,0000,EUR,N,Z,2026-08,3.90,A,"Long-term interest rate for convergence purposes, IT"
+IRS.M.IT.L.L40.CI.0000.EUR.N.Z,M,IT,L,L40,CI,0000,EUR,N,Z,2026-09,4.00,A,"Long-term interest rate for convergence purposes, IT"
+IRS.M.PL.L.L40.CI.0000.PLN.N.Z,M,PL,L,L40,CI,0000,PLN,N,Z,2026-08,5.50,A,"Long-term interest rate for convergence purposes, PL"
+IRS.M.PL.L.L40.CI.0000.PLN.N.Z,M,PL,L,L40,CI,0000,PLN,N,Z,2026-09,5.60,A,"Long-term interest rate for convergence purposes, PL"
+IRS.M.PT.L.L40.CI.0000.EUR.N.Z,M,PT,L,L40,CI,0000,EUR,N,Z,2026-08,3.40,A,"Long-term interest rate for convergence purposes, PT"
+IRS.M.PT.L.L40.CI.0000.EUR.N.Z,M,PT,L,L40,CI,0000,EUR,N,Z,2026-09,,A,"Long-term interest rate for convergence purposes, PT"

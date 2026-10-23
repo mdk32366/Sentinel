@@ -3820,3 +3820,246 @@ it "last reported $93.8bn". The figure is unsupported.
 production that day, behind a precondition that refused anything but exactly
 those 12 (`docs/ddl/2026-10-08-remove-slv-tic-rows.sql`, which holds the
 backup). SLV is now `no_data`, which is what Table 3 says.
+
+### F-0115 - test_tic_staleness's boundary case fails around the 19th-23rd of every month
+
+**Claim.** `tests/test_tic_staleness.py::test_boundary_sits_where_the_constant_says`
+failed on master `be64218` and on Sentinel PR #97 CI (run 39687092004,
+2026-10-21 22:32 UTC). Production was correct. The test was not.
+
+**Artifact.** The fixture's newest row is `utcnow() - days_ago`, snapped to
+the 1st of its month, because TIC rows are dated to the first of the data
+month. So the row's real age is `days_ago` plus the day of the month it lands
+on minus 1, which adds 0 to 30 days. The case asserted that `days_ago =
+MAX_SOURCE_AGE_DAYS - 25` (115) succeeds. That holds only while the snap adds
+no more than 25 days. On 2026-10-21, 115 days back is 2026-06-28, which snaps
+to 2026-06-01: 142 days old, over the 140-day limit, so the run is `failed`.
+Whenever the date 115 days back falls on the 27th or later of its month,
+which is around the 19th-23rd of the current month depending on month
+lengths, the test is red for a few days, then green again. A monthly flake.
+
+**Sample size.** One test. Reproduced on a frozen 2026-10-21 (red commit).
+
+**Consequence.** Every Sentinel PR's CI goes red for those days with a
+failure unrelated to its change, and the job never reaches a green conclusion.
+
+**Fixed.** The test freezes the clock (`frozen_utcnow`, which patches only
+`treasury_holdings.datetime.utcnow`) and places the newest row exactly
+`MAX_SOURCE_AGE_DAYS` and `MAX_SOURCE_AGE_DAYS + 1` days old: `success` and
+`failed`. It does this for a month start in every month of 2025-2027, so the
+edge is the constant whatever the date.
+- Mutation proof: changing `>` to `>=` in production, or ageing the source one
+  day less, fails 36 subtests.
+- `MAX_SOURCE_AGE_DAYS` (140) and all production code are unchanged.
+
+### F-0116 - The Foreign Bonds sources resolve, parse, and both history archives exist
+
+**Claim.** All five source URLs `D-0111` relies on answered HTTP 200 from the
+box on **2026-10-21 at 22:14:55 UTC (3:14:55 PM PT)**, with no redirect, and
+each parsed with the fetcher that ships:
+
+| URL | Bytes | Parsed |
+|---|---|---|
+| `https://api.statistiken.bundesbank.de/rest/data/BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R{02,05,07,10,30}XX.R.A.A._Z._Z.A?lastNObservations=10` (`Accept: text/csv`) | 3,968 / 3,970 / 3,970 / 3,981 / 3,078 | 8 observations per tenor (two weekend `.` cells skipped); 2026-10-21: 3.08 / 3.19 / 3.31 / 3.47 / 3.86 |
+| `https://www.bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/latest-yield-curve-data.zip` | 362,099 | member `GLC Nominal daily data current month.xlsx` (stamped 2026-10-21 10:06): 70 points, 2026-10-01..20; 10Y 2026-10-20 5.38407521 |
+| `https://www.bankofengland.co.uk/-/media/boe/files/statistics/yield-curves/glcnominalddata.zip` (archive; resolved from the `href`s on `https://www.bankofengland.co.uk/statistics/yield-curves`; fetched 22:15:23 UTC) | 39,192,649 | 8 members, 1979 to present. `…_2016 to 2024.xlsx`: 11,365 points, 2016-01-04..2024-12-31. `…_2025 to present.xlsx`: 2,210 points, 2025-01-02..2026-09-30 |
+| `https://www.mof.go.jp/jgbs/reference/interest_rate/jgbcm.csv` | 1,556 | 65 points, R8.10.1..R8.10.20; 10Y 2026-10-20 2.927 |
+| `https://www.mof.go.jp/jgbs/reference/interest_rate/data/jgbcm_all.csv` (history) | 1,178,227 (13,311 lines) | 56,146 points, S49.9.24 (1974-09-24)..R8.9.30 (2026-09-30) |
+
+**Artifact.** The spec marked the BoE archive URL and `jgbcm_all.csv`
+**UNVERIFIED** (the MOF history request had not completed). Both are now
+verified. The English-site MOF path (`/english/…/jgbcm.csv`) was not used:
+the spec recorded a 404. The test fixtures are trimmed copies of these
+responses, with sha256 of each original, in
+`tests/fixtures/foreign_bonds/PROVENANCE.md`.
+
+**Consequence.** Backfill does not need a fallback. A BoE or MOF layout
+change fails `SchemaDrift` first and writes nothing (`T-0111`).
+
+**Not established.** The BoE archive layout was read for its two newest
+members only. The BoE zip refresh time (~17:06 UTC) was observed once; it is
+not a published time.
+
+### F-0117 - The Bundesbank answers 200 with a header and no observation, sometimes
+
+**Claim.** On 2026-10-21 one request for the R07XX series returned HTTP 200
+whose body was the CSV header line only, and the next request for it returned
+data (observed by Trinity while writing the spec; not reproduced on the box,
+where all five tenors returned data first time).
+
+**Consequence if unhandled.** A parser that reads "no rows" as "nothing new"
+records a successful run with 0 rows, and the watchdog's run-health check
+sees success while the series stops.
+
+**Handled.** `bundesbank_yields.is_header_only` makes that body a retry, like
+a 5xx (3 attempts, back-off 4 s then 8 s). After the last attempt the run is
+`failed` and writes nothing for any tenor. `T-0111` covers both paths: header
+only every time (failed, 3 attempts, 0 rows) and header only once (success).
+
+### F-0118 - Webstat: two APIs, and a wrong key answers 401, not the guide's 404
+
+**Claim.** Measured from the box on 2026-10-22 at 16:06:29 UTC (9:06:29 AM PT):
+
+| Request | Answer |
+|---|---|
+| `https://api.webstat.banque-france.fr/webstat-fr/v1/data/FM/FM.D.FR.EUR.FR2.BB.FRMOYTEC10.HSTA?format=csv&detail=dataonly`, no key | 401 `{"httpCode":"401","httpMessage":"Unauthorized","moreInformation":"Invalid client id or secret."}` (IBM API Connect, the legacy gateway) |
+| `https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/csv?where=…TEC10…&limit=1`, no key | 404, 105 B, `NotFoundResource` / "The requested dataset observations does not exist." |
+| the same, `Authorization: Apikey not-a-real-key` | 401, 33 B, `{"error": "API key is not valid"}` |
+
+The legacy gateway's developer portal (`developer.webstat.banque-france.fr`)
+could not be read (HTTP 500 to the fetcher, a TLS EOF to curl), so its
+key header could only be found in third-party code. The Bank's own guide,
+<https://webstat.banque-france.fr/pages/guide-migration-api/?flg=fr-fr>,
+documents only the new API: header `Authorization: Apikey <key>`, and a 404
+for an absent or unknown key. The 401 for a wrong key is not in the guide.
+
+**Consequence if unhandled.** Building against the legacy gateway would have
+meant guessing its header. A fetcher that recognised only the documented 404
+would report a wrong key as a generic `FETCH_BLOCKED http=401` with no hint
+that the secret is the problem.
+
+**Handled.** `D-0112` targets the new API (Trinity's ruling, 8:58 AM PT).
+`bdf_tec.fetch_bdf_tec` treats both the 404 and the 401 as a rejected key:
+no retry, `failed`, and an error naming `WEBSTAT_API_KEY` but never its value.
+Both bodies are kept as real fixtures (`bdf_tec_404.json`,
+`bdf_tec_401.json`), and `T-0112` covers both. The selfhost egress allowlist
+names `webstat.banque-france.fr`, not the legacy host.
+
+### F-0119 - D-0114 follow-up: coverage still counts 165, so FB countries' available points are understated by 20
+
+**Claim.** `D-0114` (judgment call 5) left `DIMENSION_MAX` and
+`available_points()` in `pipelines/composite_stress.py` unchanged: five keys,
+no `dim4_score`, maximum 165. For DEU, GBR, JPN and FRA dimension 4 now
+scores (0-20), so for those four `available_points` is 20 lower than the
+points they can actually earn, and `score_pct_of_available` is overstated.
+France in the prod shadow (2026-10-22) earns 20.0 from dim 4 against an
+availability figure that does not include it. Every other country is correct,
+since dim 4 earns them nothing.
+
+**Consequence if unhandled.** "Measured on N of 165" and the percentage-of-
+available figure are wrong for exactly the four countries `D-0114` touched,
+in the direction that flatters the score. `ui/src/lib/coverage.js` mirrors the
+same table, and the parity tests keep the two consistent with each other, not
+with the scorer.
+
+**Handled.** Not in `D-0114`. This was deliberate, to keep the PR's non-FB
+payloads byte-identical to master and its diff limited to dim 4. Follow-up:
+add `dim4_score: 20` to `DIMENSION_MAX` (and to `coverage.js`), counted only
+when `dim4_source` is set for the country, with a parity test on both sides.
+
+### F-0120 - D-0114 follow-up: the UI's model maximum moved from 165 to 185
+
+**Claim.** `D-0114` (judgment call 6) put `dim4_score` back into
+`STRESS_DIMENSIONS` in `ui/src/lib/dimensions.js` with max 20. The methodology
+panel's raw maximum therefore reads 185, which is the pre-`D-0066` figure,
+while the scorer's `DIMENSION_MAX` and every "of 165" sentence in
+`docs/decisions.md` (`D-0066` onward) still say 165. Both numbers are true for
+different countries: 185 for the four FB countries and 165 for everyone else.
+
+**Consequence if unhandled.** A reader sees 185 on the panel and 165 in the
+coverage line on the same screen. That is the reconciliation failure `F-0076`
+was opened to remove.
+
+**Handled.** Not in `D-0114`. The panel must list every summed term
+(`tests/test_composite_dimensions.py`), so dim 4 has to appear there.
+Follow-up, together with `F-0119`: label the dim-4 row "DEU/GBR/JPN/FRA only",
+and state the maximum as 185 for those four and 165 elsewhere.
+
+### F-0121 - AC-1 markets-default UI test fails on Matt's Windows laptop, green in CI
+
+**Claim.** `ui/src/marketsDefault.ac1.dom.test.jsx` (AC-1) failed in a
+local Vitest run on Matt's Windows laptop during the `D-0114` (#104) work at
+`2f9f840`, with no UI change in that tree. The same test passes in CI (Linux)
+on the same commits.
+
+**Consequence if unhandled.** A local red on Windows can be mistaken for a
+regression, or it can train people to ignore real AC-1 failures.
+
+**Handled.** Classified Windows-local and not chased now (Trinity, 2026-10-22
+2:12 PM PT). CI stays the gate for AC-1. Reopen if it fails in CI or on a
+non-Windows machine.
+
+### F-0122 - Batch 2 gaps: SNB stale since 2025-07-31, no Danish source, NZ blocked by a WAF
+
+**Claim.** Probed 2026-10-22 for spec@0.3. The SNB government bond yield
+cube's newest observation is 2025-07-31, so CH has no usable daily source.
+Denmark has no keyless daily government yield source found. The RBNZ
+download answers 403 from a web application firewall to non-browser clients.
+
+**Consequence if unhandled.** CH, DK and NZ would be shown as missing with no
+recorded reason.
+
+**Handled.** None of the three is in `D-0115`; they stay on the monthly OECD
+fallback where one exists.
+
+### F-0123 - RBA F2 lags about 8 days
+
+**Claim.** On 2026-10-22 the newest F2 observation was 2026-10-14. The RBA
+updates F2 weekly, so the newest row is routinely a week or more old.
+
+**Consequence if unhandled.** A 4-day limit would show AUS stale most days.
+
+**Handled.** `rba_f2` freshness is 12 days, and the job runs twice a day
+(08:00 and 20:00 UTC) to pick up a release promptly.
+
+### F-0124 - The ECB Data Portal is unreachable from the build box, reachable from the laptop
+
+**Claim.** From the build box, `data-api.ecb.europa.eu` fails the TLS
+handshake (unexpected EOF). From Matt's laptop the same request returns the
+CSV (newest 2026-10-21). The box egress path, not the ECB, is the cause.
+
+**Consequence if unhandled.** A selfhost deployment with the same egress
+would see `ecb_yc` fail closed every day.
+
+**Handled.** `data-api.ecb.europa.eu` is in the selfhost egress allow-list PR
+with the other five batch 2a hosts. Fly is unaffected.
+
+### F-0125 - MinFin's attachment URL is opaque; only the file name is stable
+
+**Claim.** gov.pl serves `Obligacje_Hurtowe.xlsm` from `/attachment/<uuid>`
+links whose UUID is not documented as stable; the file name appears only in
+the Content-Disposition header.
+
+**Handled.** `resolve_attachment` HEADs each attachment link and picks the one
+whose Content-Disposition names the file, checking content type and size
+(T-0139). No match fails the run closed.
+
+### F-0126 - Banca d'Italia serves BMK0100 as a ZIP holding one CSV
+
+**Claim.** The EN export for BMK0100 answers with a ZIP containing a single
+`;`-separated CSV whose first header cell is `DATA_OSS`, dates `YYYY/MM/DD`,
+with extra columns beside the four used. Live on 2026-10-22: newest 2026-09-30.
+
+**Handled.** `bdi_bmk.unwrap` requires exactly one CSV and caps the unzipped
+size; the parser picks columns by key (T-0134, T-0135).
+
+### F-0127 - ECB IRS is unreachable from the build box, as `F-0124`
+
+**Claim.** The IRS dataset shares `data-api.ecb.europa.eu`; the box TLS
+failure in `F-0124` applies. Verified from the laptop: newest 2026-09.
+
+**Handled.** No new host; the selfhost allow-list already carries it. The
+2b-1 selfhost PR adds `www.gov.pl` and `a2a.bancaditalia.it`.
+
+### F-0128 - MinFin PL, Banca d'Italia and ECB IRS reuse terms are unverified (`A-0039`)
+
+**Claim.** `A-0039` (redisplay with attribution) rests on each publisher's
+general reuse terms. Nobody has read and recorded the specific terms for the
+MinFin auction workbook, BMK0100 or the ECB IRS dataset.
+
+**Handled.** Not yet. Display only, sources cited on cards and tooltips; no
+scored use. Until verified, a restrictive term takes the PL/IT/GR/PT cards
+down (the `A-0039` consequence). Open.
+
+### F-0129 - Italy monthly (BMK0100) can read stale before the next month lands
+
+**Claim.** `foreign_bonds_it` is monthly with `max_age_days` 45, aged from the
+month-end date. Prod after the 2026-10-22 deploy: latest 2026-09-30. If the
+October observation is published after about 14 November, the watchdog flags
+Italy stale though nothing is broken; `ecb_irs_monthly` (also 45 days) has the
+same exposure for the IRS fallback.
+
+**Handled.** Both limits widened to 55 days, as `F-0089` did:
+`foreign_bonds_it`, `ecb_irs_monthly`, `FB_MAX_AGE_DAYS.IT` and
+`ECB_IRS_MAX_AGE_DAYS`. Pinned by `T-0151` (55 ok, 56 stale) and `T-0152` (cards).
+Resolved 2026-10-22.

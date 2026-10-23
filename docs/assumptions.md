@@ -831,3 +831,228 @@ letting it pass silently.
 
 **Status:** Holding. Checked on every ingested record. The ingest records an
 `identity_check` per row, and the summary counts failures.
+
+### A-0026 - France has no free, official, daily yield that a script can read
+
+**Relies on:** the 2026-10-21 search (`D-0111`, vault:D-0057 §3.4). Agence
+France Trésor serves its benchmark yields behind a Cloudflare challenge (HTTP
+403 to a script). The ECB publishes euro-area curves and a monthly 10Y only.
+The Banque de France series stopped in July 2024.
+
+**Falsified by:** a French official daily file that downloads without a
+challenge, for example from AFT or as an ECB/BdF country series.
+
+**Consequence if wrong:** France's row stays thinner than it needs to be. It
+is honestly thin, not wrong: the 10Y is the monthly OECD series, badged
+MONTHLY, and the other four cells say NO SOURCE with this reason. The
+OAT-Bund spread is monthly and labelled so.
+
+**Status:** Holding, option A. A paid feed (bonds-api.com) would fill the row
+but is not approved.
+
+### A-0027 - Curve-fitted yields are comparable across countries
+
+**Relies on:** the German (Bundesbank Svensson) and UK (BoE GLC spot) cells
+both being zero-coupon yields at an exact maturity, fitted to each
+government's own bonds. A spread between them is then a like-for-like
+difference.
+
+**Caveat, stated:** the fitting methods differ (Svensson vs the BoE's
+variable-roughness spline), and Japan's cells are MOF **constant-maturity
+par** yields, a different construction. JGB-UST and Japan curve spreads are
+therefore an approximation. Every card's tip says FIT or CMT. The BoE curve
+is one business day behind the others, and the spread tips say so.
+
+**Falsified by:** a material gap (more than a few basis points) between the
+fitted value and a benchmark-bond yield at the same tenor on the same day.
+It has not been measured.
+
+**Consequence if wrong:** a cross-country spread reads a few basis points
+wide or narrow. Nothing is scored on it.
+
+**Status:** Assumed, not measured.
+
+### A-0028 - Foreign Bonds stay out of the stress score
+
+**Relies on:** composite dimension 4 already scoring these countries' 10Y
+through the monthly OECD series (`IRLTLT01%`). A daily copy of the same
+signal adds no new information and would double-count it on a different
+clock.
+
+**Falsified by:** a backtest showing that the daily curves lead D4's monthly
+signal enough to change a country's tier earlier.
+
+**Consequence if wrong:** the composite reacts a month late to a move it
+could have seen daily.
+
+**Status:** Holding by ruling (`D-0111`). Every Foreign Bonds card carries
+`scored: false`, and `tests/test_markets_tooltips.py` fails if either scorer
+names an `FB_` code or the `foreign_bond` category. Changing this needs its
+own spec with a backtest.
+
+**Closed by `D-0114`** (2026-10-22): dimension 4 now reads the four
+`FB_xx_10Y` codes, with the monthly series kept only as the stale fallback,
+so nothing is double-counted. No backtest was run; the D-0114 shadow table is
+the review gate instead.
+
+### A-0029 - The Webstat CSV export has the shape the Bank's guide documents
+
+**Relies on:** `exports/csv` on the observations table returning a
+`;`-separated file with a header line naming `series_key`,
+`time_period_start` and `obs_value`, one observation per row, and an empty
+cell for a null value. That is how the guide
+(<https://webstat.banque-france.fr/pages/guide-migration-api/?flg=fr-fr>)
+describes the JSON fields and its CSV example, and how `exports/json` maps to
+`exports/csv`. No live CSV has been seen: there is no key yet, so
+`tests/fixtures/foreign_bonds/bdf_tec.csv` is synthetic-from-docs.
+
+**Falsified by:** the first keyed response having another delimiter, other
+column names, or another date format.
+
+**Consequence if wrong:** `parse_bdf_tec` raises `SchemaDrift`, the run is
+`failed` with `FETCH_PARSE`, nothing is written, and FR 10Y stays on the
+labelled monthly fallback. Wrong numbers are not shown; the French daily
+cells are simply missing until the parser is fixed.
+
+**Status:** Open (`D-0112`). Close it by capturing the first keyed response
+as a real fixture (PROVENANCE.md says which file to replace).
+
+### A-0030 - The OAT-Bund term is scored as an inclusive percentile of France's own 5-year history
+
+**Relies on:** five years of same-date FR-DE 10Y spreads being a fair
+reference for "how wide is wide" for France. The percentile is
+`count(history <= today) / len(history) * 100`. The ties-inclusive rank means
+today's own value always counts, so a new 5-year high scores 100. It needs at
+least 250 same-date observations, about a year, or the term is not scored.
+
+**Caveat, stated:** a percentile has no level. In a calm five years, a modest
+widening reads as the 100th percentile and scores the full 20. That is the
+spec's intent (relative stress), but it is not the same as "the spread is
+dangerous".
+
+**Falsified by:** the shadow table, or a later backtest, showing France
+pinned near 20 while nothing else in its row moves.
+
+**Consequence if wrong:** France's composite reads up to 20 points high.
+
+**Status:** Assumed (`D-0114`). The window and the minimum are constants
+(`SPREAD_HISTORY_DAYS`, `SPREAD_MIN_HISTORY`).
+
+### A-0031 - A level score on FIT, CMT and TEC 10Y yields is comparable across the four countries
+
+**Relies on:** `A-0027`'s premise, extended to scoring. The dim 4 level
+compares the German and UK fitted zero-coupon 10Y (FIT), the Japanese MOF
+constant-maturity par 10Y (CMT) and the French Banque de France TEC 10Y
+(CMT-like) against the US 10Y (DGS10, CMT). It then applies one bp ladder
+whose bands are 50bp wide.
+
+**Caveat, stated:** zero-coupon versus par yields differ by a few bp at 10Y,
+and more on a steep curve. The fallback (`IRLTLT`) is yet another
+construction, a benchmark-bond average. A country can cross a 50bp band by
+changing source alone. `dim4_source` records which one scored. The OAT-Bund
+term is the cleaner of the two, since both legs share a curve family.
+
+**Falsified by:** a same-day comparison of FIT/CMT and benchmark-bond yields
+at 10Y that shows gaps near a band edge.
+
+**Consequence if wrong:** a GBR or DEU level score flips 5 points on a
+source change rather than on a market move.
+
+**Status:** Assumed, not measured (`D-0114`).
+
+
+### A-0032 - The Banco de España TI_1_3 CSV is Latin-1, uses `_` for missing, and its 10Y is the secondary-market yield
+
+**Relies on:** the shape of `TI_1_3.csv` as fetched on 2026-10-22: Latin-1
+encoded (accented headers do not decode as UTF-8), `_` in a cell meaning no
+observation, a `FUENTE` / `NOTAS` footer after the data, and the 10-year column
+being the secondary-market (outright) government bond yield rather than the
+primary auction yield.
+
+**Status:** Assumed (`D-0115`). `bde_ti13.decode` decodes Latin-1, `_` is
+skipped rather than read as zero, and parsing stops at the footer
+(T-0127 to T-0130).
+
+**Falsified by:** a UTF-8 file, a different missing marker, or BdE
+documentation that the column is the auction yield.
+
+**Consequence if wrong:** mojibake headers fail the column match and the run
+fails closed (no wrong rows); a primary-market 10Y would sit a few bp off the
+other daily curves.
+
+### A-0033 - Bank of Canada's LONG benchmark is shown as the 30Y
+
+**Relies on:** Valet's `BD.CDN.LONG.DQ.YLD` being the long benchmark bond
+(currently near 30 years remaining), not a fixed 30-year point.
+
+**Status:** Assumed (`D-0115`). It is stored as `FB_CA_30Y` so the Canadian
+curve lines up with the others; the 10s30s tooltip says "10s-long".
+
+**Falsified by:** the benchmark rolling to a materially shorter bond.
+
+**Consequence if wrong:** CAN 10s30s understates the true 10s30s slope.
+
+### A-0034 - The ECB yield-curve data may be redisplayed with attribution
+
+**Relies on:** the ECB's general statistics reuse terms, which allow reuse
+with the source cited. Not verified against a licence specific to the
+Svensson yield-curve dataset.
+
+**Status:** Unverified (`D-0115`). The EA panel cites "Source: ECB" and the
+update date.
+
+**Falsified by:** ECB terms that restrict the YC dataset.
+
+**Consequence if wrong:** the EA panel would need to come down; nothing
+scored depends on it.
+
+### A-0035 - VOID, NEVER ISSUED
+
+Skipped when D-0116 was ruled; A-0036..A-0039 were assigned. Nothing cites it.
+
+### A-0036 - A Polish auction yield stands in for a constant-maturity yield
+
+**Relies on:** the closest-to-tenor bond at a wholesale auction being a fair
+2Y/5Y/10Y point, and `RentŚr` being the auction's average yield as a fraction.
+
+**Status:** Assumed (`D-0116`). Labelled "as of last auction" on the card.
+
+**Falsified by:** MinFin documenting `RentŚr` as something other than the
+average yield, or a percent rather than a fraction.
+
+**Consequence if wrong:** PL points sit off a secondary-market curve or are
+100x off; the value range check (`to_value`) fails such a run closed.
+
+### A-0037 - BMK0100 columns 203/205/210/230 are the 3/5/10/30Y benchmarks
+
+**Relies on:** Banca d'Italia's `MFN_BMK.M.020.922.0.EUR.{203,205,210,230}`
+keys being the gross benchmark BTP yields at those maturities, monthly.
+
+**Status:** Assumed (`D-0116`); checked against the live export on
+2026-10-22 (10Y 4.3622 for 2026-09, alongside ECB IRS IT 4.362).
+
+**Falsified by:** a key renamed or redefined; the parser then fails closed.
+
+**Consequence if wrong:** IT shows the wrong tenor; nothing scored.
+
+### A-0038 - The ECB IRS monthly 10Y is an acceptable card fallback
+
+**Relies on:** the convergence-criterion yield being a 10Y government
+benchmark, comparable to the daily series it backs up.
+
+**Status:** Assumed (`D-0116`). Always badged MONTHLY, with its own tooltip.
+
+**Falsified by:** a material, persistent gap to the daily 10Y.
+
+**Consequence if wrong:** a stale-daily card shows a monthly average that can
+differ by tens of bp; display only.
+
+### A-0039 - MinFin PL, Banca d'Italia and ECB IRS data may be redisplayed with attribution
+
+**Relies on:** each publisher's general reuse terms (source cited).
+
+**Status:** Unverified (`D-0116`). Cards and tooltips cite each source.
+
+**Falsified by:** terms restricting these datasets.
+
+**Consequence if wrong:** the PL/IT/GR/PT cards come down; nothing scored.

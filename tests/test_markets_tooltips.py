@@ -289,3 +289,63 @@ class M2IsTheWeeklySeries(unittest.TestCase):
         # place.
         tip = parse_metrics()["WM2NS"]["tip"].lower()
         self.assertIn("once a month", tip)
+
+
+class ForeignBondsAreNotScored(unittest.TestCase):
+    """Sentinel D-0111 (vault:D-0057) AC-4. The same guard, extended to the
+    FOREIGN-BONDS cells: every one says it is not scored, and neither scorer
+    names any of its codes or its category."""
+
+    @staticmethod
+    def parse_foreign_bonds():
+        source = CONSTANTS.read_text(encoding="utf-8")
+        block = source[source.index("export const FOREIGN_BOND_METRICS = ["):]
+        return block[: block.index("\n];")]
+
+    def test_every_foreign_bond_cell_is_marked_not_scored(self):
+        block = self.parse_foreign_bonds()
+        self.assertNotIn("scored: true", block)
+        # Sentinel D-0112: one generated entry covers DE, GB, JP and FR. The
+        # monthly French fallback literal is gone (D-0112 amendment 1).
+        self.assertEqual(block.count("scored: false"), 1)
+        # Sentinel D-0115: batch 2a joins the generated entry.
+        # Sentinel D-0116: batch 2b-1 (PL, IT) too.
+        self.assertIn('["DE", "GB", "JP", "FR", "CA", "SE", "AU", "NO", "ES", "PL", "IT"]', block)
+
+    def test_neither_scorer_reads_a_foreign_bond(self):
+        # Sentinel D-0114 amends D-0111's no-scorer clause, deliberately: the
+        # composite scorer's dimension 4 now reads the four daily 10Y codes
+        # (FB_DE/GB/JP/FR_10Y) and nothing else from the FB_ family. The v2
+        # scorer still reads none. The FOREIGN-BONDS cells stay "scored: false"
+        # because the tab itself is display; the score lives in dimension 4.
+        codes = [f"FB_{c}_{t:02d}Y" for c in ("DE", "GB", "JP", "FR") for t in (2, 5, 7, 10, 30)]
+        scored = {f"FB_{c}_10Y" for c in ("DE", "GB", "JP", "FR")}
+        v2 = V2_SCORER.read_text(encoding="utf-8")
+        self.assertNotIn("FB_", v2)
+        self.assertNotIn("foreign_bond", v2)
+        for code in codes:
+            self.assertFalse(reads_code(V2_SCORER, code), code)
+        composite = COMPOSITE_SCORER.read_text(encoding="utf-8")
+        # No selection by the FB category: the four codes are named exactly.
+        # (The scorer does reference the watchdog's "foreign_bonds_*" keys,
+        # to share the D-0113 freshness limits.)
+        self.assertNotIn('"foreign_bond"', composite)
+        for code in codes:
+            with self.subTest(code=code):
+                self.assertEqual(code in composite, code in scored, code)
+
+    def test_the_french_monthly_10y_is_off_the_foreign_bonds_surface(self):
+        # Sentinel D-0112 amendment 1 (T-0112 addendum 2): TEC10 daily is the only FR 10Y
+        # on FOREIGN-BONDS. The monthly IRLTLT01FRM156N is not a fallback card,
+        # not a spread leg and not requested by the tab. It stays in FRED's
+        # fetch list and the DB, and composite D4 still scores it.
+        source = CONSTANTS.read_text(encoding="utf-8")
+        surface = source[source.index("const FB_COUNTRY = {"):source.index("// \u2500\u2500 Shared UI")]
+        self.assertNotIn("IRLTLT01FRM156N", surface)
+        self.assertNotIn("FR_10Y_MONTHLY_FALLBACK", source)
+        self.assertNotIn('kind: "NONE"', self.parse_foreign_bonds())
+        tab = (CONSTANTS.parent.parent / "pages" / "ForeignBondsTab.jsx").read_text(encoding="utf-8")
+        self.assertNotIn("fallback", tab.lower())
+        fred = (ROOT / "pipelines" / "fred_fetcher.py").read_text(encoding="utf-8")
+        self.assertIn('"code": "IRLTLT01FRM156N"', fred)
+

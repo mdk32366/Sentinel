@@ -97,3 +97,71 @@ describe("GOLD threads the yields through to the country panel", () => {
     window.location.hash = "";
   });
 });
+
+// ── Sentinel D-0113: the Foreign Bonds chart, embedded per country ──────────
+import { fireEvent } from "@testing-library/react";
+import { fbCardCodes } from "../lib/constants";
+
+const D0113_NOW = new Date("2026-10-22T12:00:00Z");
+function fbTimeseries(href) {
+  const m = /metric_codes=([^&]*)/.exec(href);
+  const codes = m ? decodeURIComponent(m[1]).split(",").filter(Boolean) : [];
+  return codes.flatMap((code, i) => [
+    { metric_code: code, date: "2026-10-20T00:00:00", value: 2 + i * 0.2 },
+    { metric_code: code, date: "2026-10-21T00:00:00", value: 2.05 + i * 0.2 },
+  ]);
+}
+
+describe("D-0113: the country card embeds the Foreign Bonds chart", () => {
+  let requested;
+  beforeEach(() => {
+    requested = [];
+    const base = globalThis.fetch;
+    vi.stubGlobal("fetch", vi.fn((url) => {
+      const href = String(url);
+      if (href.includes("/timeseries")) {
+        requested.push(href);
+        return Promise.resolve({ ok: true, status: 200, json: () => Promise.resolve(fbTimeseries(href)) });
+      }
+      return base(url);
+    }));
+  });
+
+  for (const [iso, cc] of [["DEU", "DE"], ["GBR", "GB"], ["JPN", "JP"], ["FRA", "FR"]]) {
+    it(`${iso}: renders the chart with its five ${cc} FB codes`, async () => {
+      render(<CountryDetail iso={iso} latestAll={{ DGS10: 4.2 }} now={D0113_NOW} />);
+      await waitFor(() => expect(screen.getByTestId("country-bond-chart")).toBeTruthy());
+      for (const t of [2, 5, 7, 10, 30]) {
+        expect(screen.getByRole("button", { name: `${cc} ${t}Y` })).toBeTruthy();
+      }
+      expect(requested.some((h) => fbCardCodes(iso).every((c) => decodeURIComponent(h).includes(c)))).toBe(true);
+    });
+  }
+
+  it("% CHANGE works on the card", async () => {
+    render(<CountryDetail iso="DEU" latestAll={{ DGS10: 4.2 }} now={D0113_NOW} />);
+    await waitFor(() => expect(screen.getByText("% CHANGE")).toBeTruthy());
+    const btn = screen.getByText("% CHANGE");
+    expect(btn.getAttribute("aria-pressed")).toBe("false");
+    fireEvent.click(btn);
+    expect(screen.getByText("% CHANGE").getAttribute("aria-pressed")).toBe("true");
+  });
+
+  it("BEL has no chart and no FB request (ITA joined in D-0116)", async () => {
+    render(<CountryDetail iso="BEL" latestAll={{ DGS10: 4.2 }} now={D0113_NOW} />);
+    await waitFor(() => expect(screen.getByText("Spread vs US 10Y")).toBeTruthy());
+    expect(screen.queryByTestId("country-bond-chart")).toBeNull();
+    expect(screen.queryByText("% CHANGE")).toBeNull();
+    expect(requested.some((h) => h.includes("FB_"))).toBe(false);
+  });
+
+  it("chart state is per country: % CHANGE on DEU does not leak to GBR", async () => {
+    const { rerender } = render(<CountryDetail iso="DEU" latestAll={{ DGS10: 4.2 }} now={D0113_NOW} />);
+    await waitFor(() => expect(screen.getByText("% CHANGE")).toBeTruthy());
+    fireEvent.click(screen.getByText("% CHANGE"));
+    expect(screen.getByText("% CHANGE").getAttribute("aria-pressed")).toBe("true");
+    rerender(<CountryDetail iso="GBR" latestAll={{ DGS10: 4.2 }} now={D0113_NOW} />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "GB 10Y" })).toBeTruthy());
+    expect(screen.getByText("% CHANGE").getAttribute("aria-pressed")).toBe("false");
+  });
+});

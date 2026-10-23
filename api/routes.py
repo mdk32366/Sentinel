@@ -24,6 +24,7 @@ from api.schemas import (
     UpdateLogResponse,
     HealthResponse,
 )
+from pipelines import scheduler as scheduler_module
 from pipelines.scheduler import scheduler
 from pipelines.cds_fetcher import (
     run_cds_fetch,
@@ -266,6 +267,79 @@ def trigger_fred_fetch(db: Session = Depends(get_db)):
         return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/fetch/foreign-bonds/{source}")
+def trigger_foreign_bonds_fetch(source: str, backfill: bool = Query(False)):
+    """Sentinel D-0111: run one Foreign Bonds source now.
+
+    The same wrapper the weekday cron runs. ``?backfill=1`` reads five years;
+    otherwise only the current window. Answers {status, inserted, updated,
+    latest_date}; a failed run is ``failed`` with zero counts, never a 500.
+    Writes need Basic Auth; the proof cookie is read-only (403).
+    """
+    if source not in scheduler_module.FOREIGN_BOND_JOBS:
+        raise HTTPException(status_code=404, detail=f"unknown foreign-bond source: {source}")
+    label, run, metrics = scheduler_module.FOREIGN_BOND_JOBS[source]
+    return scheduler_module._scheduled_foreign_bonds(
+        label, run, metrics, backfill=True if backfill else None
+    )
+
+
+def _basic_username(request: Request) -> str:
+    """The Basic Auth user name (the middleware has already checked it). Never the password."""
+    import base64
+    header = request.headers.get("authorization", "")
+    if not header.lower().startswith("basic "):
+        return "unknown"
+    try:
+        return base64.b64decode(header[6:].strip()).decode("utf-8").split(":", 1)[0] or "unknown"
+    except Exception:
+        return "unknown"
+
+
+async def _read_capped_body(request: Request, cap: int) -> bytes:
+    """Read an upload body, refusing anything over ``cap`` bytes early.
+
+    D-0116 follow-up: a Content-Length over the cap is a 413 before a byte
+    is read; a malformed one is a 400. Without Content-Length (chunked) the
+    stream is read only until it passes the cap, never buffered whole.
+    """
+    raw = request.headers.get("content-length")
+    if raw is not None:
+        try:
+            declared = int(raw)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="malformed Content-Length")
+        if declared < 0:
+            raise HTTPException(status_code=400, detail="malformed Content-Length")
+        if declared > cap:
+            raise HTTPException(status_code=413, detail=f"upload over {cap} bytes")
+    parts, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > cap:
+            raise HTTPException(status_code=413, detail=f"upload over {cap} bytes")
+        parts.append(chunk)
+    return b"".join(parts)
+
+
+@router.post("/ingest/bdi-mfn-bmk")
+async def ingest_bdi_mfn_bmk(request: Request, db: Session = Depends(get_db)):
+    """Sentinel D-0116: manual backup for Italy's BMK0100 (Banca d'Italia).
+
+    The body is the BMK0100 export as downloaded: the ZIP, or the CSV inside
+    it. Parsed by the same function the scheduled ``bdi_bmk`` job uses.
+    All or nothing: over 2 MB -> 413 (on Content-Length, before reading), anything the parser rejects -> 422,
+    and in both cases nothing is written. Idempotent. Writes need Basic Auth;
+    the proof cookie is read-only (403).
+    """
+    from pipelines import bdi_bmk
+    body = await _read_capped_body(request, bdi_bmk.MAX_BODY_BYTES)
+    try:
+        return bdi_bmk.ingest(db, body, _basic_username(request))
+    except bdi_bmk.IngestRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/holdings", response_model=HoldingsResponse)

@@ -128,6 +128,19 @@ class TestEverySourceDeclaresItsPeriod(unittest.TestCase):
             "reserves_ex_gold": "month", "sovereign_yields": "month",
             "money_supply": "year",
             "treasury_auctions": "day",
+            # Sentinel D-0111: Foreign Bonds, business-daily.
+            "foreign_bonds_de": "day", "foreign_bonds_gb": "day",
+            "foreign_bonds_jp": "day",
+            # Sentinel D-0112: France, Banque de France TEC, business-daily.
+            "foreign_bonds_fr": "day",
+            # Sentinel D-0115 (batch 2a).
+            "foreign_bonds_ca": "day", "foreign_bonds_se": "day",
+            "foreign_bonds_au": "day", "foreign_bonds_no": "day",
+            "foreign_bonds_es": "day", "foreign_bonds_ea": "day",
+            # Sentinel D-0116 (batch 2b-1): PL auctions (irregular days),
+            # IT BMK monthly, the ECB IRS monthly 10Y fallback.
+            "foreign_bonds_pl": "day", "foreign_bonds_it": "month",
+            "ecb_irs_monthly": "month",
         }
         actual = {c["key"]: c.get("period") for c in CHECKS}
         self.assertEqual(actual, expected)

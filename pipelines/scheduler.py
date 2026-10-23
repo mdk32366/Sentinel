@@ -14,6 +14,20 @@ from pipelines.cds_fetcher import run_cds_fetch
 from pipelines.treasury_direct import run_treasury_direct_fetch
 from pipelines.freshness_watchdog import run_freshness_check
 from pipelines.gold_price_fetcher import run_gold_price_fetch
+from pipelines.boe_yields import METRICS as BOE_METRICS, run_boe_yields
+from pipelines.bundesbank_yields import METRICS as BUNDESBANK_METRICS, run_bundesbank_yields
+from pipelines.bdf_tec import METRICS as BDF_TEC_METRICS, run_bdf_tec
+from pipelines.mof_jgb import METRICS as MOF_METRICS, run_mof_jgb
+# Sentinel D-0115: Foreign Bonds batch 2a, keyless daily sources.
+from pipelines.boc_valet import METRICS as BOC_METRICS, run_boc_valet
+from pipelines.riksbank_swea import METRICS as RIKSBANK_METRICS, run_riksbank_swea
+from pipelines.rba_f2 import METRICS as RBA_METRICS, run_rba_f2
+from pipelines.norges_govt import METRICS as NORGES_METRICS, run_norges_govt
+from pipelines.bde_ti13 import METRICS as BDE_METRICS, run_bde_ti13
+from pipelines.ecb_yc import METRICS as ECB_METRICS, run_ecb_yc
+from pipelines.ecb_irs import METRICS as ECB_IRS_METRICS, run_ecb_irs
+from pipelines.minfin_pl_auctions import METRICS as MINFIN_PL_METRICS, run_minfin_auctions
+from pipelines.bdi_bmk import METRICS as BDI_BMK_METRICS, run_bdi_bmk
 from pipelines.composite_stress import persist_composite_snapshot
 from pipelines.money_supply_fetcher import run_money_supply_fetch
 from pipelines.imf_gold_reserves import run_imf_gold_fetch
@@ -65,6 +79,23 @@ SCHEDULED_PIPELINES = {
     "Gold_Reserves_IMF",
     "TIC_Table3",
     "Treasury_Auctions",
+    # Sentinel D-0111: Foreign Bonds.
+    "Bundesbank_Yields",
+    "BoE_Yields",
+    "MOF_JGB",
+    # Sentinel D-0112: France, Banque de France TEC.
+    "BdF_TEC",
+    # Sentinel D-0115: Foreign Bonds batch 2a.
+    "BoC_Valet",
+    "Riksbank_SWEA",
+    "RBA_F2",
+    "Norges_GOVT",
+    "BdE_TI13",
+    "ECB_YC",
+    # Sentinel D-0116: Foreign Bonds batch 2b-1.
+    "ECB_IRS",
+    "MinFin_PL",
+    "BdI_BMK",
 }
 
 # After FRED at 2 AM. Env override preserved; config default is also 3.
@@ -300,6 +331,144 @@ def scheduled_gold_price_fetch():
             db.close()
 
 
+def _scheduled_foreign_bonds(label, run, metrics, backfill=None):
+    """Sentinel D-0111. One wrapper body for every Foreign Bonds job.
+
+    ``backfill=None`` (the scheduler) backfills five years only when no row of
+    the source is stored yet (Bundesbank startPeriod, BoE archive zip, MOF
+    jgbcm_all.csv); every later run reads only the current window. The manual
+    trigger can force it with ``backfill=True``.
+
+    Returns {status, inserted, updated, latest_date}. Never raises: a failure
+    is logged and answered as ``failed`` with zero counts.
+    """
+    db = None
+    try:
+        db = get_session()
+        if backfill is None:
+            from database.models import Metric, TimeSeries
+            codes = [m["code"] for m in metrics]
+            stored = (
+                db.query(TimeSeries.id)
+                .join(Metric, Metric.id == TimeSeries.metric_id)
+                .filter(Metric.code.in_(codes))
+                .first()
+            )
+            backfill = stored is None
+        result = run(db, backfill=backfill)
+        logger.info(
+            f"{label}: {result['status']} - {result['inserted']} inserted, "
+            f"{result['updated']} updated, latest={result.get('latest_date')}"
+        )
+        return {
+            "status": result["status"],
+            "inserted": result["inserted"],
+            "updated": result["updated"],
+            "latest_date": result.get("latest_date"),
+        }
+    except Exception as e:
+        logger.error(f"Scheduled {label} fetch failed: {e}", exc_info=True)
+        return {"status": "failed", "inserted": 0, "updated": 0, "latest_date": None}
+    finally:
+        if db is not None:
+            db.close()
+
+
+def scheduled_bdf_tec_fetch():
+    """Banque de France TEC OAT yields, weekdays 10:00 UTC (Sentinel D-0112).
+
+    No WEBSTAT_API_KEY: run_bdf_tec logs and returns ``skipped``; nothing raises.
+    """
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["bdf"])
+
+# Sentinel D-0111. Every Foreign Bonds source, keyed by the name the manual
+# trigger takes (POST /api/fetch/foreign-bonds/{source}). Adding a source is
+# one line here: (log label, run function, METRICS).
+FOREIGN_BOND_JOBS = {
+    "bundesbank": ("Bundesbank yields", run_bundesbank_yields, BUNDESBANK_METRICS),
+    "boe": ("BoE yields", run_boe_yields, BOE_METRICS),
+    "mof": ("MOF JGB", run_mof_jgb, MOF_METRICS),
+    "bdf": ("Banque de France TEC", run_bdf_tec, BDF_TEC_METRICS),
+    # Sentinel D-0115: batch 2a.
+    "boc": ("Bank of Canada Valet", run_boc_valet, BOC_METRICS),
+    "riksbank": ("Riksbank SWEA", run_riksbank_swea, RIKSBANK_METRICS),
+    "rba": ("RBA F2", run_rba_f2, RBA_METRICS),
+    "norges": ("Norges Bank GOVT", run_norges_govt, NORGES_METRICS),
+    "bde": ("Banco de Espana TI_1_3", run_bde_ti13, BDE_METRICS),
+    "ecb": ("ECB yield curves", run_ecb_yc, ECB_METRICS),
+    # Sentinel D-0116: batch 2b-1.
+    "minfin_auctions": ("MinFin Poland auctions", run_minfin_auctions, MINFIN_PL_METRICS),
+    "bdi_bmk": ("Banca d'Italia BMK0100", run_bdi_bmk, BDI_BMK_METRICS),
+    "ecb_irs": ("ECB IRS monthly 10Y", run_ecb_irs, ECB_IRS_METRICS),
+}
+
+
+def run_foreign_bond_source(source, backfill=None):
+    """The manual trigger's entry point. KeyError for an unknown source."""
+    label, run, metrics = FOREIGN_BOND_JOBS[source]
+    return _scheduled_foreign_bonds(label, run, metrics, backfill=backfill)
+
+
+def scheduled_bundesbank_yields_fetch():
+    """Bundesbank Svensson Bund yields, weekdays 18:00 UTC (Sentinel D-0111)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["bundesbank"])
+
+
+def scheduled_boe_yields_fetch():
+    """BoE GLC nominal spot curve, weekdays 18:30 UTC (Sentinel D-0111)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["boe"])
+
+
+def scheduled_mof_jgb_fetch():
+    """MOF JGB constant-maturity yields, weekdays 10:00 UTC (Sentinel D-0111)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["mof"])
+
+
+def scheduled_boc_valet_fetch():
+    """Bank of Canada benchmark yields, weekdays 23:00 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["boc"])
+
+
+def scheduled_riksbank_yields_fetch():
+    """Riksbank SWEA government bond yields, weekdays 16:30 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["riksbank"])
+
+
+def scheduled_rba_f2_fetch():
+    """RBA F2 government bond yields, weekdays 08:00 and 20:00 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["rba"])
+
+
+def scheduled_norges_yields_fetch():
+    """Norges Bank generic government rates, weekdays 16:45 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["norges"])
+
+
+def scheduled_bde_ti13_fetch():
+    """Banco de Espana TI_1_3 secondary-market yields, weekdays 10:30 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["bde"])
+
+
+def scheduled_ecb_yc_fetch():
+    """ECB euro-area AAA / all-issuer yield curves, weekdays 07:30 UTC (Sentinel D-0115)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["ecb"])
+
+
+def scheduled_minfin_auctions_fetch():
+    """Poland MinFin auction yields, weekdays 15:00 UTC (Sentinel D-0116)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["minfin_auctions"])
+
+
+def scheduled_bdi_bmk_fetch():
+    """Italy Banca d'Italia benchmark BTP yields (monthly), daily 08:00 UTC (Sentinel D-0116)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["bdi_bmk"])
+
+
+def scheduled_ecb_irs_fetch():
+    """ECB IRS monthly 10Y (IT/ES/GR/PT/PL), 07:15 UTC days 1-10 and Mondays (Sentinel D-0116)."""
+    _scheduled_foreign_bonds(*FOREIGN_BOND_JOBS["ecb_irs"])
+
+
 def scheduled_treasury_auctions_fetch():
     """Treasury auction results from Fiscal Data (D-0098).
 
@@ -343,8 +512,10 @@ def scheduled_freshness_check():
 
 
 def scheduled_startup_fetches():
-    """One-shot cold-start FRED → TIC → gold → stress. Must not raise."""
-    logger.info("Running startup FRED/TIC/gold/stress fetches in background")
+    """One-shot cold-start FRED → TIC → gold → stress, then every Foreign
+    Bonds source (D-0111), so a redeploy fills the FOREIGN-BONDS tab without
+    waiting for the weekday crons. Must not raise."""
+    logger.info("Running startup FRED/TIC/gold/stress/foreign-bond fetches in background")
     for name, func in (
         ("FRED", scheduled_fred_fetch),
         ("TIC", scheduled_treasury_fetch),
@@ -355,6 +526,11 @@ def scheduled_startup_fetches():
             func()
         except Exception as e:
             logger.error(f"Startup {name} fetch failed: {e}", exc_info=True)
+    for source, job in FOREIGN_BOND_JOBS.items():
+        try:
+            _scheduled_foreign_bonds(*job)
+        except Exception as e:
+            logger.error(f"Startup foreign bonds {source} fetch failed: {e}", exc_info=True)
 
 
 def start_scheduler():
@@ -455,6 +631,86 @@ def start_scheduler():
         replace_existing=True,
     )
     logger.info("Scheduled Treasury auction results weekdays at 22:00 UTC")
+
+    # Sentinel D-0111 (vault:D-0057): Foreign Bonds, weekdays, UTC. MOF
+    # publishes in the Tokyo evening; the BoE zip refreshed ~17:06 UTC on
+    # 2026-10-21 (observed, not a published time).
+    scheduler.add_job(
+        scheduled_mof_jgb_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=10, minute=0),
+        id="mof_jgb", name="Japan JGB Yields (MOF)",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_bundesbank_yields_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=18, minute=0),
+        id="bundesbank_yields", name="German Bund Yields (Bundesbank)",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_boe_yields_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=18, minute=30),
+        id="boe_yields", name="UK Gilt Yields (Bank of England)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled Foreign Bonds weekdays: MOF 10:00, Bundesbank 18:00, BoE 18:30 UTC")
+
+    # Sentinel D-0112: France, Banque de France TEC (Webstat), weekdays 10:00 UTC.
+    scheduler.add_job(
+        scheduled_bdf_tec_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=10, minute=0),
+        id="bdf_tec", name="French OAT Yields (Banque de France)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled Banque de France TEC weekdays at 10:00 UTC")
+
+    # Sentinel D-0115: Foreign Bonds batch 2a, keyless, weekdays, UTC.
+    for func, hour, minute, job_id, name in (
+        (scheduled_ecb_yc_fetch, "7", "30", "ecb_yc", "Euro Area Yield Curves (ECB)"),
+        (scheduled_rba_f2_fetch, "8,20", "0", "rba_f2", "Australia Bond Yields (RBA F2)"),
+        (scheduled_bde_ti13_fetch, "10", "30", "bde_ti13", "Spain Bond Yields (Banco de Espana)"),
+        (scheduled_riksbank_yields_fetch, "16", "30", "riksbank_yields", "Sweden Bond Yields (Riksbank)"),
+        (scheduled_norges_yields_fetch, "16", "45", "norges_yields", "Norway Bond Yields (Norges Bank)"),
+        (scheduled_boc_valet_fetch, "23", "0", "boc_valet", "Canada Bond Yields (Bank of Canada)"),
+    ):
+        scheduler.add_job(
+            func,
+            CronTrigger(day_of_week="mon-fri", hour=hour, minute=minute),
+            id=job_id, name=name,
+            replace_existing=True,
+        )
+    logger.info("Scheduled Foreign Bonds batch 2a weekdays: ECB 07:30, RBA 08:00+20:00, "
+                "BdE 10:30, Riksbank 16:30, Norges 16:45, BoC 23:00 UTC")
+
+    # Sentinel D-0116: Foreign Bonds batch 2b-1, keyless, UTC.
+    scheduler.add_job(
+        scheduled_minfin_auctions_fetch,
+        CronTrigger(day_of_week="mon-fri", hour=15, minute=0),
+        id="minfin_auctions", name="Poland Auction Yields (MinFin)",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_bdi_bmk_fetch,
+        CronTrigger(hour=8, minute=0),
+        id="bdi_bmk", name="Italy Benchmark BTP Yields (Banca d'Italia)",
+        replace_existing=True,
+    )
+    # The ECB publishes the month's IRS early in the next month; days 1-10
+    # catch the release, Mondays catch a late one or a revision.
+    scheduler.add_job(
+        scheduled_ecb_irs_fetch,
+        CronTrigger(day="1-10", hour=7, minute=15),
+        id="ecb_irs", name="ECB IRS Monthly 10Y",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        scheduled_ecb_irs_fetch,
+        CronTrigger(day_of_week="mon", hour=7, minute=15),
+        id="ecb_irs_mondays", name="ECB IRS Monthly 10Y (Mondays)",
+        replace_existing=True,
+    )
+    logger.info("Scheduled Foreign Bonds batch 2b-1: MinFin weekdays 15:00, BdI daily 08:00, "
+                "ECB IRS 07:15 days 1-10 + Mondays (UTC)")
 
     scheduler.add_job(
         scheduled_freshness_check,

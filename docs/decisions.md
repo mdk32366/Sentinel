@@ -1427,6 +1427,8 @@ measures for roughly the same countries — `A-0014`'s third objection, which
 was hypothetical while the dimension was dead and would become real the moment
 it was revived. Retiring it is the choice that does not create that problem.
 
+Amended by D-0114 (dimension 4 scored again for DEU/GBR/JPN/FRA only).
+
 ### D-0067 — The CDS ladder is re-spaced to 200 / 350 / 600
 
 **Ruling.** The owner smoothed the ladder.
@@ -3179,3 +3181,352 @@ ratio is 98-109%, and 17W, auctioned since 2022, has no ratio yet. The two
 measures disagree today on purpose. Levels are steady, while the number of
 weak auctions is the highest on record.
 
+
+### D-0111 - Foreign Bonds: a FOREIGN-BONDS tab for DE / UK / JP sovereign yields at 2/5/7/10/30Y, built on MARKETS, not scored
+
+Cross-reference: vault:D-0057 (Trinity spec@0.2, md5 `027c6f63c2f86985733474bc0145275f`).
+Owner GO 2026-10-21 2:59 PM PT; scope amendments 3:01, 3:02 and 3:03 PM PT.
+
+**Choice.** A separate **FOREIGN-BONDS** tab (`#/foreign-bonds`, straight
+after MARKETS) for French, German, UK and Japanese government bond yields.
+It is MARKETS with other inputs: the MARKETS block was lifted verbatim out of
+`App.jsx` into `pages/MarketsTab.jsx`, and both tabs render through it.
+Sources are the issuers' own free publications, one fetcher each:
+
+| Country | Source | Type | Codes | Watchdog window |
+|---|---|---|---|---|
+| DE | Bundesbank SDMX `BBSIS/D.I.ZST.ZI.EUR.S1311.B.A604.R{TT}XX…` (Svensson) | FIT | `FB_DE_{02,05,07,10,30}Y` | 4 d |
+| UK | Bank of England GLC nominal spot curve (`latest-yield-curve-data.zip`) | FIT | `FB_GB_…` | 5 d |
+| JP | Ministry of Finance `jgbcm.csv` | CMT | `FB_JP_…` | 7 d |
+| FR | **option A**: the existing monthly OECD 10Y `IRLTLT01FRM156N`; 2/5/7/30Y **NO SOURCE** | MON | none new | existing `sovereign_yields`, 70 d |
+
+15 new codes in a new `foreign_bond` category. **Display only**: no scorer
+reads them, and `stress_score_v2.py` / `composite_stress.py` are unchanged.
+The default dashboard (MARKETS, ticker, country cards) renders byte-identical
+to master `be64218`; the tab strip gains one entry.
+
+Fetchers fail closed, all or nothing per run: a missing column, an
+unparseable date or a value outside [-2, 15] % writes nothing; a run that
+would write 0 rows is `failed`, never `success`; a Bundesbank 200 with only a
+header is retried, then `failed` (`F-0117`). Writes reuse
+`fred_fetcher.upsert_observations` (F-0073). Weekday cron, UTC: MOF 10:00,
+Bundesbank 18:00, BoE 18:30. The first run against an empty series backfills
+five years (Bundesbank `startPeriod`, BoE `glcnominalddata.zip`, MOF
+`jgbcm_all.csv`; both archive URLs verified, `F-0116`).
+
+**Rejected.** (a) Daily DE/UK/JP 10Y in the composite: dimension 4 already
+scores these countries' monthly OECD 10Y, so a daily copy counts the same
+signal twice on a different clock and moves a calibrated score with no
+backtest (`A-0028`). (b) New tiles on the default board: the owner ruled a
+separate surface (3:01 PM PT). (c) A forked copy of MARKETS for the new tab: two
+copies of one layout drift. (d) France from AFT (Cloudflare challenge, HTTP
+403), the ECB (euro-area curves and a monthly 10Y only) or Yahoo/Stooq
+(unofficial). (e) **bonds-api.com** for France (paid, $19-49/mo, vendor
+provenance undocumented) - not approved, not in this change. (f) The Yahoo
+`CL=F` live WTI tile (O-WTI) - not approved, not in this change.
+
+**What forced the call.** The owner wants the foreign curves next to the US
+one. The only free official daily sources that a script can read without a
+challenge are these three. France has none, so its gap is shown, not filled
+(`A-0026`).
+
+Amended by D-0113 (country cards).
+
+Amended by D-0114 (the four FB_xx_10Y codes feed composite dimension 4).
+
+### D-0112 - France on FOREIGN-BONDS: Banque de France TEC daily, the monthly OECD 10Y as a labelled fallback
+
+Supersedes `D-0111` option A for France only. Owner GO 2026-10-22 8:48 AM PT
+(via Trinity); API choice ruled by Trinity 8:58 AM PT: the **new** Webstat
+API documented in the Bank's own guide,
+<https://webstat.banque-france.fr/pages/guide-migration-api/?flg=fr-fr>, not
+the legacy `api.webstat.banque-france.fr/webstat-fr/v1` gateway (`F-0118`).
+
+**Choice.** `pipelines/bdf_tec.py` (`BdF_TEC`) reads the five Banque de
+France TEC series `FM.D.FR.EUR.FR2.BB.FRMOYTEC{2,5,7,10,30}.HSTA` in one
+request:
+
+    GET https://webstat.banque-france.fr/api/explore/v2.1/catalog/datasets/observations/exports/csv
+        ?select=series_key,time_period,time_period_start,obs_value
+        &where=series_key in ("...TEC2.HSTA", ..., "...TEC30.HSTA") and time_period_start>=date'YYYY-MM-DD'
+        &order_by=time_period_start
+    Authorization: Apikey <WEBSTAT_API_KEY>
+
+| Country | Source | Type | Codes | Watchdog window |
+|---|---|---|---|---|
+| FR | Banque de France Webstat TEC (constant-maturity OAT yield) | CMT | `FB_FR_{02,05,07,10,30}Y` | 4 d (`foreign_bonds_fr`) |
+
+Bundesbank pattern throughout: weekdays 10:00 UTC; the first run against an
+empty series backfills five years; a daily run reads 14 days; all five series
+or nothing. Fail closed: the guide's 404 "dataset observations does not
+exist" and the measured 401 "API key is not valid" fail at once and name
+`WEBSTAT_API_KEY` (never its value); a 200 with only the header is retried,
+then `failed`; a series missing from the answer, one not asked for, or a
+renamed column is `SchemaDrift`. With no `WEBSTAT_API_KEY` the job logs a
+warning and returns `skipped`: no request, no row, no UpdateLog row, no
+exception.
+
+**UI.** The four NO SOURCE cells and the monthly FR 10Y card become five daily
+`FB_FR_` cells. While no daily French 10Y is stored (no key yet, or the
+source down from the start) the FR 10Y card shows the monthly OECD
+`IRLTLT01FRM156N`, badged MONTHLY and tipped **FALLBACK**; the other four
+French tenors have no fallback and show "—". The footer carries
+"Source: Banque de France, updated <date>" from the newest French daily row.
+A daily OAT–Bund 10Y spread joins the strip; the monthly one stays.
+
+**Unchanged.** Display only (`A-0028`): neither scorer is touched, and the
+`FB_FR_` codes are held out of both by `tests/test_markets_tooltips.py` and
+`tests/test_foreign_bonds.py`. The default dashboard is byte-identical
+(AC-1). `IRLTLT01FRM156N` and composite D4 are unchanged.
+
+**Not in this change.** `bdf` joins `FOREIGN_BOND_JOBS`, the manual trigger
+`POST /api/fetch/foreign-bonds/{source}` and the startup one-shot after #99
+(D-0111 manual fetch) merges: a one-line follow-up. The `WEBSTAT_API_KEY`
+Fly secret and the egress allowlist entry (selfhost-platform) are separate.
+
+**Rejected.** (a) The legacy gateway `api.webstat.banque-france.fr`: its
+documentation portal could not be reached and only third-party code names
+its header (`F-0118`). (b) The `apikey=` URL parameter: the guide reserves it
+for testing, and a key in a URL reaches logs. (c) Dropping the monthly FR 10Y:
+it is the only French number available until a key is set, and the longer
+history behind the monthly OAT–Bund spread.
+
+**What forced the call.** `D-0111` found no free official daily French yield
+that a script could read without a challenge. The Banque de France's new API
+is free with a registered key, so the gap can be filled rather than shown.
+The fixtures are synthetic until a key exists (`A-0029`).
+
+**D-0112 amendment 1 (2026-10-22): the monthly FR 10Y leaves FOREIGN-BONDS.**
+Matt, via Trinity, 12:16 PM PT: the Banque de France TEC10 daily is the only
+FR 10Y on this surface. The `FR_10Y_MONTHLY_FALLBACK` card, the monthly
+OAT–Bund 10Y spread and the tab's request for `IRLTLT01FRM156N` (and for
+`IRLTLT01DEM156N`, whose only use here was that spread's German leg) are
+removed, as is `sovereign_yields` from the tab's DataConfidence sources. With
+no daily French row the five FR cells show "—". This reverses rejection (c)
+above: the key is now set (`WEBSTAT_API_KEY`, 2026-10-22) and the first
+startup fill wrote 6,395 TEC rows, latest 2026-10-22. **Unchanged:** the
+FRED fetch list, the stored `IRLTLT01FRM156N` rows (no migration, no
+delete), composite D4, MARKETS, the country cards and the brief prompt's
+`SOVEREIGN_YIELD_CODES`. There was no API change: the tab reads the generic
+`/api/timeseries`, so the surface is the UI request and render. Tested by
+`T-0112` addendum 2.
+
+**D-0112 amendment 2 (2026-10-22): the OAT–Bund spread returns, daily.**
+Trinity's ruling on #102, 12:31 PM PT: amendment 1 lost the OAT–Bund spread
+along with the monthly legs, and it must come back built from daily data.
+"OAT–Bund 10Y (daily, BdF TEC − Bundesbank)" sits on the FOREIGN-BONDS spread
+strip where the monthly spread used to be. It is `FB_FR_10Y` minus `FB_DE_10Y`
+in basis points (the strip's only bp entry; the others stay in pp), computed
+by `oatBundDailySpread` only on dates where BOTH legs have an observation.
+There is no forward fill: a date missing either leg is a gap. The current
+value is the last date both legs share. If either leg's source is past the
+existing FOREIGN-BONDS freshness rule (watchdog status other than ok or
+anomaly), the entry stays in place and reads "—" rather than hiding, unlike
+the other spreads. `useSeries` also returns the per-code points (additive).
+**Unchanged:** scorer, DB, `SOVEREIGN_YIELD_CODES`, `TRACKED_CODES` and the
+API. Tested by `T-0112` addendum 2.
+
+**D-0112 amendment 3 (2026-10-22): the strip reads in one unit, and a stale leg shows "—".**
+The OAT–Bund entry on the FOREIGN-BONDS spread strip now reads in pp, like
+every other spread there (it was the one bp entry); the label keeps its
+meaning (FR 10Y BdF TEC minus DE 10Y Bundesbank, daily) and
+`oatBundDailySpread` still returns bp, divided by 100 at the strip. Every
+other spread on the strip now stays in place and shows "—" when the
+watchdog calls one of its legs stale or worse, instead of disappearing, so
+the strip keeps its shape. A spread whose leg is fresh but has no value at
+all is still left out. Display only: nothing scored moves. Pinned by
+T-0112 addendum 3.
+
+### D-0113 - Country cards for DEU / GBR / JPN / FRA read the daily FB curve, with a curve row, slopes and the Foreign Bonds chart; display only
+
+Amends `D-0111`'s card clause ("country cards ... byte-identical"). Trinity's
+ruling, owner request 2026-10-22 ("Update the Country Baseball Cards for the
+four countries where we are tracking their bonds"); chart scope addition by
+the owner 12:25 PM PT; per-country chart state and MARKETS preservation by
+Trinity 12:26 PM PT.
+
+**Choice.** On the DEU, GBR, JPN and FRA cards (`FB_CARD_COUNTRY` ->
+DE/GB/JP/FR):
+- **Sovereign Yield** and **Spread** read the daily `FB_xx_10Y`. When it is
+  missing or older than the source's watchdog window (`FB_MAX_AGE_DAYS`, a
+  mirror of `freshness_watchdog.CHECKS`: DE 4, GB 5, JP 7, FR 4 days), they
+  fall back to the monthly OECD series in `SOVEREIGN_YIELD_CODES`, badged
+  **MONTHLY**. The tip names the source: FIT daily (DE, GB), CMT daily (JP,
+  FR), monthly OECD (fallback). The spread stays a measured difference
+  (`D-0066`). `DataConfidence` adds that country's `foreign_bonds_xx` key.
+- A **curve row**, 2/5/7/10/30Y; a tenor with no value shows **NO SOURCE**.
+  **2s10s** and **10s30s** in bp; a missing or stale leg, or two legs on
+  different observation dates, gives "—".
+- The **Foreign Bonds chart**, filtered to that country (its five tenors,
+  % CHANGE, ranges). Not forked: the chart panel was lifted out of
+  `MarketsTab.jsx` into `pages/MarketsChartPanel.jsx`, and both render it.
+  Its view state is per country (the card is keyed by ISO) and separate from
+  MARKETS' state, which a country card does not reset (the #97 class).
+
+The FB codes are read by their own request (`useSeries(fbCardCodes(iso))`);
+`TRACKED_CODES` and `SOVEREIGN_YIELD_CODES` are unchanged and pinned exactly.
+Every other country (ITA included) renders as before and makes no FB request.
+
+**Not scored.** No scorer reads an FB code. `ForeignBondsAreNotScored` stays,
+and `tests/test_d0113_scorer_golden.py` pins composite and v2 output
+byte-identical to a golden captured from master `0680d4b`.
+
+**Rejected.** (a) Adding the FB codes to `TRACKED_CODES`: every MARKETS load
+would fetch 20 more series for four cards. (b) A copy of the chart for the
+card: two copies drift. (c) A fixed staleness window for all four: Japan's
+MOF file runs to 7 days in the watchdog, so a 4-day rule would badge good
+JGB data MONTHLY. (d) Interpolating a missing tenor or a cross-date slope.
+
+**What forced the call.** The four cards showed a monthly 10Y that can sit
+weeks behind while the same countries' daily curves were one tab away.
+
+### D-0114 - Composite dimension 4 is scored again for DEU / GBR / JPN / FRA, on the daily FB 10Y plus an OAT-Bund percentile term
+
+**Ruling.** Trinity's spec under the owner's design GO, 2026-10-22 12:42 PM
+PT. Amends `D-0066` (dimension 4 retired) and `D-0111` (no scorer reads an
+`FB_` code), for these four countries only.
+
+**Choice.** In `pipelines/composite_stress.py`, for `FB_DIM4_CODES`
+(DEU/GBR/JPN/FRA -> `FB_xx_10Y`):
+- **Level.** The `D-0066` ladder, unchanged (vs the US 10Y: >50bp 5, >100bp
+  10, >200bp 15; +5 for >30bp widening over 120 days; cap 20), run on the
+  daily `FB_xx_10Y` while its newest row is inside the D-0113 freshness limit
+  (`FB_MAX_AGE_DAYS`, read from `freshness_watchdog.CHECKS`: DE 4, GB 5, JP 7,
+  FR 4 days). Otherwise it runs on the monthly `IRLTLT01xxM156N`, flag
+  `daily_stale`. `dim4_source` names the code used.
+- **Spread term.** Only for members of `EURO_AREA` (a literal frozenset) other
+  than the benchmark (`SPREAD_BENCHMARK = "DEU"`) with both legs, which today
+  means France. FR10Y - DE10Y on the **same date** (no forward-fill), scored
+  as the inclusive percentile of today's value within France's own trailing
+  5-year daily spread history (`A-0030`), and mapped onto dim 4's 0-20 points
+  (`pctile / 100 * 20`). A missing leg gives `spread_leg_missing`; a leg
+  outside its freshness limit gives `spread_leg_stale`; fewer than 250
+  same-date observations gives `spread_history_short`. In each case dim 4 is
+  level only.
+- **dim4 = max(level, spread)**, added to `raw_score`. Germany and the
+  non-euro countries get the level only.
+- Each FB country's row carries `dim4_score`, `dim4_source`,
+  `dim4_level_score`, `dim4_spread_score`, `dim4_spread_bp`,
+  `dim4_spread_pctile` and `dim4_flags`, declared Optional on
+  `CompositeCountry` (`F-0079`). `spread_bps` reports the source used. The
+  UI's `STRESS_DIMENSIONS` lists `dim4_score` (max 20, max raw 185).
+- **Every other country is unchanged:** measured, 0 points, no `dim4_*` keys.
+  `tests/fixtures/d0114_non_fb_baseline.json` (from master `cb0f460`) pins
+  that byte for byte.
+
+**Why scale the percentile to 20.** The spec says "mapped to 0-100". Taken
+literally, it would add up to 100 composite points from one spread and
+outweigh Treasury (50). Dim 4's cap has been 20 since before `D-0066`, so the
+0-100 percentile is scaled onto it.
+
+**Not changed.** `available_points` / `DIMENSION_MAX` and
+`ui/src/lib/coverage.js`: coverage still treats dim 4 as unscored. That
+understates available points for the four countries by 20, and should be
+fixed as a follow-up.
+
+**Rejected.** (a) The percentile against a pooled euro-area history:
+France's own history is the spec. (b) Forward-filling the Bund across
+holidays: that manufactures a spread on dates when one leg did not trade. (c) Summing
+level and spread: they are two views of one sovereign risk.
+
+**What forced the call.** The daily curves are now in production (D-0111 to
+D-0113), and the OAT-Bund spread is the euro-area stress signal that the
+monthly OECD series cannot see. `A-0028` is closed by this.
+
+
+### D-0115 - Foreign Bonds batch 2a: six keyless daily sources (CA / SE / AU / NO / ES / EA), country cards for five, an EA benchmark panel; display only
+
+**Ruling.** Trinity's spec `2026-10-22-sentinel-foreign-bonds-batch2-spec@0.3`
+§15, with rulings T-0117, T-0131 and T-0132 (2026-10-22 2:52 PM PT). Extends
+`D-0111` / `D-0113`. Does not amend `D-0114`: dimension 4 still reads exactly
+the four `FB_DIM4_CODES`, and `pipelines/composite_stress.py` is untouched.
+
+**Choice.**
+- **Six fetchers, all keyless, all fail closed** (an HTML body, an empty or
+  header-only answer, a non-2xx, or a 429 writes a `failed` run and no rows):
+
+  | Job id | Module | Source | Codes |
+  |---|---|---|---|
+  | `boc_valet` | `pipelines/boc_valet.py` | Bank of Canada Valet | `FB_CA_02Y/03Y/05Y/07Y/10Y/30Y` |
+  | `riksbank_yields` | `pipelines/riksbank_swea.py` | Riksbank SWEA | `FB_SE_02Y/05Y/07Y/10Y` |
+  | `rba_f2` | `pipelines/rba_f2.py` | RBA statistical table F2 (CSV) | `FB_AU_02Y/03Y/05Y/10Y` |
+  | `norges_yields` | `pipelines/norges_govt.py` | Norges Bank (SDMX CSV) | `FB_NO_03Y/05Y/07Y/10Y` |
+  | `bde_ti13` | `pipelines/bde_ti13.py` | Banco de España TI_1_3 (CSV) | `FB_ES_03Y/05Y/10Y/15Y` |
+  | `ecb_yc` | `pipelines/ecb_yc.py` | ECB Data Portal YC (Svensson spot) | `FB_EA_AAA_xxY`, `FB_EA_ALL_xxY` at 2/5/7/10/30 |
+
+  Codes are zero-padded like the batch 1 codes. `FOREIGN_BOND_JOBS` has
+  exactly 10 keys (T-0117).
+- **Schedule** (UTC, Mon-Fri): `ecb_yc` 07:30; `rba_f2` 08:00 and 20:00;
+  `bde_ti13` 10:30; `riksbank_yields` 16:30; `norges_yields` 16:45;
+  `boc_valet` 23:00.
+- **Freshness** (`freshness_watchdog.CHECKS`, read by the cards): CA, SE, NO,
+  ES, EA 4 days; AU 12 days (the RBA publishes F2 weekly with a lag, `F-0123`).
+- **Cards.** CAN, SWE, AUS, NOR, ESP join `FB_CARD_COUNTRY` (now 9). Slope
+  chips follow the tenors each source has: CAN 2s10s and 10s30s, where the
+  "30Y" is Valet's LONG benchmark (`A-0033`, the tooltip says "10s-long");
+  SWE and AUS 2s10s; NOR and ESP 3s10s. Only CAN shows 10s30s.
+- **ESP (T-0132).** Daily from `FB_ES_10Y`; when it is stale or missing, the
+  card falls back to the monthly OECD `IRLTLT01ESM156N` with the MONTHLY badge,
+  as `D-0113` does for the batch 1 countries. No monthly BdE 10Y code is added.
+- **EA (T-0131).** Not a country. It never enters `FB_CARD_COUNTRY`, the
+  41-country list, or the composite. FOREIGN-BONDS shows an EA benchmark panel
+  (AAA and all-issuer curves, AAA 2s10s and 10s30s in bp) above the grid.
+- **Nothing scored moves.** `tests/fixtures/d0113_scorer_golden.json` and
+  `pipelines/composite_stress.py` are byte-identical to `48b6ea0` (T-0121,
+  T-0122).
+
+**Not in this decision.** Batch 2b/2c (ECB IRS, Korea ECOS: T-0124 to T-0126),
+Switzerland, Denmark and New Zealand (`F-0122`).
+
+**Assumptions.** `A-0032` (BdE CSV), `A-0033` (Valet LONG as 30Y), `A-0034`
+(ECB data licence).
+
+### D-0116 - Foreign Bonds batch 2b-1: Poland auction yields, Italy BMK monthly, ECB IRS monthly 10Y fallback; display only
+
+**Ruling.** Trinity's rulings on the batch 2b spec (2026-10-22): build 2b-1
+only (PL, IT, ECB IRS); New Zealand and Switzerland move to 2b-2. Extends
+`D-0111` / `D-0113` / `D-0115`. Does not amend `D-0114`: dimension 4 still
+reads exactly the four `FB_DIM4_CODES`, and `pipelines/composite_stress.py`
+is untouched.
+
+**Choice.**
+- **Three fetchers, all keyless, all fail closed:**
+
+  | Job id | Module | Source | Codes | Schedule (UTC) |
+  |---|---|---|---|---|
+  | `minfin_auctions` | `pipelines/minfin_pl_auctions.py` | Polish MinFin `Obligacje_Hurtowe.xlsm`, sheet `Operacje` | `FB_PL_02Y/05Y/10Y` | Mon-Fri 15:00 |
+  | `bdi_bmk` | `pipelines/bdi_bmk.py` | Banca d'Italia BMK0100 (CSV in a ZIP) | `FB_IT_03Y/05Y/10Y/30Y` | daily 08:00 |
+  | `ecb_irs` (+ `ecb_irs_mondays`) | `pipelines/ecb_irs.py` | ECB Data Portal IRS `M.{IT,ES,GR,PT,PL}.L.L40.CI.0000..N.Z` | `FB_{IT,ES,GR,PT,PL}_10Y_ECB_M` | days 1-10 07:15, plus Mondays 07:15 |
+
+  `FOREIGN_BOND_JOBS` has exactly 13 keys (T-0141).
+- **PL.** Wholesale auction (`TypOperacji` = `AS`) average yield `RentŚr` x 100,
+  dated the auction day. Buckets by residual maturity: 2Y [1.5, 3.5), 5Y
+  [3.5, 7), 10Y [7, 12]; per auction and bucket the bond closest to the
+  tenor wins, a tie goes to the longer bond. Floaters (`Kupon` FRN), `NZ`
+  series, switch auctions and blank yields are skipped. The attachment is
+  found by its Content-Disposition file name, never by a fixed URL; the
+  workbook is opened with `keep_vba=False`, `read_only=True`. Card label
+  "AS OF LAST AUCTION <date>"; freshness 40 days.
+- **IT.** BMK0100 monthly benchmark yields (end-of-month dated), 3/5/10/30Y.
+  MONTHLY badge; freshness 45 days. Manual backup `POST
+  /api/ingest/bdi-mfn-bmk` (Basic Auth; the proof cookie is 403): the same
+  parser, all or nothing (413 over 2 MB, 422 on any rejection, 0 rows
+  written), idempotent, one `ingest_provenance` row per accepted upload.
+  BMK0200 is not built.
+- **ECB IRS.** Monthly convergence 10Y, stored at month end. A card fallback
+  only, never a card of its own for IT/ES/PL. Card 10Y order: the country's own
+  series while fresh, then `FB_xx_10Y_ECB_M` within 45 days, then the OECD
+  `IRLTLT01xxM156N`, else a dash. ES: BdE daily first, then ECB_M (amends the
+  `D-0115` ESP fallback by inserting the IRS step).
+- **GRC and PRT** become card countries with a MONTHLY 10Y from ECB IRS only:
+  no curve, no slope chips.
+- **Freshness checks:** `foreign_bonds_pl` (day, 40), `foreign_bonds_it`
+  (month, 45), `ecb_irs_monthly` (month, 45). The ES pattern becomes
+  `FB\_ES\_%Y` so the ES daily check does not own `FB_ES_10Y_ECB_M`.
+- **Nothing scored moves.** The scorer golden and `composite_stress.py` are
+  byte-identical to `646c215` (T-0143).
+
+**Not in this decision.** NZ, CH (2b-2); Korea ECOS; BMK0200.
+
+**Assumptions.** `A-0036` (PL bucketing), `A-0037` (BMK0100 column keys),
+`A-0038` (IRS as fallback), `A-0039` (licences).

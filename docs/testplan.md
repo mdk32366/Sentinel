@@ -507,3 +507,461 @@ hand.
 is no test for the rescaling because there is no rescaling; the measurement
 lives in the decision, where a reader will find it before re-proposing the idea.
 
+
+### T-0111 - Foreign Bonds: three fail-closed fetchers, a reused MARKETS, a default board that did not move
+
+Proves `D-0111` (vault:D-0057 §8 and AC-1 to AC-5). Every case reads
+fixtures captured from the real sources on 2026-10-21 (`F-0116`); none
+touches a network. **Red first:** the tests landed in their own commit, ahead
+of the code, and failed there (counts are in the PR). Every negative has a
+positive twin, so a guard that failed unconditionally would not pass.
+
+`tests/test_foreign_bonds.py`
+- **Parse**: exact `(code, date, value)` tuples. DE R10XX 2026-10-21 3.47 (8
+  rows, weekend `.` skipped). GB 2026-10-20 10Y 5.38407521 (70 points). JP
+  2026-10-20 10Y 2.927 (65). Era dates `R8.10.20`, `H30.4.2`, `S49.9.24`. The
+  1974 `-` cells are skipped, not zero. BoE columns are found by the `years:`
+  value: an inserted column changes nothing.
+- **Schema drift**: `OBS_VALUE` renamed; a 99 % value in the 30Y file (the
+  other four tenors must not be written either); `years:` row missing 30;
+  `基準日` renamed; 99 in the MOF file; an ISO date where an era date belongs.
+  Each one is `failed`, `FETCH_PARSE`, and 0 rows, asserted before and after.
+- **Header-only 200** (`F-0117`): every time = `failed`, 3 attempts, sleeps
+  [4, 8], 0 rows. Once, then data = `success`, 40 rows.
+- **0 rows**: a MOF header with no data, and a BoE month-start sheet with no
+  rows, are both `failed`.
+- **Blocked**: a Cloudflare 403 is `blocked`, `cf=1`, not retried, and logged
+  `FETCH_BLOCKED … host=www.mof.go.jp`. A 503 is retried three times.
+- **Idempotent**: each source run twice gives the same row count; the
+  second run is `0 inserted, N updated`.
+- **Stale**: DE 4 d, GB 5 d, JP 7 d, one day inside = ok, one day outside =
+  stale, plus the spec's 5/3, 6/4 and 8/6. France stays on `sovereign_yields`.
+- **Isolation**: exactly 15 `FB_*` codes. None matches `IRLTLT01%` or
+  `%\_CDS\_%` (the matcher is shown to match the real codes). None is in
+  either scorer, `METRICS`, `SOVEREIGN_YIELD_CODES` or `TRACKED_CODES`.
+- **Scheduler**: names declared and scanned; watchdog sources exactly as
+  specified. `test_scheduler_jobs.py` adds the three jobs, weekdays at
+  10:00, 18:00 and 18:30 UTC.
+
+`tests/test_markets_tooltips.py` (AC-4): no Foreign Bonds cell says
+`scored: true`. Neither scorer names `FB_` or `foreign_bond`. France's card
+is the existing `IRLTLT01FRM156N`, badged MONTHLY.
+
+`ui/src/marketsDefault.ac1.dom.test.jsx` (AC-1, AC-2): renders the default
+view and compares it **byte for byte** with
+`ui/src/__fixtures__/markets-default.ac1.html`. That file was written by the
+same test on master `be64218`, before the refactor: 28,147 bytes, 12 cards.
+The comparison covers header + ticker, the MARKETS body, and the tab strip
+less one `FOREIGN-BONDS` button, which must sit straight after MARKETS. Seen
+red twice on purpose: a 1 px padding change in `MarketsTab`, and
+FOREIGN-BONDS moved one place right.
+
+`ui/src/pages/ForeignBondsTab.dom.test.jsx` (AC-3, AC-5, §7.7): 20 cards in
+DE/GB/JP/FR x 2/5/7/10/30 order. Four `—` NO SOURCE cells and one MONTHLY
+badge. Tips name FIT/CMT/MON and the series. 16 chart toggles. All nine
+spreads, and a stale GB leg hides the three gilt spreads. MARKETS and
+FOREIGN-BONDS have the same five sections in the same order and the same
+controls. Toggle, range and % CHANGE behave the same. `#/foreign-bonds` opens
+the tab, and Back returns to MARKETS.
+
+**Known limits.** The fixtures are one day's responses. A format change after
+2026-10-21 is caught when it reaches production, by `SchemaDrift` and the
+watchdog, not in CI. The scheduler's first-run backfill decision is not
+exercised against a database. The live fetch is a manual `python -m
+pipelines.<module> [--backfill]`, never run in CI.
+
+### T-0112 - France daily from the Banque de France: no key skips, a bad key or an empty answer fails closed
+
+Proves `D-0112`. **Red first:** two test-only commits came before the code.
+The first had the fetcher, the UI and the wiring tests (836 Python tests, 9
+failures + 23 errors; 7 of 11 FOREIGN-BONDS UI tests failing). The second added
+the measured 401 (`F-0118`), which failed against the first implementation
+because its error did not name the key. No network: the CSV fixtures are
+**synthetic-from-docs** (`A-0029`, PROVENANCE.md); the 404 and 401 bodies are
+real captures.
+
+`tests/test_bdf_tec.py`
+- **Parse**: the fixture gives 40 rows, five `FB_FR_` codes, and 10Y
+  2026-10-21 = 3.35. An empty `obs_value` is skipped, not read as zero. A series
+  not asked for (TEC15), a series missing (TEC30) and a renamed `obs_value`
+  are each `SchemaDrift`.
+- **Request**: the documented `exports/csv` URL; `where=series_key in (…)`
+  names all five keys plus `time_period_start>=date'…'`; `order_by`; no
+  `apikey` in the URL; the header is `Authorization: Apikey <key>`; the daily
+  window is 7-21 days and the backfill is 1825 days.
+- **No key** (`""`, blanks, `None`): `skipped`, 0 requests, 0 rows, 0
+  UpdateLog rows, and a WARNING naming `WEBSTAT_API_KEY`. The positive twin
+  reads the key from settings. `Settings` accepts `WEBSTAT_API_KEY`. The
+  scheduled job with no key raises nothing and sends nothing.
+- **Fail closed**: the 404 and the 401 each give `failed` after 1 request, no
+  sleep, 0 rows, an UpdateLog row with `http=404`/`http=401` and
+  `WEBSTAT_API_KEY`, and never the key itself. A header-only 200 every time
+  gives `failed` after 3 requests, sleeps [4, 8], 0 rows; header-only then
+  data gives `success`. A missing series writes nothing.
+- **Run**: `success, 40, 0, 2026-10-21`; a second run is `0, 40`; five
+  `foreign_bond` metrics.
+- **Wiring**: job `bdf_tec` weekdays 10:00 UTC; `BdF_TEC` declared and
+  scanned; the first run against an empty series asks for a backfill. Watchdog
+  `foreign_bonds_fr`: `FB\_FR\_%`, 4 d, 3 days ok, 5 stale.
+
+Extended, not loosened: the isolation guards in `test_foreign_bonds.py` and
+`test_markets_tooltips.py` now cover all 20 `FB_` codes. The watchdog pins
+(`test_foreign_bonds.py`, `test_coverage_end.py`) and `test_scheduler_jobs.py`
+add the French source and job. The D-0111 option-A assertions (no `FB_FR`,
+four NO SOURCE cells, 16 toggles) are replaced by D-0112's: 20 daily cells,
+20 toggles, the labelled MONTHLY fallback for FR 10Y only (asserted both when
+it shows and when it must not), the "Source: Banque de France, updated
+<date>" footer, and the daily OAT–Bund spread.
+
+AC-1 (`marketsDefault.ac1.dom.test.jsx`) is unchanged and passes: the default
+dashboard is byte-identical. Neither scorer file changes (`git diff --stat`
+against `a0479c0` names neither).
+
+**Known limits.** The CSV shape is the guide's, not a measured one (`A-0029`).
+The manual trigger and startup fill for `bdf` wait for #99.
+
+**T-0112 addendum: `bdf` on the manual trigger (2026-10-22).** `bdf` is now
+the fourth `FOREIGN_BOND_JOBS` entry, so `POST /api/fetch/foreign-bonds/bdf`,
+the startup fill and the `bdf_tec` cron all run the same table entry.
+**Red first:** the tests landed in their own commit, where 4 failed (404
+unknown source x2; `bdf` missing from the table x2).
+
+`tests/test_foreign_bonds_manual_fetch.py`
+- **One line per source**: the keys are `bundesbank`, `boe`, `mof`, `bdf`.
+- **No key**: `POST …/bdf` with an empty `WEBSTAT_API_KEY` answers 200 with
+  status `skipped` (`failed` would also pass; `success` fails), 0/0/null, 0
+  TimeSeries rows, and no request is sent. Nothing raises.
+- **Positive twin**: with a key, `?backfill=1` lands the fixture through the
+  route: `{success, 40, 0, 2026-10-21}`, sent as `Authorization: Apikey <key>`.
+- **Cron**: `scheduled_bdf_tec_fetch` calls the wrapper with
+  `FOREIGN_BOND_JOBS["bdf"]`.
+
+Guards that moved with the table, none loosened: the F-0098 admin-surface
+guard and the per-source ADMIN test now need a `bdf` button (both failed
+without it); `test_bdf_tec.Wiring.test_first_run_backfills` patches the
+`bdf` table entry instead of the module name, with the same `[True]`
+assertion.
+
+**T-0112 addendum 2: TEC10 is the only FR 10Y on FOREIGN-BONDS (2026-10-22).**
+Proves `D-0112 amendment 1`. **Red first:** the tests landed in their own
+commit, where 4 of 12 FOREIGN-BONDS UI tests and 1 Python test failed.
+
+`ui/src/pages/ForeignBondsTab.dom.test.jsx`
+- With every `FB_FR_` series missing, all five FR cells show "—"; no card
+  says MONTHLY and the monthly value (4.44%) appears nowhere.
+- `FR_10Y_MONTHLY_FALLBACK` is no longer exported, `FOREIGN_BOND_CODES` does
+  not contain `IRLTLT01FRM156N`, the only FR 10Y metric is `FB_FR_10Y`, and
+  given both French series the only French spread is the daily OAT–Bund 10Y.
+- No `/timeseries` request the tab makes names `IRLTLT01FRM156N`.
+- The spread strip no longer shows "OAT–Bund 10Y (monthly)" (+0.94pp).
+
+`tests/test_markets_tooltips.py`
+- The FOREIGN-BONDS block of `constants.js` does not mention
+  `IRLTLT01FRM156N`; `FR_10Y_MONTHLY_FALLBACK` is gone; `ForeignBondsTab.jsx`
+  says nothing about a fallback; and `pipelines/fred_fetcher.py` still lists
+  `IRLTLT01FRM156N` (the fetch is untouched).
+
+**T-0112 addendum 2, part 2: the daily OAT–Bund spread (2026-10-22).**
+Proves `D-0112 amendment 2`. **Red first:** the tests landed in their own
+commit, where 7 of 17 FOREIGN-BONDS UI tests failed.
+
+`ui/src/pages/ForeignBondsTab.dom.test.jsx`
+- On fixture dates the spread is `FB_FR_10Y − FB_DE_10Y` in bp (−15, −12).
+- A date where one leg is missing is absent from the series (a gap); no
+  value is carried forward; an empty or absent leg yields no points.
+- The current value is the last date both legs share, not either leg's last.
+- A stale French or German leg makes the entry read "—" with no number.
+- On the tab the entry reads −12bp when fresh and "—" when `foreign_bonds_fr`
+  is stale, under the label "OAT–Bund 10Y (daily, BdF TEC − Bundesbank)".
+
+**T-0111 addendum: manual trigger and startup fill (2026-10-22).**
+`POST /api/fetch/foreign-bonds/{source}` (`source` in
+`scheduler.FOREIGN_BOND_JOBS`: `bundesbank`, `boe`, `mof`) with optional
+`?backfill=1`. **Red first:** the tests landed in their own commit, where 7
+failed and 1 errored. Every case first asserts that the route is registered,
+so a generic 401/403/404 from a tree without the route cannot pass it.
+
+`tests/test_foreign_bonds_manual_fetch.py`
+- **401**: no credentials, and the job is not called.
+- **403**: a POST carrying the D-0093 proof cookie alone gets
+  `Proof access is read-only`, and the job is not called.
+- **404**: an unknown source (`ecb`) with Basic Auth, and the job is not called.
+- **Fail-closed**: a header-only Bundesbank 200 on every attempt. The response
+  is `{status: failed, inserted: 0, updated: 0, latest_date: null}`, 0
+  TimeSeries rows are written, there is one `Bundesbank_Yields` UpdateLog row
+  marked `failed` with 0 inserted, 3 attempts are made, and `?backfill=1`
+  reached the run (`startPeriod=`). The positive twin, real fixtures, gives
+  `{success, 40, 0, 2026-10-21}`.
+- **One line per source**: `FOREIGN_BOND_JOBS` keys equal the three sources;
+  the startup one-shot calls the wrapper once per job; ADMIN lists one
+  trigger per source.
+
+`tests/test_admin_surface.py`: the F-0098 drift guard now expands the one
+templated POST to one path per `FOREIGN_BOND_JOBS` key. That makes it stricter:
+a source without its own button fails it, which was checked by removing the MOF
+button.
+
+**T-0112 addendum 3: one unit on the strip, "—" on a stale leg (2026-10-22).**
+`ForeignBondsTab.dom.test.jsx`: every spread renders in pp and no strip
+entry renders bp (the OAT–Bund entry reads -0.12pp on the fixture); with
+`foreign_bonds_gb` stale the four Gilt/GB spreads show "—" and no number
+while Bund–UST and JP 30Y–10Y keep theirs; `foreignBondSpreads` with DGS10
+stale keeps the three UST spreads with val null and display "—"; the
+OAT–Bund current value is ≈ -0.15 pp with a percentage-points tip. Pins
+D-0112 amendment 3. Seen red at the red commit (5 failed), green after.
+
+### T-0113 - Country cards on the daily FB curve: fallback, curve row, slopes, the shared chart, and nothing scored moved
+
+Proves `D-0113`. **Red first:** the tests landed alone in commit
+`42928a8`, where the three UI files had 7 failures and
+`test_d0113_card_freshness` failed (no `FB_MAX_AGE_DAYS`); the invariant pins
+and the scorer golden passed there, as they must on master.
+
+`ui/src/components/country/country.dom.test.jsx`
+- `FB_CARD_COUNTRY`, `fbCardCodes` (5 codes; `[]` for ITA), `FB_MAX_AGE_DAYS`.
+- `countryBond`: daily 10Y with FIT/CMT tips; stale or missing 10Y -> monthly
+  fallback badged MONTHLY with a "monthly OECD" tip; 2s10s +50bp, 10s30s +45bp
+  on the fixture; a stale leg or mixed dates -> "—"; null for ITA.
+- `CountryStatCards` shows DAILY / MONTHLY and the measured spread (-160 bps).
+- `CountryBondCurve` shows NO SOURCE for an empty tenor.
+- **Exact pins** (red on any change): `SOVEREIGN_YIELD_CODES` and
+  `TRACKED_CODES`, compared to literal baselines (codes masked `SOV_xx`, the
+  literal-code rule).
+
+`ui/src/components/CountryDetail.dom.test.jsx`
+- The chart (`country-bond-chart`) renders for DEU/GBR/JPN/FRA with the
+  country's five tenor toggles, and the request carries `fbCardCodes(iso)`.
+- % CHANGE toggles (`aria-pressed` false -> true) on the card.
+- ITA: no chart, no % CHANGE, no `FB_` request.
+- Per-country state: % CHANGE on DEU, rerender GBR, GBR shows the default.
+
+`ui/src/marketsState.dom.test.jsx`: MARKETS series and % CHANGE set, a country
+card opened and closed, MARKETS controls unchanged.
+
+`tests/test_d0113_card_freshness.py`: `FB_MAX_AGE_DAYS` equals the watchdog's
+`foreign_bonds_*` `max_age_days`.
+
+`tests/test_d0113_scorer_golden.py`: composite and v2 on a fixed SQLite fixture
+(`tests/composite_golden_fixture.py`, all 20 FB codes seeded), clock frozen,
+JSON equal to `tests/fixtures/d0113_scorer_golden.json` written from master
+`0680d4b`. Regenerate only with `--write`, and only on a deliberate scorer
+change.
+
+**Seen red.** Each pin was mutated once (one entry changed in
+`SOVEREIGN_YIELD_CODES`, `FB_DE_10Y` added to `TRACKED_CODES`, one golden value
+edited), seen failing, and reverted. The AC-1 default-board test stays green:
+the shared chart panel adds `aria-pressed` only on the card.
+
+### T-0114 - Dimension 4 on the daily FB 10Y, the OAT-Bund percentile, and non-FB rows byte-identical
+
+Proves `D-0114`. **Red first:** the tests landed alone in commit `35fe73e`
+(base master `cb0f460`). There, `tests/test_d0114_dim4.py` had 13 errors (no
+`FB_DIM4_CODES` and the other constants and helpers) and
+`ForeignBondsAreNotScored` failed 4 times. The non-FB baseline passed, as it
+must on master.
+
+`tests/test_d0114_dim4.py` on `tests/d0114_fixture.py` (in-memory SQLite,
+clock 2026-10-22 12:00; 5 years of business-day FB_FR/FB_DE 10Y):
+- Constants: the four codes, `FB_MAX_AGE_DAYS` equal to the watchdog,
+  `EURO_AREA` containing FRA and not GBR, and the benchmark DEU.
+- Helpers: inclusive `spread_percentile` (50 of [40,50,60,70] -> 50; top ->
+  100; empty -> None), `same_date_spread_bp` (common dates only),
+  `combine_dim4` (max; level when no spread).
+- FRA: source `FB_FR_10Y`, spread 85bp at percentile 100 -> 20.0, level 5,
+  dim 4 20.0, no flags. GBR: daily source, 128bp -> level 10. JPN: daily stale
+  -> `IRLTLT01JPM156N` with `daily_stale`.
+- FR leg stale -> monthly level and `spread_leg_stale`. FB_DE_10Y dropped ->
+  level only and `spread_leg_missing`. DEU, GBR and JPN never get a spread term.
+- `raw_score` includes `dim4_score`.
+- **Non-FB pin:** CHN and ITA payloads equal
+  `tests/fixtures/d0114_non_fb_baseline.json` (from master `cb0f460`) byte for
+  byte. ITA (a euro-area member with no FB code) has no `dim4_*` key.
+
+Amended deliberately under D-0114: `ForeignBondsAreNotScored`
+(`tests/test_markets_tooltips.py`) and `IsolationFromScoring`
+(`tests/test_foreign_bonds.py`). The composite names exactly the four
+`FB_xx_10Y` codes, never the `"foreign_bond"` category, and v2 names none.
+`tests/test_composite_dimensions.py` and `ui/src/lib/dimensions.test.js` now
+expect six dimensions and a maximum raw score of 185.
+`tests/fixtures/d0113_scorer_golden.json` was recaptured in its own commit.
+JPN and FRA gain `dim4_*` fields and a stale-source signal, and no score moved.
+
+`scripts/d0114_shadow.py`: old vs new dim 4 and composite per country on
+PROD, read-only. This is the merge gate: non-FB rows must show zero delta.
+
+### T-0073b - The four country chart panels explain themselves: title tooltips, other charts unchanged
+
+Extends `D-0073` (the country tiles explain themselves) to the four chart
+panels under the stress contribution block. Display only: no scorer, fetcher
+or data change. **Red first:** the test landed alone in commit `688a57f`, where
+the four panel cases failed (no tip anchor) and the unchanged-chart case passed.
+
+`ui/src/components/country/SeriesChartTips.dom.test.jsx`
+- TREASURY HOLDINGS, GOLD RESERVES, 5Y SOVEREIGN CDS and TOTAL RESERVES
+  EX-GOLD each render inside a focusable (`tabindex="0"`, `data-tip`) shared
+  `InfoTip`; focus shows a `role="tooltip"` bubble naming the source, cadence
+  and units (TIC monthly, billions USD; IMF IRFCL monthly, metric tonnes;
+  World Government Bonds daily, bps; IMF IFS via FRED monthly, millions USD);
+  blur removes it.
+- A `SeriesChart` with no `tip` keeps its plain title: no `data-tip`, no
+  `tabindex` anywhere in it.
+
+Texts live in `ui/src/lib/countryPanelTips.js`, each taken from the fetcher
+that writes the series (`tic_fetcher`, `imf_gold_reserves`, `cds_fetcher`,
+`fred_fetcher`) and the freshness watchdog's cadence notes.
+
+### T-0115 - Foreign Bonds batch 2a: six keyless sources, five cards, the EA panel, nothing scored moved
+
+Proves `D-0115`. The spec numbers its cases T-0115 to T-0132; the register
+pairs one T heading with one D, so they are listed here as cases.
+
+**Case T-0115: parsers, six sources to zero-padded FB codes.**
+`tests/test_fb_batch2a.py::T0115Parsers` on synthetic
+fixtures in `tests/fixtures/foreign_bonds/` (`PROVENANCE.md`): each parser
+returns `(code, date, Decimal)` rows for exactly its codes; RBA CRLF and blank
+tails, Norges SDMX CSV and the ECB CSV parse.
+
+**Case T-0116: Batch 2a fail closed: empty, header-only, non-2xx, 429.**
+
+An empty or header-only answer, a non-2xx, or a Riksbank 429 writes a
+`failed` run and no rows. The 429 is not retried: exactly one call.
+
+**Case T-0117: Ten foreign-bond jobs and their schedule.**
+
+`FOREIGN_BOND_JOBS` has exactly 10 keys; the scheduler registers the six new
+ids at the D-0115 UTC times (`tests/test_scheduler_jobs.py`); the manual
+trigger accepts each new source and still refuses an unknown one.
+
+**Case T-0118: Batch 2a freshness limits.**
+
+`freshness_watchdog.CHECKS`: CA/SE/NO/ES/EA 4 days, AU 12; the UI's
+`FB_MAX_AGE_DAYS` mirrors it.
+
+**Case T-0119: An HTML body is a failure, not data.**
+
+Every new fetcher rejects an HTML answer (`html_body.html`) and writes no rows.
+
+**Case T-0120: Card slope chips follow each source's tenors.**
+
+UI (`fbBatch2a.dom.test.jsx`): NOR shows 3s10s and no 2s10s; only CAN shows
+10s30s, tooltip "10s-long"; SWE/AUS 2s10s; the daily 10Y headline renders;
+AUS tolerates 12 days.
+
+**Case T-0121: The composite is byte-identical.**
+
+The scorer golden and `pipelines/composite_stress.py` sha256 are pinned to
+`48b6ea0`; adding the new FB rows to the golden fixture leaves the payload
+byte-equal. The fixture has 7 countries, not the production 41.
+
+**Case T-0122: The scoring surface did not move.**
+
+`FB_DIM4_CODES` is still the D-0114 four; the sovereign and tracked code lists
+hash as at `48b6ea0`; EA is not a card country.
+
+**Case T-0123: ECB yield curves: AAA and all-issuer at 2/5/7/10/30.**
+
+`T0123EcbYieldCurves`: both curves map to `FB_EA_AAA_*` / `FB_EA_ALL_*`.
+
+**Case T-0127: BdE: Latin-1 decode.**
+
+**Case T-0128: BdE: `_` is missing, not zero.**
+
+**Case T-0129: BdE: parsing stops at the FUENTE / NOTAS footer.**
+
+**Case T-0130: BdE: column order does not matter.**
+
+`T0127`-`T0130` in `tests/test_fb_batch2a.py`, on `bde_ti_1_3.csv` and the
+shuffled copy (A-0032).
+
+**Case T-0131: EA is a benchmark panel, never a country.**
+
+UI: both curves and AAA 2s10s / 10s30s in bp render; a stale leg dashes the
+slope; EA is not in `FB_CARD_COUNTRY`; FOREIGN-BONDS renders the panel first.
+
+**Case T-0132: ESP: daily 10Y, monthly OECD fallback, 3s10s only.**
+
+UI: with no daily row the card shows `IRLTLT01ESM156N` with MONTHLY, a 3s10s
+chip and no 10s30s; daily ES gives a 3/5/10/15Y curve.
+
+### T-0116 - Foreign Bonds batch 2b-1: PL auctions, IT BMK, ECB IRS, nothing scored moved
+
+Proves `D-0116`. One T heading per D, as for `T-0115`; the cases are below.
+The spec's T-0124 (IRS parse) is case T-0144 and T-0126 (MONTHLY badge, no
+curve) is case T-0145. Tests: `tests/test_fb_batch2b1.py` and
+`ui/src/components/country/fbBatch2b1.dom.test.jsx`, on synthetic fixtures
+built by `tests/fixtures/foreign_bonds/make_fb2b1_fixtures.py`.
+
+**Case T-0133: ECB IRS run.** Five countries at month end; a blank value is
+missing, not zero; rerun idempotent; header-only, HTML, an unasked key or a
+bad period fail closed with no rows.
+
+**Case T-0134: BMK0100 parse.** ZIP, CSV and comma-decimal CSV agree; the four
+columns map to `FB_IT_03Y/05Y/10Y/30Y`; a blank cell is missing.
+
+**Case T-0135: BMK0100 fails closed.** HTML, header only, a daily key, a
+missing column, a wrong first cell, a bad date, an out-of-range value, a ZIP
+with two or no CSVs, a ZIP bomb.
+
+**Case T-0136: The manual BMK ingest.** 401 without auth, 403 with the proof
+cookie, 413 over 2 MB, 422 on rejection with 0 rows and no provenance;
+idempotent (second upload all unchanged); a revision counts as updated; one
+`ingest_provenance` row per accepted upload with the uploader name and sha256.
+
+**Case T-0137: Admin surface.** The route and the four job ids are in
+`adminActions.js`.
+
+**Case T-0138: PL parse.** Closest-to-tenor bond per auction and bucket;
+FRN, switch auctions, blank yields and out-of-bucket bonds skipped; the
+`since` window; bucket edges; macros never kept.
+
+**Case T-0139: PL attachment and workbook fail closed.** Resolved by
+Content-Disposition; wrong name, content type or size refused; HTML, a
+non-zip, a missing sheet or column refused.
+
+**Case T-0140: PL end to end.** Page, HEAD, workbook: six rows; a page with no
+attachment writes nothing.
+
+**Case T-0141: Thirteen jobs and their crons.** `minfin_auctions` Mon-Fri
+15:00, `bdi_bmk` daily 08:00, `ecb_irs` days 1-10 07:15, `ecb_irs_mondays`
+Mondays 07:15.
+
+**Case T-0142: Freshness.** PL 40 days, IT 45 (month), `ecb_irs_monthly` 45
+(month); country patterns never own an `_ECB_M` code.
+
+**Case T-0143: The composite is byte-identical.** Hashes pinned; the new rows
+added to the golden fixture leave the payload byte-equal; no FB or ECB_M
+code in the sovereign set.
+
+**Case T-0144: IRS parse.** PLN and EUR keys map; other countries or
+maturities refused; month end (leap February).
+
+**Case T-0145: MONTHLY badge, no curve.** GRC/PRT show the IRS 10Y MONTHLY with
+no curve and no slopes, a dash when stale; ITA MONTHLY with 3s10s and 10s30s;
+ITA/POL/ESP fall back to IRS, then IRLTLT; POL shows "AS OF LAST AUCTION <date>".
+
+**Case T-0146: ingest 413 before reading.** POST /api/ingest/bdi-mfn-bmk with
+Content-Length over the 2 MB cap is 413; the body is never read; nothing ingested.
+
+**Case T-0147: malformed Content-Length.** Non-integer or negative is 400
+before reading.
+
+**Case T-0148: chunked upload over the cap.** No Content-Length: the stream is
+read only until it passes 2 MB, then 413; never buffered whole.
+
+**Case T-0149: at the cap still ingests.** Exactly 2 MB reaches the parser
+intact. Every POST `/ingest/` route is checked for the early 413. Tests:
+`tests/test_ingest_body_cap.py` (self-contained, no fixtures).
+
+**Case T-0150: Basic Auth runs before the cap.** Through the whole app with a
+throwaway credential patched into settings inside the test: an oversized
+upload with no or wrong credentials gets 401, with the right ones 413, and
+the parser is never called. Tests: `tests/test_ingest_body_cap.py`.
+
+**Case T-0151: Italy and ECB IRS monthly fresh at 55 days (F-0129).**
+`foreign_bonds_it` and `ecb_irs_monthly` allow 55 days after the month end:
+55 days reads ok, 56 reads stale. Tests: `tests/test_ingest_body_cap.py`.
+
+**Case T-0152: the cards agree at 55.** `FB_MAX_AGE_DAYS.IT` and
+`ECB_IRS_MAX_AGE_DAYS` are 55; an ITA 10Y 55 days old shows, 56 days old falls
+back, and the GRC ECB IRS 10Y does the same. Tests:
+`ui/src/components/country/fbBatch2b1.dom.test.jsx`.

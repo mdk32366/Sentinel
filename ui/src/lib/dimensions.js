@@ -68,6 +68,16 @@ export const STRESS_DIMENSIONS = [
     color: "#C47EB8",
     desc: "5Y level + widening — the market's own default price",
   },
+  {
+    // D-0114: Sovereign Spread is scored again, but only for the four
+    // countries with a daily official 10Y (DEU/GBR/JPN/FRA). Every other
+    // country still scores 0 here (D-0066), so its row omits the field.
+    key: "dim4_score",
+    label: "Sovereign 10Y",
+    max: 20,
+    color: "#7FB59A",
+    desc: "DEU/GBR/JPN/FRA only: daily 10Y vs US 10Y, or for France the OAT-Bund spread's 5-year percentile, whichever is higher",
+  },
 ];
 
 /**

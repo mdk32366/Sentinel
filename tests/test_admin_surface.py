@@ -58,11 +58,21 @@ def strip_js_comments(text: str) -> str:
     )
 
 
+def concrete(path):
+    """A route path as the buttons call it. Sentinel D-0111: the one templated
+    POST, `/fetch/foreign-bonds/{source}`, expands to one path per entry in
+    `scheduler.FOREIGN_BOND_JOBS`, so every source must have its own button."""
+    if "{source}" in path and "/foreign-bonds/" in path:
+        return {path.replace("{source}", s) for s in sched.FOREIGN_BOND_JOBS}
+    return {path}
+
+
 def post_paths():
     return {
-        r.path
+        p
         for r in router.routes
         if isinstance(r, APIRoute) and "POST" in r.methods
+        for p in concrete(r.path)
     }
 
 
@@ -88,9 +98,10 @@ class TestEveryTriggerIsOffered(unittest.TestCase):
         # removed fails at the moment an operator most needs it to work.
         offered = set(re.findall(r'endpoint: "([^"]+)"', admin_text()))
         real = {p.replace("/api", "", 1) for p in post_paths()} | {
-            r.path.replace("/api", "", 1)
+            p.replace("/api", "", 1)
             for r in router.routes
             if isinstance(r, APIRoute) and "GET" in r.methods
+            for p in concrete(r.path)
         }
         phantom = sorted(offered - real)
         self.assertEqual(phantom, [], f"ADMIN offers routes that do not exist: {phantom}")
@@ -107,7 +118,7 @@ class TestEveryTriggerIsOffered(unittest.TestCase):
             actual = {
                 m
                 for r in router.routes
-                if isinstance(r, APIRoute) and r.path == full
+                if isinstance(r, APIRoute) and full in concrete(r.path)
                 for m in r.methods
             }
             self.assertIn(method, actual, f"{full} is not a {method}")
