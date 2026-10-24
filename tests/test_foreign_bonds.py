@@ -468,6 +468,8 @@ FB_CODES_ALL = FB_CODES_ALL + FB_CODES_2A
 FB_CODES_2B1 = ([f"FB_PL_{t:02d}Y" for t in (2, 5, 10)] + [f"FB_IT_{t:02d}Y" for t in (3, 5, 10, 30)]
                 + [f"FB_{c}_10Y_ECB_M" for c in ("IT", "ES", "GR", "PT", "PL")])
 FB_CODES_ALL = FB_CODES_ALL + FB_CODES_2B1
+# Sentinel D-0118: India, CCIL manual upload. The IND card only, no FB tab cell.
+FB_CODES_ALL = FB_CODES_ALL + [f"FB_IN_{t:02d}Y" for t in (2, 5, 10, 30)]
 
 
 class IsolationFromScoring(unittest.TestCase):
@@ -518,7 +520,7 @@ class IsolationFromScoring(unittest.TestCase):
         self.assertEqual(sorted(c["key"] for c in fb),
                          ["foreign_bonds_au", "foreign_bonds_ca", "foreign_bonds_de",
                           "foreign_bonds_ea", "foreign_bonds_es", "foreign_bonds_fr",
-                          "foreign_bonds_gb", "foreign_bonds_it", "foreign_bonds_jp",
+                          "foreign_bonds_gb", "foreign_bonds_in", "foreign_bonds_it", "foreign_bonds_jp",
                           "foreign_bonds_no", "foreign_bonds_pl", "foreign_bonds_se"])
         # D-0116: the ECB IRS monthly fallbacks have their own check, outside
         # the per-country prefix, and own exactly the five _ECB_M codes.
@@ -572,6 +574,8 @@ class Scheduled(unittest.TestCase):
             # Sentinel D-0116 (batch 2b-1).
             "foreign_bonds_pl": (["MinFin_PL"], 40, "day", ["FB\\_PL\\_%Y"]),
             "foreign_bonds_it": (["BdI_BMK"], 55, "month", ["FB\\_IT\\_%Y"]),
+            # Sentinel D-0118: manual CCIL upload, not scheduled.
+            "foreign_bonds_in": (["CCIL_Tenorwise"], 7, "day", ["FB\\_IN\\_%Y"]),
         })
 
     def test_declared_by_the_modules(self):

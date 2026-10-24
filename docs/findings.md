@@ -4063,3 +4063,12 @@ same exposure for the IRS fallback.
 `foreign_bonds_it`, `ecb_irs_monthly`, `FB_MAX_AGE_DAYS.IT` and
 `ECB_IRS_MAX_AGE_DAYS`. Pinned by `T-0151` (55 ok, 56 stale) and `T-0152` (cards).
 Resolved 2026-10-22.
+
+### F-0130 - FRED's India 10Y ID is non-standard
+**Claim.** `IRLTLT01INM156N` returns 404; the India series is `INDIRLTLT01STM`, which `IRLTLT01%` does not match. **Handled.** Its own CHECK `sovereign_yield_ind`; `sovereign_yields` still matches exactly the 14 codes (`T-0165`).
+
+### F-0131 - CCIL is sign-in gated and client-side
+**Claim.** The Tenorwise page needs a sign-in and builds the file in the browser; there is no fetchable endpoint. **Handled.** Manual upload route, no fetcher or job; `manual_upload` exempts it from the scheduled-pipeline test; STALE means overdue (`D-0118`).
+
+### F-0132 - The SDL 10Y label collides with 9Y-10Y
+**Claim.** The CCIL file carries state-development-loan rows in buckets that read like the G-sec ones. **Handled.** SDL rows are dropped by security type; a non-G-sec in a kept bucket is a 422 (`T-0169`).

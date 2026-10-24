@@ -1090,3 +1090,27 @@ being (par-ish) bond yields.
 **Status:** Assumed (`D-0117`); disclosed in the tooltip, not corrected.
 
 **Consequence if wrong:** the spread carries a basis bias; display only.
+
+### A-0043 - OECD INDIRLTLT01STM is a monthly average
+**Relies on:** FRED's OECD MEI long-term rate convention. **Status:** Assumed (`D-0118`). **Consequence if wrong:** the MONTHLY value is a month-end or point rate; display only.
+
+### A-0044 - 75 days is the right India monthly window
+**Relies on:** OECD India publication lag. **Status:** ESTIMATE (`D-0118`). **Consequence if wrong:** false STALE or a stale value shown; widen as `F-0089`.
+
+### A-0045 - FRED/OECD and CCIL reuse terms permit display with attribution
+**Relies on:** both sources' terms. **Status:** UNVERIFIED (`D-0118`). **Consequence if wrong:** the IND card must drop the series.
+
+### A-0046 - CCIL buckets roll, the 10Y benchmark changes
+**Relies on:** CCIL picking the benchmark security per bucket. **Status:** Assumed; the security is validated, not stored. **Consequence if wrong:** a roll shows as a step in the series.
+
+### A-0047 - CCIL yields are indicative YTM, not traded
+**Relies on:** CCIL's description. **Status:** Assumed; disclosed in the tips. **Consequence if wrong:** display only.
+
+### A-0048 - CCIL's Date column stays dd-Mon-yyyy
+**Relies on:** the 2026-10-22 file. **Status:** Assumed; any other format is a 422. **Consequence if wrong:** uploads reject until the parser follows.
+
+### A-0049 - 7 days is the right India daily window
+**Relies on:** an operator uploading weekly at worst. **Status:** ESTIMATE (`D-0118`). **Consequence if wrong:** STALE badges mean an overdue upload.
+
+### A-0050 - The CCIL file has no title row
+**Relies on:** the 2026-10-22 file (headers on row 1). **Status:** Assumed; a header change is a 422. **Consequence if wrong:** uploads reject until the parser follows.

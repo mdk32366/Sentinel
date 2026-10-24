@@ -1,6 +1,6 @@
 import { useChartSeries } from "../../hooks/useChartSeries";
 import { useChartView } from "../../hooks/useChartView";
-import { fbCardMetrics } from "../../lib/constants";
+import { CCIL_URL, fbCardMetrics } from "../../lib/constants";
 import { MarketsChartPanel } from "../../pages/MarketsChartPanel";
 import { InfoTip } from "../InfoTip";
 
@@ -24,14 +24,25 @@ export function CountryBondCurve({ iso, bond, chart = false }) {
   return (
     <div style={{ marginBottom: 24 }}>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-        {bond.curve.map((c) => (
-          <div key={c.code} style={cell} data-testid={`curve-${c.label}`}>
-            <div style={{ fontSize: 10, color: "#5A6878" }}>{c.label}</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: c.value == null ? "#3A4D5C" : "#7EB8C9" }}>
-              {c.value == null ? "NO SOURCE" : `${c.value.toFixed(2)}%`}
-            </div>
-          </div>
-        ))}
+        {bond.curve.map((c) => {
+          const body = (
+            <>
+              <div style={{ fontSize: 10, color: "#5A6878" }}>{c.label}</div>
+              <div style={{ fontSize: 14, fontWeight: 700, color: c.value == null ? "#3A4D5C" : "#7EB8C9" }}>
+                {c.value == null ? "NO SOURCE" : `${c.value.toFixed(2)}%`}
+              </div>
+            </>
+          );
+          // Sentinel D-0118: a per-tenor tip where the source has one (IN).
+          return c.tip ? (
+            <InfoTip key={c.code} as="div" title={c.label} tip={c.tip} placement="below" align="left" tabIndex={0}
+              style={{ ...cell, cursor: "help", outline: "none" }} data-testid={`curve-${c.label}`} data-tip={c.tip}>
+              {body}
+            </InfoTip>
+          ) : (
+            <div key={c.code} style={cell} data-testid={`curve-${c.label}`}>{body}</div>
+          );
+        })}
         {bond.slopes.map((s) => (
           <InfoTip key={s.label} as="div" title={s.label} tip={s.tip ?? SLOPE_TIP[s.label]} placement="below" align="left" tabIndex={0}
             style={{ ...cell, cursor: "help", outline: "none" }}>
@@ -42,7 +53,14 @@ export function CountryBondCurve({ iso, bond, chart = false }) {
           </InfoTip>
         ))}
       </div>
-      {chart && <CountryBondChart iso={iso} />}
+      {bond.tenYear?.attribution && (
+        <div data-testid="ccil-attribution" style={{ fontSize: 10, color: "#5A6878", fontFamily: "monospace", marginBottom: 8 }}>
+          {bond.tenYear.attribution.replace(CCIL_URL, "").replace(/,\s*$/, "")}
+          {", "}
+          <a href={CCIL_URL} target="_blank" rel="noopener noreferrer" style={{ color: "#7EB8C9" }}>{CCIL_URL}</a>
+        </div>
+      )}
+      {chart && fbCardMetrics(iso).length > 0 && <CountryBondChart iso={iso} />}
     </div>
   );
 }

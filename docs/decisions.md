@@ -3569,3 +3569,44 @@ unchanged.
 spot vs par, disclosed not corrected).
 
 **Tests.** `T-0153`..`T-0160`; `T-0121`/`T-0122` and `T-0131` re-run unchanged.
+
+### D-0118 - India 10Y on the IND card: CCIL daily (manual upload) with the OECD monthly fallback; display only
+
+**Ruling.** Trinity's India 10Y spec@0.3 (with @0.1 read for the cases),
+GO 2026-10-24. Does not amend `D-0114`: the composite, the scorer,
+`FB_DIM4_CODES`, `SOVEREIGN_YIELD_CODES` (still the 14 dim-4 codes) and the
+golden are untouched, and nothing here is scored.
+
+**Amendment (at build, 2026-10-24).** @0.3 §3 trimmed at build: provenance =
+existing row, raw body. No migration and no new table: each upload writes one
+`ingest_provenance` row (source `ccil-tenorwise`, sha256 of the body, counts,
+min/max date); the per-row code, date and yield are the `FB_IN_*` rows
+themselves. The CCIL attribution is a code constant rendered on the card, not
+stored. No filename is kept. The body is the raw .xlsx (no multipart, no
+`python-multipart`, no filename header).
+
+**Choice.**
+
+- Daily: `POST /api/ingest/ccil-tenorwise` (Basic Auth; the proof cookie is
+  read-only, 403) takes CCIL's Tenorwise Indicative Yields .xlsx as the raw
+  body. `pipelines/ccil_tenorwise.py` keeps the central G-sec buckets 1Y-2Y,
+  4Y-5Y, 9Y-10Y, 28Y-30Y as `FB_IN_02Y/05Y/10Y/30Y` (YTM, %). All or nothing:
+  over 2 MB 413; anything rejected (headers, sheet count, not a plain xlsx,
+  macros, unknown or duplicate bucket, missing kept bucket, non-G-sec in a
+  kept bucket, mixed or non-`dd-Mon-yyyy` dates, YTM outside 0..25) 422,
+  nothing written. Idempotent. No fetcher, no scheduler job; the
+  `foreign_bonds_in` CHECK (day, 7 days, `manual_upload`) says a STALE badge
+  means the upload is overdue, not an outage.
+- Monthly: FRED `INDIRLTLT01STM` (category `sovereign_yield_display`, CHECK
+  `sovereign_yield_ind`, month, 75 days). In the UI it sits in
+  `MONTHLY_10Y_EXTRA_CODES`, requested via `MARKET_REQUEST_CODES`;
+  `TRACKED_CODES` unchanged.
+- Card: daily 10Y within 7 days shows with the 2/5/10/30Y curve, 2s10s and
+  10s30s, per-tenor tips naming the CCIL bucket, and the CCIL attribution
+  link. Otherwise the OECD monthly (MONTHLY badge) and no curve or slopes; past
+  75 days a dash badged STALE; no data, a plain dash. India is not on the
+  Foreign Bonds tab.
+
+**Assumptions.** `A-0043`..`A-0050`. **Findings.** `F-0130`..`F-0132`.
+
+**Tests.** `T-0161`..`T-0174`.

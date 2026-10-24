@@ -342,6 +342,24 @@ async def ingest_bdi_mfn_bmk(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+@router.post("/ingest/ccil-tenorwise")
+async def ingest_ccil_tenorwise(request: Request, db: Session = Depends(get_db)):
+    """Sentinel D-0118: India's daily G-sec yields, CCIL Tenorwise Indicative Yields.
+
+    The body is the .xlsx exactly as downloaded from CCIL (raw bytes, no
+    multipart, no filename: D-0118 amendment). All or nothing: over 2 MB -> 413
+    (on Content-Length, before reading), anything the parser rejects -> 422,
+    and in both cases nothing is written. Idempotent. Writes need Basic Auth;
+    the proof cookie is read-only (403).
+    """
+    from pipelines import ccil_tenorwise
+    body = await _read_capped_body(request, ccil_tenorwise.MAX_BODY_BYTES)
+    try:
+        return ccil_tenorwise.ingest(db, body, _basic_username(request))
+    except ccil_tenorwise.IngestRejected as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.get("/holdings", response_model=HoldingsResponse)
 def get_all_holdings(
     country_iso: Optional[str] = Query(None),
