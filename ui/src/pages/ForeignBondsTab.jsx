@@ -1,3 +1,5 @@
+import { useEffect } from "react";
+
 import { useApiResource } from "../hooks/useApiResource";
 import { useSeries } from "../hooks/useMarketSeries";
 import {
@@ -32,7 +34,12 @@ const OK = new Set(["ok", "anomaly"]);
  * current; one stale leg leaves it in place reading "—" rather than a number
  * against a frozen leg (amendment 3). Every entry, OAT–Bund included, is pp.
  */
-export function ForeignBondsTab() {
+export function ForeignBondsTab({ view } = {}) {
+  // Sentinel D-0117: `#/foreign-bonds/ea-benchmark` (the member cards' link)
+  // scrolls the EA panel into view.
+  useEffect(() => {
+    if (view === "ea-benchmark") document.getElementById("ea-benchmark")?.scrollIntoView?.({ block: "start" });
+  }, [view]);
   const { latest, prior, latestDate, dates, series } = useSeries(FOREIGN_BOND_CODES);
   const { data: freshness } = useApiResource(`/freshness`);
 

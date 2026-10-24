@@ -87,7 +87,7 @@ export default function App() {
             view={marketsView}
           />
         )}
-        {tab === "FOREIGN-BONDS" && <ForeignBondsTab />}
+        {tab === "FOREIGN-BONDS" && <ForeignBondsTab view={view} />}
 
         {/* D-0091: every country mention is a <CountryLink> to #/country/<ISO3>,
             so the tabs no longer need a select callback from here. */}

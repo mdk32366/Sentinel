@@ -52,7 +52,9 @@ export function tabHref(tab) {
  */
 // D-0109. Views a tab can be opened on directly: `#/auctions/signals` is the
 // address the USA card's signal-frequency card links to.
-const TAB_VIEWS = { AUCTIONS: ["signals"] };
+// D-0117: `#/foreign-bonds/ea-benchmark` is the EA panel, linked from the
+// euro-area member cards' spread readout.
+const TAB_VIEWS = { AUCTIONS: ["signals"], "FOREIGN-BONDS": ["ea-benchmark"] };
 
 /** `#/<tab>/<view>` for a view a tab supports. */
 export function viewHref(tab, view) {

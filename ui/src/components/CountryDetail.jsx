@@ -4,9 +4,11 @@ import { useApiResource } from "../hooks/useApiResource";
 import { useSeries } from "../hooks/useMarketSeries";
 import { useCountryDetail } from "../hooks/useCountryDetail";
 import { useCountryNarrative } from "../hooks/useCountryNarrative";
+import { eaSpreadFetchCodes, eaSpreadReadout } from "../lib/eaSpread";
 import { DataConfidence } from "./DataConfidence";
 import { AnalystBrief } from "./country/AnalystBrief";
 import { CountryBondCurve } from "./country/CountryBondCurve";
+import { EaSpreadLine } from "./country/EaSpreadLine";
 import { CountryStatCards } from "./country/CountryStatCards";
 import { LiquidationBanner } from "./country/LiquidationBanner";
 import { CDS_TIP, GOLD_TIP, RESERVES_TIP, TIC_TIP } from "../lib/countryPanelTips";
@@ -34,6 +36,9 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
   // through its own request. MARKETS' TRACKED_CODES is untouched; every other
   // country asks for nothing (fbCardCodes is []).
   const fb = useSeries(fbCardFetchCodes(iso));
+  // Sentinel D-0117: the six euro-area members also read the AAA 10Y (and ESP
+  // its OECD monthly 10Y) for the spread readout; everyone else asks for nothing.
+  const spread = useSeries(eaSpreadFetchCodes(iso));
 
   if (loading) {
     return <div style={{ padding: 24, fontFamily: "monospace", fontSize: 13, color: "#3A4D5C" }}>loading {iso}...</div>;
@@ -54,6 +59,7 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
 
   const yieldCode = SOVEREIGN_YIELD_CODES[iso];
   const bond = countryBond(iso, { ...latestAll, ...fb.latest }, fb.dates, now ?? new Date());
+  const eaSpread = bond ? eaSpreadReadout(iso, bond, { ...fb.series, ...spread.series }, now ?? new Date()) : null;
 
   return (
     <div style={container}>
@@ -90,6 +96,8 @@ export function CountryDetail({ iso, onClose, standalone = false, latestAll = {}
         us10y={latestAll["DGS10"]}
         cds={cds}
       />
+
+      <EaSpreadLine readout={eaSpread} />
 
       {bond && <CountryBondCurve key={iso} iso={iso} bond={bond} chart />}
 
