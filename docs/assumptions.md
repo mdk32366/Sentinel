@@ -1074,7 +1074,7 @@ day (seen live through 2026-10-21), about 21 points a month.
 BMK0100's Sep 2026 10Y (4.3622) matching ECB IRS IT (4.362), see `A-0037`,
 which a month-end figure would not.
 
-**Status:** Assumed (`D-0117`); not confirmed from BdI documentation.
+**Status:** Assumed (`D-0117`): BdI BMK0100 monthly is treated as a monthly average, **unverified** (not confirmed from BdI documentation). Evidence: the Sep 2026 10Y 4.3622 matches ECB IRS IT 4.362.
 
 **Falsified by:** BdI documenting BMK0100 as an end-of-month figure.
 
