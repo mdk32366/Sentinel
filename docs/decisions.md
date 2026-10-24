@@ -3530,3 +3530,42 @@ is untouched.
 
 **Assumptions.** `A-0036` (PL bucketing), `A-0037` (BMK0100 column keys),
 `A-0038` (IRS as fallback), `A-0039` (licences).
+
+### D-0117 - Spread to EA AAA 10Y readout on the six euro-area member cards; display only
+
+**Ruling.** Trinity's EA spread readout spec@0.2 (vault:D-0059), building on
+`D-0113` / `D-0115` / `D-0116`. Does not amend `D-0114`: the composite, the
+scorer, `FB_DIM4_CODES` and the FRA OAT-Bund term are untouched, and the
+spread is never scored.
+
+**Choice.** FRA, DEU, ESP, ITA, GRC and PRT (fixed in code,
+`EA_SPREAD_MEMBERS`) get one line under the headline 10Y: "Spread to EA AAA
+10Y: +NNN bp (as of ...)", member 10Y minus `FB_EA_AAA_10Y` (never
+`FB_EA_ALL_10Y`), computed at read time in `ui/src/lib/eaSpread.js` from the
+value the card already shows. Nothing stored, no metric code, job, CHECK or
+egress host; `SOVEREIGN_YIELD_CODES`, `TRACKED_CODES` and `FOREIGN_BOND_JOBS`
+unchanged.
+
+- A daily member value (FR/DE/ES own series) pairs with the latest AAA on or
+  before its date, at most 3 calendar days back; else a dash.
+- A monthly member value (ECB IRS, BdI BMK, ESP's OECD fallback) pairs with
+  the mean of the AAA daily points in the same month, needing at least 10;
+  else a dash. MONTHLY badge, "as of Mon YYYY". Never a daily AAA point
+  against a monthly value.
+- Freshness is the card's: the member leg is whichever source `countryBond`
+  chose (and only a source listed for that member; FRA/DEU/ITA on the OECD
+  fallback are a dash). ESP's OECD leg also ages 70 days from month end, as
+  the `sovereign_yields` CHECK does. AAA older than `FB_MAX_AGE_DAYS.EA` (4
+  days) is a dash, "benchmark unavailable", on all six cards.
+- Rounding: to integer bp, halves away from zero (the spec gave no half rule),
+  after snapping the difference to 1e-4 bp so float noise cannot flip a half.
+- The "EA benchmark →" link shows on all six cards, dash or not, and goes to
+  `#/foreign-bonds/ea-benchmark`, a tab view in the `D-0109` form (a bare
+  `#ea-benchmark` would be read by the hash router as a tab). The tab scrolls
+  `EaBenchmarkPanel`, which gains `id="ea-benchmark"` only.
+
+**Assumptions.** `A-0040` (AAA daily on TARGET days, the 10-point floor),
+`A-0041` (ECB IRS and BdI BMK0100 are monthly averages), `A-0042` (Svensson
+spot vs par, disclosed not corrected).
+
+**Tests.** `T-0153`..`T-0160`; `T-0121`/`T-0122` and `T-0131` re-run unchanged.

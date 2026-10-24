@@ -10,7 +10,7 @@ const cell = { background: "#0F1923", border: "1px solid #1A2530", borderRadius:
  */
 export function EaBenchmarkPanel({ ea }) {
   return (
-    <section data-testid="ea-benchmark-panel" style={{ marginBottom: 24 }}>
+    <section id="ea-benchmark" data-testid="ea-benchmark-panel" style={{ marginBottom: 24 }}>
       <div style={{ fontSize: 11, letterSpacing: 1, color: "#8A9AAA", marginBottom: 8, fontFamily: "monospace" }}>
         EURO AREA BENCHMARK CURVES (ECB) · not a country, display only
       </div>

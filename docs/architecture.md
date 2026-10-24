@@ -363,3 +363,14 @@ Three more keyless fetchers through `pipelines/foreign_bond_common`:
 `create_all` on deploy: a new table is additive, no DDL). `countryBond`
 falls back own series -> ECB IRS (55 days, F-0129) -> OECD monthly -> dash; GRC and PRT
 cards have no curve (`showCurve: false`). No scorer reads any 2b-1 code.
+
+## EA spread readout (D-0117)
+
+`ui/src/lib/eaSpread.js` turns the card's own 10Y (`countryBond().tenYear`) and
+`FB_EA_AAA_10Y` into "Spread to EA AAA 10Y" for the six members. `CountryDetail`
+asks `useSeries(eaSpreadFetchCodes(iso))` for the AAA (and ESP's OECD 10Y, so
+it carries a date) and renders `EaSpreadLine` between the stat cards and the
+curve. Daily values pair same-day (±3 days back), monthly ones against the
+same-month AAA mean (≥10 points). Nothing server-side changes. The link goes
+to `#/foreign-bonds/ea-benchmark` (a `TAB_VIEWS` view); `ForeignBondsTab`
+scrolls `#ea-benchmark` into view.

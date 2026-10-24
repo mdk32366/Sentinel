@@ -1056,3 +1056,37 @@ differ by tens of bp; display only.
 **Falsified by:** terms restricting these datasets.
 
 **Consequence if wrong:** the PL/IT/GR/PT cards come down; nothing scored.
+
+### A-0040 - FB_EA_AAA_10Y is daily on TARGET business days
+
+**Relies on:** the ECB YC AAA Svensson 10Y spot being published each TARGET
+day (seen live through 2026-10-21), about 21 points a month.
+
+**Status:** Assumed (`D-0117`).
+
+**Falsified by:** a month with fewer than 10 points despite fresh data.
+
+**Consequence if wrong:** monthly readouts show a dash; nothing scored.
+
+### A-0041 - ECB IRS and BdI BMK0100 monthly 10Y values are monthly averages
+
+**Relies on:** ECB IRS being a monthly average (ECB definition) and BdI
+BMK0100's Sep 2026 10Y (4.3622) matching ECB IRS IT (4.362), see `A-0037`,
+which a month-end figure would not.
+
+**Status:** Assumed (`D-0117`): BdI BMK0100 monthly is treated as a monthly average, **unverified** (not confirmed from BdI documentation). Evidence: the Sep 2026 10Y 4.3622 matches ECB IRS IT 4.362.
+
+**Falsified by:** BdI documenting BMK0100 as an end-of-month figure.
+
+**Consequence if wrong:** ITA should pair with the AAA on the last TARGET day
+of the month instead of the month mean, a one-line rule change in
+`eaSpreadReadout`; nothing scored.
+
+### A-0042 - Svensson spot vs par yield differs by only a few bp at 10Y
+
+**Relies on:** the AAA leg being a fitted zero-coupon spot rate and member legs
+being (par-ish) bond yields.
+
+**Status:** Assumed (`D-0117`); disclosed in the tooltip, not corrected.
+
+**Consequence if wrong:** the spread carries a basis bias; display only.

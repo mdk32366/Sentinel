@@ -965,3 +965,36 @@ the parser is never called. Tests: `tests/test_ingest_body_cap.py`.
 `ECB_IRS_MAX_AGE_DAYS` are 55; an ITA 10Y 55 days old shows, 56 days old falls
 back, and the GRC ECB IRS 10Y does the same. Tests:
 `ui/src/components/country/fbBatch2b1.dom.test.jsx`.
+
+### T-0117 - EA spread readout: pairing, staleness, membership, link; nothing scored moved
+
+Proves `D-0117`, cases `T-0153`..`T-0160` (the case id `T-0117` under `T-0115` is unrelated). Test: `ui/src/components/country/eaSpread.dom.test.jsx`
+(now 2026-10-22T12:00Z, synthetic series). The invariants are the existing
+`T-0121`/`T-0122` (composite byte-identical, golden sha256, `TRACKED_CODES`,
+`SOVEREIGN_YIELD_CODES`, D-0114 set, `FOREIGN_BOND_JOBS` count) and `T-0131`,
+re-run unchanged.
+
+**T-0153: formula.** FR 3.412 vs AAA 2.705 same day is +71 bp; DEU below AAA
+reads "−11 bp"; a half bp rounds away from zero on both signs.
+
+**T-0154: daily alignment.** Gaps of 0 and 3 days render, 4 is a dash; an AAA
+point after the member date is ignored for the latest one on or before it.
+
+**T-0155: monthly alignment.** GRC Sep pairs with the September AAA mean
+(computed in the test; the daily-latest answer differs by at least 5 bp); 9
+AAA points in the month is a dash; MONTHLY badge, "as of Sep 2026".
+
+**T-0156: fallback switch.** ESP daily fresh: daily, no badge; daily stale:
+ECB_M, MONTHLY; then the OECD monthly, MONTHLY; all stale: a dash.
+
+**T-0157: staleness.** AAA stale, member fresh: a dash, "benchmark
+unavailable", on all six cards; fresh again, ITA (BdI monthly) reads.
+
+**T-0158: membership.** Exactly the six; CAN, GBR, JPN, SWE, NOR, AUS have no
+line and no link; EA still absent from the country list.
+
+**T-0159: benchmark identity.** With `FB_EA_ALL_10Y` ≠ `FB_EA_AAA_10Y` the
+readout matches AAA and the card never fetches ALL.
+
+**T-0160: link.** The link shows on all six cards, resolves to the Foreign
+Bonds tab (`view: "ea-benchmark"`), and `#ea-benchmark` exists there.
