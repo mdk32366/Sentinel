@@ -998,3 +998,38 @@ readout matches AAA and the card never fetches ALL.
 
 **T-0160: link.** The link shows on all six cards, resolves to the Foreign
 Bonds tab (`view: "ea-benchmark"`), and `#ea-benchmark` exists there.
+
+### T-0118 - India 10Y: CCIL upload, OECD fallback, nothing scored moved
+
+Proves `D-0118`, cases `T-0161`..`T-0174` (the case id `T-0118` under `T-0115` is unrelated). Tests: `tests/test_india_10y.py`
+and `ui/src/components/country/india10y.dom.test.jsx` (now 2026-10-22). Fixture
+`tests/fixtures/ccil/TenorWiseIndicativeYields_2026-10-22.xlsx`, md5
+`9704e29c7198971ceef8bc191b5299f6`.
+
+**T-0161: monthly display.** OECD 7.06 renders "7.06%", MONTHLY.
+
+**T-0162: monthly staleness.** 75 days shows, 76 is a dash badged STALE; no data is a dash, never "0.00%".
+
+**T-0163: composite invariant.** composite_stress.py and the golden byte-identical; IND rows leave the golden payload unchanged; no IND spread.
+
+**T-0164: code sets.** `SOVEREIGN_YIELD_CODES` (both sides), `FB_DIM4_CODES`, `TRACKED_CODES`, `FOREIGN_BOND_JOBS` (13) unchanged; `MONTHLY_10Y_EXTRA_CODES` is `{ IND: "INDIRLTLT01STM" }`.
+
+**T-0165: freshness.** `sovereign_yield_ind` month/75 (75 ok, 76 not); `sovereign_yields` still the 14 codes; category `sovereign_yield_display`; `foreign_bonds_in` day/7 with the overdue-not-outage note.
+
+**T-0166: request set.** `MARKET_REQUEST_CODES` has the code, `TRACKED_CODES` does not; monthly mode has no curve or slopes.
+
+**T-0167: ingest.** The fixture loads 4 rows as of 2026-10-22 at the expected yields; one provenance row with sha256 of the fixture; attribution constant.
+
+**T-0168: shape rejects.** Renamed header, swapped columns, two sheets, HTML, vbaProject.bin, unknown bucket: 422-class reject, nothing written.
+
+**T-0169: bucket rules.** 10Y is "6.94% GS 2036"; missing 9Y-10Y, a non-G-sec in a kept bucket, a duplicate bucket are rejected.
+
+**T-0170: idempotence.** Re-upload changes 0 rows; a changed yield updates 1 and the provenance says so.
+
+**T-0171: route.** 401 without auth, 401/403 wrong password, 200 with Basic Auth; password not logged or returned; HTML 422; oversize 413; proof cookie 403.
+
+**T-0172: value rules.** ISO date, mixed dates, "n/a", 30 and -0.1 rejected.
+
+**T-0173: daily card.** Daily 10Y 7.4553 with curve, 2s10s 75.71 and 10s30s 40.63 bp, CCIL attribution link, bucket tip; mixed dates dash the slope; 8 days falls back to monthly; both stale is a dash.
+
+**T-0174: invariants.** The existing `T-0121`/`T-0122` and `T-0131` re-run unchanged.

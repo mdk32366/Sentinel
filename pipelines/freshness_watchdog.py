@@ -235,6 +235,17 @@ CHECKS = [
         "pipelines": ["FRED"],
         "note": "Feeds composite dimension 4.",
     },
+    # Sentinel D-0118: India's 10Y, display only, NOT in dim 4. INDIRLTLT01STM
+    # is not IRLTLT01%, so sovereign_yields above still matches its 14 codes.
+    {
+        "key": "sovereign_yield_ind",
+        "period": "month",
+        "label": "India 10Y (OECD monthly)",
+        "patterns": ["INDIRLTLT01STM"],
+        "max_age_days": 75,      # ESTIMATE (D-0118)
+        "pipelines": ["FRED"],
+        "note": "Display only (D-0118). Not in dim 4.",
+    },
     # Sentinel D-0111 (vault:D-0057): Foreign Bonds, display only. Windows are
     # Trinity's judgment from the lags observed on 2026-10-21 (ESTIMATE), not
     # measured over a year: a weekend plus the source's own lag plus slack.
@@ -357,6 +368,18 @@ CHECKS = [
         "max_age_days": 55,  # F-0129: 55 per the F-0089 precedent
         "pipelines": ["BdI_BMK"],
         "note": "BMK0100 3/5/10/30Y, monthly. Manual backup POST /api/ingest/bdi-mfn-bmk. Display only (Sentinel D-0116).",
+    },
+    # Sentinel D-0118: India daily G-sec yields, manual CCIL upload (no fetcher,
+    # no scheduler job). 7 days is an ESTIMATE.
+    {
+        "key": "foreign_bonds_in",
+        "period": "day",
+        "label": "India G-sec yields (CCIL Tenorwise, manual upload)",
+        "patterns": ["FB\\_IN\\_%Y"],
+        "max_age_days": 7,
+        "pipelines": ["CCIL_Tenorwise"],
+        "manual_upload": True,   # fed by POST /api/ingest/ccil-tenorwise, never scheduled
+        "note": "Manual CCIL upload (D-0118). A STALE badge means the upload is overdue, not an outage.",
     },
     {
         "key": "ecb_irs_monthly",

@@ -24,4 +24,6 @@ class CardFreshnessMirrorsTheWatchdog(unittest.TestCase):
         # Sentinel D-0115 (T-0118): batch 2a countries and the EA benchmark.
         self.assertEqual(set(ui), {"DE", "GB", "JP", "FR", "CA", "SE", "AU", "NO", "ES", "EA",
                                    # Sentinel D-0116 (batch 2b-1).
-                                   "PL", "IT"})
+                                   "PL", "IT",
+                                   # Sentinel D-0118: India, CCIL manual upload.
+                                   "IN"})

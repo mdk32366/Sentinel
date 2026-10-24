@@ -59,6 +59,11 @@ FRED_METRICS = [
     {"code": "IRLTLT01CHM156N", "name": "Switzerland 10Y Gov Bond Yield", "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Switzerland 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01BEM156N", "name": "Belgium 10Y Gov Bond Yield",     "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "Belgium 10-year government bond yield, monthly (OECD)"},
     {"code": "IRLTLT01KRM156N", "name": "South Korea 10Y Gov Bond Yield", "category": "sovereign_yield", "unit": "%", "source": "FRED", "description": "South Korea 10-year government bond yield, monthly (OECD)"},
+    # Sentinel D-0118: India's 10Y for the IND card only. A category of its own
+    # so nothing that reads "sovereign_yield" picks it up; the code is not
+    # IRLTLT01%, so the sovereign_yields watchdog pattern cannot match it
+    # either (F-entry: FRED's India ID is non-standard). Never scored.
+    {"code": "INDIRLTLT01STM", "name": "India 10Y Gov Bond Yield", "category": "sovereign_yield_display", "unit": "%", "source": "FRED", "description": "India long-term government bond yield, monthly (OECD via FRED), display only"},
     {"code": "DCOILBRENTEU", "name": "Brent Crude Oil Price", "category": "commodity", "unit": "$/bbl", "source": "FRED", "description": "Crude Oil Prices: Brent - Europe, dollars per barrel, daily"},
     # ── Total Reserves Excluding Gold (IMF IFS via FRED) ──────────────────────
     # Units: Millions of USD, Monthly. Tracks de-dollarization / reserve accumulation.

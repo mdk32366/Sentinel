@@ -86,7 +86,7 @@ export const SCHEDULED_JOBS = [
 /** Manual triggers. Every POST route the API exposes, plus the read-only report. */
 export const MANUAL_TRIGGERS = [
   { name: "FRED Data", endpoint: "/fetch/fred", method: "POST",
-    desc: "Force the FRED pull now." },
+    desc: "Force the FRED pull now. Includes India's monthly OECD 10Y fallback INDIRLTLT01STM (display only, D-0118). India's daily G-sec yields have no fetch: upload CCIL's Tenorwise Indicative Yields .xlsx as the raw body of POST /api/ingest/ccil-tenorwise (Basic Auth)." },
   { name: "TIC Holdings", endpoint: "/fetch/treasury-holdings", method: "POST",
     desc: "Force the SLT Table 5 import. Refuses a file older than 140 days rather than re-importing a frozen year (D-0045)." },
   { name: "TIC Holdings, All Countries", endpoint: "/fetch/tic-table3", method: "POST",

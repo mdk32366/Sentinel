@@ -141,6 +141,8 @@ class TestEverySourceDeclaresItsPeriod(unittest.TestCase):
             # IT BMK monthly, the ECB IRS monthly 10Y fallback.
             "foreign_bonds_pl": "day", "foreign_bonds_it": "month",
             "ecb_irs_monthly": "month",
+            # Sentinel D-0118: India, the OECD monthly 10Y and the CCIL daily upload.
+            "sovereign_yield_ind": "month", "foreign_bonds_in": "day",
         }
         actual = {c["key"]: c.get("period") for c in CHECKS}
         self.assertEqual(actual, expected)

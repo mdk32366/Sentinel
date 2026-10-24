@@ -374,3 +374,13 @@ curve. Daily values pair same-day (±3 days back), monthly ones against the
 same-month AAA mean (≥10 points). Nothing server-side changes. The link goes
 to `#/foreign-bonds/ea-benchmark` (a `TAB_VIEWS` view); `ForeignBondsTab`
 scrolls `#ea-benchmark` into view.
+
+## India 10Y (D-0118)
+
+`POST /api/ingest/ccil-tenorwise` (Basic Auth, raw .xlsx body) runs
+`pipelines/ccil_tenorwise.py`, which writes `FB_IN_02Y/05Y/10Y/30Y` and one
+`ingest_provenance` row per upload; no fetcher, no job. FRED adds
+`INDIRLTLT01STM` (category `sovereign_yield_display`). The UI requests it via
+`MARKET_REQUEST_CODES` (`TRACKED_CODES` plus `MONTHLY_10Y_EXTRA_CODES`);
+`countryBond("IND")` shows the CCIL daily curve while fresh (7 days), else
+the OECD monthly with no curve (75 days). Nothing is scored.

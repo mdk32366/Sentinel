@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { apiFetch } from "../lib/api";
-import { METRICS, SOVEREIGN_YIELD_CODES } from "../lib/constants";
+import { METRICS, MONTHLY_10Y_EXTRA_CODES, SOVEREIGN_YIELD_CODES } from "../lib/constants";
 import { latestByCode, pivotByDate, priorObservation, seriesByCode } from "../lib/series";
 
 /** Everything the ticker and the stat cards draw from. */
@@ -74,7 +74,14 @@ export function useSeries(codes) {
   return state;
 }
 
+/**
+ * Sentinel D-0118: what the hook requests. TRACKED_CODES plus the display-only
+ * monthly 10Y series (India's INDIRLTLT01STM) a country card reads. Kept out
+ * of TRACKED_CODES so the ticker and MARKETS cards do not change.
+ */
+export const MARKET_REQUEST_CODES = [...TRACKED_CODES, ...Object.values(MONTHLY_10Y_EXTRA_CODES)];
+
 /** Everything the ticker and the MARKETS stat cards draw from. */
 export function useMarketSeries() {
-  return useSeries(TRACKED_CODES);
+  return useSeries(MARKET_REQUEST_CODES);
 }

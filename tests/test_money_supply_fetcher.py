@@ -169,7 +169,11 @@ class TestItIsActuallyScheduled(unittest.TestCase):
         # have caught this: Broad_Money_Growth had run once, by hand. "Ran at
         # some point" and "is scheduled" are different facts, and only the
         # second one keeps data fresh.
-        expected = {n for c in CHECKS for n in c.get("pipelines", [])}
+        # Sentinel D-0118: a check flagged manual_upload is fed by an operator
+        # POST (CCIL has no fetchable endpoint, F-entry), so nothing schedules it
+        # by design. Its staleness is the reminder; the watchdog still monitors it.
+        manual = {n for c in CHECKS if c.get("manual_upload") for n in c.get("pipelines", [])}
+        expected = {n for c in CHECKS for n in c.get("pipelines", [])} - manual
         missing = sorted(expected - sched.SCHEDULED_PIPELINES)
         self.assertEqual(
             missing, [],
