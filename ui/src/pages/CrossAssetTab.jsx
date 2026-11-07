@@ -183,7 +183,7 @@ export function CrossAssetTab() {
       </div>
       <DataAsOf
         asOf={data.as_of}
-        source="US Treasury TIC · IMF IRFCL · LBMA"
+        source="US Treasury TIC · IMF IRFCL · gold-api.com"
       />
     </div>
   );

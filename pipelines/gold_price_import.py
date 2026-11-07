@@ -1,13 +1,15 @@
 """
 Spot Gold Price CSV Importer
 -----------------------------
-Imports historical monthly gold price (USD/troy oz) into the database.
+Historical monthly gold price (USD/troy oz), World Gold Council file at
+data/gold_prices.csv. Month-end dates are normalised to day 1 (D-0027).
 
-Source: World Gold Council / ICE Benchmark Administration
-File: C:\projects\sentinel\data\gold_prices.csv
-Format: Monthly, USD per troy ounce, back to January 1978
-
-Run once to seed history, then update monthly by re-downloading and re-running.
+This is not the GOLD_SPOT_USD update. D-0041 kept the file for seeding and
+said spot no longer arrives this way. D-0094 writes that series from
+gold-api.com (daily, dated by updatedAt) with the World Bank Pink Sheet as
+the monthly fallback. F-0133: once the series has a non-day-1 observation,
+or an incoming average disagrees with a stored value, this importer refuses
+to write. That refusal is a write-guard, not a copyright ruling.
 """
 
 import csv
@@ -50,30 +52,21 @@ def ensure_spot_metric(db: Session) -> Metric:
     return metric
 
 
-def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
-    """
-    Parse WGC gold price CSV and load USD spot price history.
+def _parse_wgc_price_rows(csv_path: Path):
+    """Return (parsed, skipped, newest_day1) using the historical column rules.
 
-    CSV format:
-      Row 1-5: headers/metadata (skip)
-      Row 6+:  [blank, blank, date(M/D/YYYY), USD, EUR, JPY, ...]
-      Date column: index 2
-      USD column:  index 3
+    parsed is a list of (day-1 datetime, Decimal). No database access.
     """
-    if not csv_path.exists():
-        raise FileNotFoundError(
-            f"Gold price CSV not found at {csv_path}\n"
-            f"Download from: https://www.gold.org/goldhub/data/gold-prices\n"
-            f"Save as: {csv_path}"
-        )
-
-    metric = ensure_spot_metric(db)
-    inserted = updated = skipped = 0
+    parsed = []
+    skipped = 0
     newest_source_date = None
+    source_line = (
+        "Source: Bloomberg, Datastream, ICE Benchmark Administration, "
+        "Multi Commodity Exchange of India, World Gold Council"
+    )
 
-    with open(csv_path, newline='', encoding='utf-8-sig') as f:
-        reader = csv.reader(f)
-        rows = list(reader)
+    with open(csv_path, newline="", encoding="utf-8-sig") as f:
+        rows = list(csv.reader(f))
 
     for row in rows:
         # Need at least 4 columns: blank, blank, date, USD
@@ -83,19 +76,14 @@ def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
         date_str = row[2].strip()
         usd_str = row[3].strip().replace(",", "")
 
-        # Skip header/metadata rows
-        if not date_str or date_str in ("", "Source: Bloomberg, Datastream, ICE Benchmark Administration, Multi Commodity Exchange of India, World Gold Council"):
+        if not date_str or date_str == source_line:
             continue
 
-        # Parse date - format is M/D/YYYY
         try:
-            date = datetime.strptime(date_str, "%m/%d/%Y")
-            # Normalize to first of month
-            date = date.replace(day=1)
+            date = datetime.strptime(date_str, "%m/%d/%Y").replace(day=1)
         except ValueError:
             continue
 
-        # Parse USD value
         if not usd_str or usd_str in ("#N/A", "N/A", "", "USD"):
             skipped += 1
             continue
@@ -108,29 +96,72 @@ def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
 
         if newest_source_date is None or date > newest_source_date:
             newest_source_date = date
+        parsed.append((date, value))
 
-        # Spot gold has no country
-        existing = db.query(TimeSeries).filter(
-            TimeSeries.metric_id == metric.id,
-            TimeSeries.country_id == None,
-            TimeSeries.date == date,
-        ).first()
+    return parsed, skipped, newest_source_date
 
-        if existing:
-            existing.value = value
-            existing.updated_at = datetime.utcnow()
-            updated += 1
-        else:
-            db.add(TimeSeries(
-                metric_id=metric.id,
-                country_id=None,
-                date=date,
-                value=value,
-            ))
-            inserted += 1
+
+def _monthly_write_refusal(db: Session, metric: Metric, parsed) -> str:
+    """Empty string when a monthly seed is still safe; otherwise the reason.
+
+    Safe: every stored GOLD_SPOT_USD row is on day 1, and no incoming value
+    disagrees with a stored one. A mid-month row means the series is the
+    daily spot series. A different number on an existing date is the
+    overwrite this guard exists to stop — including a day-1 spot print.
+    The message carries no prices. It has to fit UpdateLog.error_message
+    String(500).
+    """
+    stored = db.query(TimeSeries).filter(
+        TimeSeries.metric_id == metric.id,
+        TimeSeries.country_id == None,  # noqa: E711
+    ).all()
+    by_date = {row.date: Decimal(str(row.value)) for row in stored}
+
+    def _msg(why: str) -> str:
+        text = (
+            f"Refusing to write GOLD_SPOT_USD from the WGC monthly-average "
+            f"CSV: {why} Dates normalise to day 1; this is not the update "
+            f"(D-0041, D-0094). Use run_gold_price_fetch or POST "
+            f"/api/fetch/gold-price. Write-guard only, not a copyright ruling."
+        )
+        if len(text) > 500:
+            raise RuntimeError(f"refusal message is {len(text)} chars")
+        return text
+
+    if any(row.date.day != 1 for row in stored):
+        return _msg("the series has an observation that is not on day 1.")
+    for date, value in parsed:
+        current = by_date.get(date)
+        if current is not None and current != value:
+            return _msg("an incoming average differs from a stored observation.")
+    return ""
+
+
+def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
+    """
+    Parse a WGC gold-price CSV and seed USD history when that is still safe.
+
+    CSV format:
+      Row 1-5: headers/metadata (skip)
+      Row 6+:  [blank, blank, date(M/D/YYYY), USD, EUR, JPY, ...]
+      Date column: index 2
+      USD column:  index 3
+
+    Not the live update. See the module docstring and F-0133.
+    """
+    if not csv_path.exists():
+        raise FileNotFoundError(
+            f"Gold price CSV not found at {csv_path}\n"
+            f"Download from: https://www.gold.org/goldhub/data/gold-prices\n"
+            f"Save as: {csv_path}"
+        )
+
+    metric = ensure_spot_metric(db)
+    parsed, skipped, newest_source_date = _parse_wgc_price_rows(csv_path)
 
     # D-0027: refuse a present-but-frozen file. This is the case that
-    # actually occurred and ran undetected for three months.
+    # actually occurred and ran undetected for three months. Checked
+    # before any series write.
     if newest_source_date is None:
         db.rollback()
         raise ValueError(
@@ -148,6 +179,32 @@ def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
             f"from https://www.gold.org/goldhub/data/gold-prices"
         )
 
+    refusal = _monthly_write_refusal(db, metric, parsed)
+    if refusal:
+        db.rollback()
+        raise ValueError(refusal)
+
+    inserted = updated = 0
+    for date, value in parsed:
+        existing = db.query(TimeSeries).filter(
+            TimeSeries.metric_id == metric.id,
+            TimeSeries.country_id == None,  # noqa: E711
+            TimeSeries.date == date,
+        ).first()
+
+        if existing:
+            existing.value = value
+            existing.updated_at = datetime.utcnow()
+            updated += 1
+        else:
+            db.add(TimeSeries(
+                metric_id=metric.id,
+                country_id=None,
+                date=date,
+                value=value,
+            ))
+            inserted += 1
+
     db.commit()
     logger.info(f"Gold price import: {inserted} inserted, {updated} updated, {skipped} skipped")
     return {
@@ -162,10 +219,15 @@ def import_gold_price_csv(db: Session, csv_path: Path = CSV_PATH) -> dict:
 
 
 def run_gold_price_import(db: Session) -> dict:
-    """Entry point called by API route."""
+    """Manual CSV entry point. Not scheduled, and not POST /api/fetch/gold-price.
+
+    That route calls run_gold_price_fetch (D-0094). This function remains for
+    a monthly-only seed. F-0133 refuses it once the series is daily or a
+    stored value would change.
+    """
     start_time = datetime.utcnow()
     try:
-        result = import_gold_price_csv(db)
+        result = import_gold_price_csv(db, CSV_PATH)
         db.add(UpdateLog(
             pipeline_name="Gold_Spot_Price",
             status="success",

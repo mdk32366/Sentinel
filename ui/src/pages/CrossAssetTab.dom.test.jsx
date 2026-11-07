@@ -84,4 +84,11 @@ describe("the reader can", () => {
     expect(screen.getByText("Alphaland")).toBeTruthy();
     expect(screen.getAllByText("Bravoland")).toHaveLength(1);   // listed once, not twice
   });
+
+  it("credits spot gold to gold-api.com, not LBMA", async () => {
+    // D-0094 / F-0133. The footer is the source line a reader sees.
+    await open();
+    expect(document.body.textContent).toContain("gold-api.com");
+    expect(document.body.textContent).not.toContain("LBMA");
+  });
 });

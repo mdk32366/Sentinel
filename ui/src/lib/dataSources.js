@@ -82,7 +82,7 @@ export const SOURCES = [
     lag: "minutes (provider updatedAt)",
     coverage: "Global",
     metrics: ["Gold spot price USD/troy oz, daily snapshot"],
-    notes: "Primary: gold-api.com /price/XAU spot snapshot at 02:30 UTC, dated by the provider's updatedAt (D-0094). Not the LBMA PM fix — LBMA has answered Cloudflare 403 since 2026-09-30 and now requires an IBA licence (D-0041 reversal). Fallback: World Bank Pink Sheet monthly average, with attribution to The World Bank Group (https://www.worldbank.org/en/research/commodity-markets). The Sep 30–Oct 5 gap is left empty rather than inventing daily values from a monthly mean. Not FRED, which deleted every ICE Benchmark Administration series in 2022 (F-0043).",
+    notes: "Primary: gold-api.com /price/XAU spot snapshot at 02:30 UTC, dated by the provider's updatedAt (D-0094). Not the LBMA PM fix — LBMA has answered Cloudflare 403 since 2026-09-30 and now requires an IBA licence (D-0041 reversal). Fallback: World Bank Pink Sheet monthly average, with attribution to The World Bank Group (https://www.worldbank.org/en/research/commodity-markets); the fallback fills a missing month and does not replace an existing observation. The Sep 30–Oct 5 gap is left empty rather than inventing daily values from a monthly mean. The WGC monthly-average CSV is not this update (F-0133). Not FRED, which deleted every ICE Benchmark Administration series in 2022 (F-0043).",
     manual: false,
   },
   {

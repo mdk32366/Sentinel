@@ -98,7 +98,7 @@ export const MANUAL_TRIGGERS = [
   { name: "Gold Reserve Changes", endpoint: "/fetch/gold-reserve-changes", method: "POST",
     desc: "The WGC quarterly changes table. A separate metric from reserve levels." },
   { name: "Gold Spot Price", endpoint: "/fetch/gold-price", method: "POST",
-    desc: "Force the gold-api.com pull (World Bank Pink Sheet monthly fallback)." },
+    desc: "Force the gold-api.com pull (World Bank Pink Sheet monthly fallback; that fallback does not replace an existing row). Not the WGC monthly-average CSV (F-0133)." },
   { name: "Broad Money Growth", endpoint: "/fetch/money-supply", method: "POST",
     desc: "Force the World Bank pull. Reports origin=api or origin=cache, and cache counts as partial rather than success (F-0091)." },
   { name: "Foreign Bonds: Bundesbank", endpoint: "/fetch/foreign-bonds/bundesbank", method: "POST",

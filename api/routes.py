@@ -949,8 +949,11 @@ def trigger_gold_fetch(db: Session = Depends(get_db)):
 
 @router.post("/fetch/gold-price")
 def trigger_gold_price_fetch(db: Session = Depends(get_db)):
-    """Manually trigger the LBMA gold spot fetch (D-0041).
+    """Manually trigger the gold spot fetch (D-0043 / D-0094).
 
+    Primary is gold-api.com /price/XAU, dated by the provider updatedAt.
+    The World Bank Pink Sheet is the monthly fallback and does not replace
+    an existing observation (F-0133). This is not the WGC monthly CSV.
     The scheduled job runs at 02:30 UTC. This exists for the case where the
     series is known stale and waiting for the next window means serving a
     scorer that is wrong in the meantime - which is exactly what F-0004 was.
