@@ -101,6 +101,16 @@ class TestJobRegistration(SchedulerHarness):
         self.assertIn("hour='21'", trigger)
         self.assertIn("day_of_week='mon-fri'", trigger)
 
+    def test_gold_price_job_is_named_for_gold_api(self):
+        """D-0094 / F-0133. The registered name is what an operator reads.
+        It used to say LBMA after the source had moved."""
+        job = self._register()["gold_price"]
+        self.assertIn("gold-api.com", job.name)
+        self.assertNotIn("LBMA", job.name)
+        trigger = str(job.trigger)
+        self.assertIn("hour='2'", trigger)
+        self.assertIn("minute='30'", trigger)
+
     def test_freshness_runs_daily_at_05_utc(self):
         trigger = str(self._register()["freshness_check"].trigger)
         self.assertIn("hour='5'", trigger)

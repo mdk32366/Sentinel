@@ -78,7 +78,7 @@ Files read at runtime, and therefore required in the image:
 
 | Path | Read by |
 |---|---|
-| `data/gold_prices.csv` | `gold_price_import.py` |
+| `data/gold_prices.csv` | `gold_price_import.py` (manual monthly seed only; not the live `GOLD_SPOT_USD` update — that is `gold_price_fetcher.py`, D-0094 / F-0133) |
 | `data/gold_reserves.csv` | `gold_reserves.py` / `gold_fetcher.py` |
 | `data/money_supply.json` | `money_supply_fetcher.py` |
 | `data/incoming/Changes_latest_as_of_Aug2026_IFS.xlsx` | `gold_reserve_changes.py` |

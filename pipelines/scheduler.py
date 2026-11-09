@@ -310,11 +310,10 @@ def scheduled_composite_snapshot():
 
 
 def scheduled_gold_price_fetch():
-    """LBMA gold fix, daily at 02:30 UTC (D-0041).
+    """Gold spot, daily at 02:30 UTC. Primary is gold-api.com (D-0094).
 
-    Distinct from scheduled_gold_fetch, which is gold RESERVES by country and
-    stays manual - the WGC country series is behind an account wall with no
-    public API, and Part B did not change that.
+    Not the WGC monthly-average CSV (F-0133). Distinct from
+    scheduled_gold_fetch, which is gold RESERVES by country.
     """
     db = None
     try:
@@ -595,7 +594,7 @@ def start_scheduler():
     scheduler.add_job(
         scheduled_gold_price_fetch,
         CronTrigger(hour=2, minute=30),
-        id="gold_price", name="Gold Spot Price (LBMA)",
+        id="gold_price", name="Gold Spot Price (gold-api.com)",
         replace_existing=True,
     )
     logger.info("Scheduled gold price daily at 02:30 UTC")

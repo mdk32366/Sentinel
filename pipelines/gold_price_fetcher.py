@@ -12,7 +12,8 @@ row. History is keyed and is not used — the Sep 30–Oct 5 gap stays empty.
 
 Fallback: World Bank Pink Sheet monthly XLSX (``CMO-Historical-Data-Monthly``),
 with attribution. Monthly cadence only; never invents daily values from a
-monthly mean.
+monthly mean, and never replaces an existing GOLD_SPOT_USD observation
+with that monthly average (F-0133).
 
 Phase A (same PR): fetch failures are classified via
 ``pipelines.fetch_failure`` so a block and a temporary outage stop looking
@@ -370,8 +371,22 @@ def ensure_metric(db: Session) -> Metric:
     return metric
 
 
-def _upsert_rows(db: Session, metric: Metric, rows: list, cutoff: datetime):
-    inserted = updated = 0
+def _upsert_rows(
+    db: Session,
+    metric: Metric,
+    rows: list,
+    cutoff: datetime,
+    replace_existing: bool = True,
+):
+    """Upsert rows on or after ``cutoff``.
+
+    The primary daily snapshot may replace the same observation (the provider
+    revised that stamp). The monthly fallback must not: a day-1 spot print
+    and a monthly average are different observations (F-0133). When
+    ``replace_existing`` is false, an existing row is left as stored and
+    counted in ``preserved``. Missing dates are still inserted.
+    """
+    inserted = updated = preserved = 0
     latest_date = None
     for row in rows:
         if row["date"] < cutoff:
@@ -382,7 +397,9 @@ def _upsert_rows(db: Session, metric: Metric, rows: list, cutoff: datetime):
             TimeSeries.date == row["date"],
         ).first()
         if existing:
-            if Decimal(str(existing.value)) != row["usd"]:
+            if not replace_existing:
+                preserved += 1
+            elif Decimal(str(existing.value)) != row["usd"]:
                 existing.value = row["usd"]
                 existing.updated_at = datetime.utcnow()
                 updated += 1
@@ -398,7 +415,7 @@ def _upsert_rows(db: Session, metric: Metric, rows: list, cutoff: datetime):
             row["date"] if latest_date is None
             else max(latest_date, row["date"])
         )
-    return inserted, updated, latest_date
+    return inserted, updated, latest_date, preserved
 
 
 def run_gold_price_fetch(
@@ -408,7 +425,7 @@ def run_gold_price_fetch(
     """Fetch gold spot: gold-api.com primary, World Bank monthly fallback."""
     started = datetime.utcnow()
     errors = []
-    inserted = updated = 0
+    inserted = updated = preserved = 0
     latest_date = None
     used_source = None
 
@@ -419,8 +436,8 @@ def run_gold_price_fetch(
             row = parse_gold_api(payload, now=started)
             cutoff = started - timedelta(days=write_window_days)
             metric = ensure_metric(db)
-            inserted, updated, latest_date = _upsert_rows(
-                db, metric, [row], cutoff
+            inserted, updated, latest_date, preserved = _upsert_rows(
+                db, metric, [row], cutoff, replace_existing=True
             )
             db.commit()
             used_source = "gold-api.com"
@@ -451,8 +468,8 @@ def run_gold_price_fetch(
                 rows = fetch_world_bank_monthly()
                 cutoff = started - timedelta(days=write_window_days)
                 metric = ensure_metric(db)
-                inserted, updated, latest_date = _upsert_rows(
-                    db, metric, rows, cutoff
+                inserted, updated, latest_date, preserved = _upsert_rows(
+                    db, metric, rows, cutoff, replace_existing=False
                 )
                 db.commit()
                 used_source = "world-bank-pink-sheet"
@@ -460,8 +477,8 @@ def run_gold_price_fetch(
                 status = "partial"
                 logger.info(
                     "Gold price fallback succeeded via World Bank Pink Sheet "
-                    "(%d inserted, %d updated). %s",
-                    inserted, updated, WB_ATTRIBUTION,
+                    "(%d inserted, %d updated, %d existing left unchanged). %s",
+                    inserted, updated, preserved, WB_ATTRIBUTION,
                 )
             except Exception as fb_exc:
                 # Both failed — record the PRIMARY classification (the one that
@@ -533,6 +550,7 @@ def run_gold_price_fetch(
         "latest_date": latest_date.date().isoformat() if latest_date else None,
         "series": METRIC["code"],
         "source": used_source,
+        "preserved": preserved,
         "attribution": WB_ATTRIBUTION if used_source == "world-bank-pink-sheet" else None,
     }
     if status == "failed":

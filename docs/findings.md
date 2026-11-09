@@ -4072,3 +4072,13 @@ Resolved 2026-10-22.
 
 ### F-0132 - The SDL 10Y label collides with 9Y-10Y
 **Claim.** The CCIL file carries state-development-loan rows in buckets that read like the G-sec ones. **Handled.** SDL rows are dropped by security type; a non-G-sec in a kept bucket is a 422 (`T-0169`).
+
+### F-0133 - The WGC monthly gold CSV is not the GOLD_SPOT_USD update
+
+**Claim.** `pipelines/gold_price_import.py` parses a World Gold Council monthly-average file and upserts the USD column onto `GOLD_SPOT_USD`, with the month-end date normalised to day 1. `D-0041` kept that importer and said it is no longer how spot arrives. `D-0094` writes the series from gold-api.com `/price/XAU`, dated by the provider `updatedAt`, with the World Bank Pink Sheet as the monthly fallback. The scheduler and `POST /api/fetch/gold-price` call `run_gold_price_fetch` only. The CSV importer is not on the scheduler, but it writes the same metric and the same `Gold_Spot_Price` log name, and it replaced an existing day-1 value. A monthly average and a daily spot are different observations. The fallback upsert had the same replacement behaviour inside its 400-day window.
+
+**What was checked on 2026-11-07, in a disposable database.** The public `data/gold_prices.csv` blob is `e1d85b47ac188e727b1081dabbd1a8bf39a46077` (newest month-end 2026-09-30, 585 parseable rows). A prepared one-row append was checked in the agent workspace and not committed: blob `754548e9562f0ba62890921ac5a9221a60b34ace`, prefix byte-identical to that file. Before the guard, importing it reported success, dated the new row to the first of its month, and replaced a day-1 sentinel; a mid-month row was left alone. A read-only GET of `https://api.gold-api.com/price/XAU` returned HTTP 200 with `updatedAt` 2026-11-07T13:43:07Z; `parse_gold_api` dated that observation 2026-11-07 (USD 4072.100098). The payload was upserted only into disposable sqlite. No production database was written. The workbook and the candidate file are not in this commit. Prices from the workbook are not recorded here.
+
+**Not decided.** Whether that workbook may be redistributed. This finding is a write-guard, not a copyright ruling.
+
+**Guard.** If `GOLD_SPOT_USD` has any observation not on day 1, or an incoming average disagrees with a stored value, `import_gold_price_csv` writes nothing and raises. A monthly-only series can still be seeded, and an identical re-read can append a missing month. `run_gold_price_fetch` may still replace a row when the primary revises that same observation. The World Bank fallback inserts a missing month and does not replace an existing observation. The scheduled job name is gold-api.com.
