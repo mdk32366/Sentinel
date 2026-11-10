@@ -18,6 +18,16 @@ class Settings(BaseSettings):
     # "Authorization: Apikey <key>". Empty = the BdF_TEC job logs and skips.
     # Set only as a Fly secret, never in fly.toml [env].
     webstat_api_key: str = ""
+    # IMF SDMX 2.1, IRFCL gold (2026-11-10). The flowRef MUST carry its agency:
+    # an unqualified "IRFCL" now resolves to all:IRFCL(latest) and 404s.
+    # "latest" follows 12.0.0 -> 13.0.0; the response-contract guard in
+    # pipelines/imf_gold_reserves.py catches a structural change.
+    imf_sdmx_base: str = "https://api.imf.org/external/sdmx/2.1"
+    imf_irfcl_flow_ref: str = "IMF.STA,IRFCL,latest"
+    # Optional and dormant: sent as Ocp-Apim-Subscription-Key when non-empty.
+    # Empty = unauthenticated, which works today. Platform secret only, never
+    # in code, fly.toml [env] or .env.template values.
+    imf_api_key: str = ""
 
     # Basic Auth (set via Fly.io secrets)
     auth_username: str = "sentinel"

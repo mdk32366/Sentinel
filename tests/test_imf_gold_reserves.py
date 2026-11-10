@@ -16,12 +16,27 @@ missed (Turkey 534.9 -> 791.4 tonnes).
 
 Every case parses **text**, never a URL, so the file runs offline.
 """
+import os
+import re
 import unittest
-from datetime import datetime
+from datetime import date, datetime, timedelta
+from decimal import Decimal
+from pathlib import Path
+from unittest import mock
 
+import requests
+from fastapi import FastAPI
 from fastapi.routing import APIRoute
+from fastapi.testclient import TestClient
+from sqlalchemy import create_engine, func
+from sqlalchemy.orm import sessionmaker
 
+import pipelines.imf_gold_reserves as imf
 from api.routes import router
+from config import settings
+from database.connection import get_db
+from database.models import Base, Country, Metric, TimeSeries, UpdateLog
+from pipelines.gold_fetcher import GOLD_METRIC
 from pipelines import scheduler as sched
 from pipelines.composite_stress import GOLD_WINDOW_DAYS, _last_per_quarter
 from pipelines.freshness_watchdog import CHECKS
@@ -229,6 +244,13 @@ class TestTheUrl(unittest.TestCase):
         # Key order is COUNTRY.INDICATOR.SECTOR.FREQUENCY; blanks mean "all".
         self.assertTrue(IMF_GOLD_URL.endswith(f".{IMF_GOLD_INDICATOR}..M"))
 
+    def test_the_flow_ref_names_its_agency(self):
+        # 2026-11-10: `/data/IRFCL/...` started resolving to all:IRFCL(latest)
+        # and returning 404. Nothing asserted the agency, which is why it
+        # regressed silently. T2 below holds the builder to the same rule.
+        self.assertIn("/data/IMF.STA,IRFCL", IMF_GOLD_URL)
+        self.assertNotIn("/data/IRFCL/", IMF_GOLD_URL)
+
     def test_it_uses_the_host_that_still_resolves(self):
         # dataservices.imf.org, the endpoint every older example uses, no
         # longer resolves at all - not a 404, no connection.
@@ -334,6 +356,408 @@ class TestItIsWiredIn(unittest.TestCase):
         from pipelines.gold_fetcher import GOLD_METRIC
 
         self.assertEqual(GOLD_METRIC_CODE, GOLD_METRIC["code"])
+
+
+# ---------------------------------------------------------------------------
+# 2026-11-10: IRFCL 404 (SPEC @0.1 §5, T1-T15).
+#
+# The job asked for `/2.1/data/IRFCL/...` with no agency. IMF's gateway began
+# resolving a missing agency to `all`, found no `all:IRFCL(latest)` and
+# returned 404; `/2.1/data/IMF.STA,IRFCL/...` returns the same series. These
+# cases pin the qualified flowRef, the response contract, the error class an
+# upstream failure surfaces as, and the backfill's idempotency.
+#
+# New symbols are read off the module (`imf.<name>`) so that this file still
+# imports on a tree without them, and the red-first run shows assertion
+# failures rather than one ImportError.
+# ---------------------------------------------------------------------------
+
+FIXTURES = Path(__file__).resolve().parent / "fixtures" / "imf"
+SEEDED = ("USA", "CHN", "DEU", "GBR", "BEL", "BRA")
+
+
+def fixture(name):
+    return (FIXTURES / name).read_text(encoding="utf-8")
+
+
+def three_country_fixture():
+    """T8: the real trimmed response with every series except USA/CHN/DEU removed."""
+    return re.sub(
+        r'<Series COUNTRY="(?!USA"|CHN"|DEU")[^"]*".*?</Series>', "",
+        fixture("irfcl_gold_2026-11-10_trimmed.xml"), flags=re.S,
+    )
+
+
+def response(status, body, content_type="application/xml"):
+    """A real `requests.Response`, so raise_for_status() behaves as on the wire."""
+    r = requests.Response()
+    r.status_code = status
+    r._content = body.encode("utf-8")
+    r.headers["Content-Type"] = content_type
+    r.encoding = "utf-8"
+    r.url = imf.IMF_GOLD_URL + "?startPeriod=2015-01"
+    r.reason = {200: "OK", 404: "Not Found", 503: "Service Unavailable"}.get(status, "")
+    return r
+
+
+def not_found():
+    return response(404, fixture("irfcl_404_no_such_dataflow.json"), "application/json")
+
+
+def ok_trimmed():
+    return response(200, fixture("irfcl_gold_2026-11-10_trimmed.xml"))
+
+
+def memory_db(isos=SEEDED):
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+    db = sessionmaker(bind=engine)()
+    db.add(Metric(**GOLD_METRIC))
+    for iso in isos:
+        db.add(Country(iso_code=iso, name=iso))
+    db.commit()
+    return db
+
+
+def gold_rows(db):
+    metric = db.query(Metric).filter_by(code=imf.GOLD_METRIC_CODE).one()
+    return db.query(TimeSeries).filter_by(metric_id=metric.id)
+
+
+def imf_logs(db, status=None):
+    q = db.query(UpdateLog).filter_by(pipeline_name="Gold_Reserves_IMF")
+    return q.filter_by(status=status).all() if status else q.all()
+
+
+class T01ParserOnTheRecordedResponse(unittest.TestCase):
+    """T1. The unchanged parser on the real 2026-11-10 response."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.obs, cls.rejected, cls.duplicates = parse_imf_gold(
+            fixture("irfcl_gold_2026-11-10_trimmed.xml"))
+        cls.by_key = {(o["iso"], o["date"]): o["tonnes"] for o in cls.obs}
+
+    def test_the_published_figures(self):
+        for iso, when, tonnes in (
+            ("USA", datetime(2026, 7, 1), 8133.53),
+            ("CHN", datetime(2026, 9, 1), 2409.59),
+            ("DEU", datetime(2026, 9, 1), 3349.12),
+            ("GBR", datetime(2026, 10, 1), 310.29),
+            # S1XS1311 chosen over S1311 (0.0) and S1X.
+            ("BEL", datetime(2026, 9, 1), 227.4),
+        ):
+            self.assertEqual(self.by_key.get((iso, when)), tonnes, f"{iso} {when:%Y-%m}")
+
+    def test_aggregates_are_absent(self):
+        self.assertNotIn("G163", {o["iso"] for o in self.obs})
+
+    def test_brazil_keeps_only_the_months_before_the_scale_break(self):
+        self.assertEqual(
+            sorted(o["date"] for o in self.obs if o["iso"] == "BRA"),
+            [datetime(2026, 1, 1), datetime(2026, 2, 1)],
+        )
+
+    def test_the_rejects_are_the_known_defects(self):
+        self.assertEqual(self.rejected, [
+            "AGO/2026-M07=18,441.3t", "AGO/2026-M08=18,441.3t",
+            "AGO/2026-M09=18,441.3t", "BRA/2026-M03=172,446.3t",
+            "BRA/2026-M04=172,446.3t",
+        ])
+
+    def test_no_duplicates_and_seventeen_observations(self):
+        self.assertEqual(self.duplicates, [])
+        self.assertEqual(len(self.obs), 17)
+
+
+class T02TheFlowRefIsQualified(unittest.TestCase):
+    """T2. The exact regression of 2026-11-10."""
+
+    def test_the_module_constant_names_the_agency(self):
+        self.assertIn("/data/IMF.STA,IRFCL", imf.IMF_GOLD_URL)
+        self.assertNotIn("/data/IRFCL/", imf.IMF_GOLD_URL)
+
+    def test_the_url_builder_names_the_agency(self):
+        url = imf.imf_gold_url()
+        self.assertIn("/data/IMF.STA,IRFCL", url)
+        self.assertNotIn("/data/IRFCL/", url)
+        self.assertTrue(url.endswith(".IRFCLDT1_IRFCL56V_FTO..M"), url)
+
+
+class T03TheUrlComesFromConfig(unittest.TestCase):
+    def test_settings_override_the_base_and_flow_ref(self):
+        with mock.patch.object(settings, "imf_sdmx_base", "https://example.test/sdmx/2.1/"), \
+             mock.patch.object(settings, "imf_irfcl_flow_ref", "IMF.STA,IRFCL,13.0.0"):
+            self.assertEqual(
+                imf.imf_gold_url(),
+                "https://example.test/sdmx/2.1/data/IMF.STA,IRFCL,13.0.0/.IRFCLDT1_IRFCL56V_FTO..M",
+            )
+
+    def test_the_defaults_are_the_verified_values(self):
+        self.assertEqual(settings.imf_sdmx_base, "https://api.imf.org/external/sdmx/2.1")
+        self.assertEqual(settings.imf_irfcl_flow_ref, "IMF.STA,IRFCL,latest")
+        self.assertEqual(settings.imf_api_key, "")
+
+
+class T04TheKeyHeader(unittest.TestCase):
+    KEY = "test-only-key-must-not-leak-7f3a"
+
+    def test_no_key_no_header_and_xml_is_asked_for(self):
+        with mock.patch.object(settings, "imf_api_key", ""), \
+             mock.patch.object(imf.requests, "get", return_value=ok_trimmed()) as get:
+            imf.fetch_imf_gold()
+        headers = get.call_args.kwargs["headers"]
+        self.assertNotIn("Ocp-Apim-Subscription-Key", headers)
+        self.assertEqual(headers.get("Accept"), "application/xml")
+
+    def test_a_key_is_sent_when_set(self):
+        with mock.patch.object(settings, "imf_api_key", "x"), \
+             mock.patch.object(imf.requests, "get", return_value=ok_trimmed()) as get:
+            imf.fetch_imf_gold()
+        self.assertEqual(get.call_args.kwargs["headers"]["Ocp-Apim-Subscription-Key"], "x")
+
+    def test_the_key_never_reaches_a_message_or_a_log(self):
+        db = memory_db()
+        with mock.patch.object(settings, "imf_api_key", self.KEY), \
+             mock.patch.object(imf.requests, "get", return_value=not_found()), \
+             self.assertLogs("pipelines.imf_gold_reserves", level="DEBUG") as logs:
+            with self.assertRaises(Exception) as cm:
+                imf.run_imf_gold_fetch(db)
+        self.assertNotIn(self.KEY, str(cm.exception))
+        self.assertNotIn(self.KEY, repr(cm.exception.args))
+        for line in logs.output:
+            self.assertNotIn(self.KEY, line)
+        for log in imf_logs(db):
+            self.assertNotIn(self.KEY, log.error_message or "")
+
+
+class T05TheOldStyle404(unittest.TestCase):
+    """T5. Today's failure, as it must now surface."""
+
+    def test_a_404_is_an_upstream_error_and_writes_nothing(self):
+        db = memory_db()
+        with mock.patch.object(imf.requests, "get", return_value=not_found()) as get:
+            with self.assertRaises(Exception) as cm:
+                imf.run_imf_gold_fetch(db)
+        exc = cm.exception
+        self.assertEqual(type(exc).__name__, "ImfUpstreamError", f"{type(exc).__name__}: {exc}")
+        self.assertIn("404", str(exc))
+        self.assertIn("No such dataflow found", str(exc))
+        self.assertEqual(gold_rows(db).count(), 0)
+        failed = imf_logs(db, "failed")
+        self.assertEqual(len(failed), 1)
+        self.assertEqual(len(imf_logs(db)), 1)
+        self.assertIn("No such dataflow found", failed[0].error_message)
+        self.assertEqual(get.call_count, 1, "a 4xx was retried")
+
+
+class T06SchemaDrift(unittest.TestCase):
+    def test_a_renamed_indicator_is_a_contract_error(self):
+        db = memory_db()
+        drift = response(200, fixture("irfcl_drift_renamed_indicator.xml"))
+        with mock.patch.object(imf.requests, "get", return_value=drift):
+            with self.assertRaises(imf.ImfContractError) as cm:
+                imf.run_imf_gold_fetch(db, min_countries=1)
+        self.assertIn("IRFCLDT1_IRFCL56V_FTO_X", str(cm.exception))
+        self.assertEqual(gold_rows(db).count(), 0)
+        self.assertEqual(len(imf_logs(db, "failed")), 1)
+
+    def test_a_different_dataflow_is_a_contract_error(self):
+        body = fixture("irfcl_gold_2026-11-10_trimmed.xml").replace(
+            '<Ref agencyID="IMF.STA" id="IRFCL"', '<Ref agencyID="IMF.STA" id="IFS"')
+        with self.assertRaises(imf.ImfContractError):
+            imf.validate_irfcl_header(body)
+
+    def test_a_non_monthly_series_is_a_contract_error(self):
+        body = fixture("irfcl_gold_2026-11-10_trimmed.xml").replace(
+            'FREQUENCY="M"', 'FREQUENCY="Q"', 1)
+        with self.assertRaises(imf.ImfContractError):
+            imf.validate_irfcl_header(body)
+
+    def test_no_reserve_asset_sector_is_a_contract_error(self):
+        body = fixture("irfcl_gold_2026-11-10_trimmed.xml").replace(
+            'SECTOR="S1XS1311"', 'SECTOR="S1X"')
+        with self.assertRaises(imf.ImfContractError):
+            imf.validate_irfcl_header(body)
+
+
+class T07HeaderOnly(unittest.TestCase):
+    def test_a_200_with_no_series_is_a_failure(self):
+        # D-0045: no data is not news. The L112 rule, now via the guard.
+        db = memory_db()
+        empty = response(200, fixture("irfcl_header_only.xml"))
+        with mock.patch.object(imf.requests, "get", return_value=empty):
+            with self.assertRaises(ValueError):
+                imf.run_imf_gold_fetch(db, min_countries=1)
+        self.assertEqual(gold_rows(db).count(), 0)
+        self.assertEqual(len(imf_logs(db, "failed")), 1)
+
+
+class T08CoverageFloor(unittest.TestCase):
+    def test_a_truncated_publication_does_not_succeed(self):
+        db = memory_db()
+        self.assertEqual(imf.IMF_MIN_COUNTRIES, 40)
+        three = response(200, three_country_fixture())
+        self.assertEqual(
+            {o["iso"] for o in parse_imf_gold(three.text)[0]}, {"USA", "CHN", "DEU"})
+        with mock.patch.object(imf.requests, "get", return_value=three):
+            with self.assertRaises(imf.ImfContractError) as cm:
+                imf.run_imf_gold_fetch(db)
+        self.assertIn("3", str(cm.exception))
+        self.assertEqual(gold_rows(db).count(), 0)
+        self.assertEqual(len(imf_logs(db, "failed")), 1)
+
+
+class T09RetryPolicy(unittest.TestCase):
+    def test_one_5xx_is_retried_once_then_succeeds(self):
+        db = memory_db()
+        busy = response(503, "busy", "text/plain")
+        with mock.patch.object(imf.requests, "get", side_effect=[busy, ok_trimmed()]) as get, \
+             mock.patch.object(imf.time, "sleep") as slept:
+            result = imf.run_imf_gold_fetch(db, min_countries=1)
+        self.assertEqual(get.call_count, 2)
+        slept.assert_called_once_with(10)
+        self.assertEqual(result["status"], "partial")
+        self.assertEqual(result["inserted"], 17)
+
+    def test_two_5xx_fail_loudly(self):
+        db = memory_db()
+        with mock.patch.object(imf.requests, "get", side_effect=[
+                response(503, "busy", "text/plain"), response(503, "busy", "text/plain")]) as get, \
+             mock.patch.object(imf.time, "sleep"):
+            with self.assertRaises(imf.ImfUpstreamError) as cm:
+                imf.run_imf_gold_fetch(db, min_countries=1)
+        self.assertEqual(get.call_count, 2)
+        self.assertIn("503", str(cm.exception))
+        self.assertEqual(len(imf_logs(db, "failed")), 1)
+        self.assertEqual(gold_rows(db).count(), 0)
+
+    def test_a_429_is_retried(self):
+        with mock.patch.object(imf.requests, "get", side_effect=[
+                response(429, "slow down", "text/plain"), ok_trimmed()]) as get, \
+             mock.patch.object(imf.time, "sleep"):
+            imf.fetch_imf_gold()
+        self.assertEqual(get.call_count, 2)
+
+    def test_a_connection_error_is_retried_then_classified(self):
+        with mock.patch.object(imf.requests, "get", side_effect=[
+                requests.ConnectionError("boom"), requests.Timeout("slow")]) as get, \
+             mock.patch.object(imf.time, "sleep"):
+            with self.assertRaises(imf.ImfUpstreamError) as cm:
+                imf.fetch_imf_gold()
+        self.assertEqual(get.call_count, 2)
+        self.assertIn("Timeout", str(cm.exception))
+
+
+class T10Mapping(unittest.TestCase):
+    def test_the_aggregates_excluded_are_exactly_these(self):
+        self.assertEqual(NOT_COUNTRIES, {"G163", "EZB", "WBG"})
+
+    def test_it_writes_the_wgc_series(self):
+        self.assertEqual(imf.GOLD_METRIC_CODE, GOLD_METRIC["code"])
+
+    def test_the_ounce_conversion_round_trips(self):
+        self.assertAlmostEqual(8133.53 * OZ_PER_TONNE, 261499000, delta=200)
+
+
+class T11BackfillIsIdempotent(unittest.TestCase):
+    def test_a_rerun_updates_and_never_duplicates(self):
+        db = memory_db()
+        with mock.patch.object(imf.requests, "get", side_effect=lambda *a, **k: ok_trimmed()):
+            first = imf.run_imf_gold_fetch(db, min_countries=1)
+            count_after_first = gold_rows(db).count()
+            second = imf.run_imf_gold_fetch(db, min_countries=1)
+        self.assertEqual((first["inserted"], first["updated"]), (17, 0))
+        self.assertEqual((second["inserted"], second["updated"]), (0, 17))
+        self.assertEqual(count_after_first, 17)
+        self.assertEqual(gold_rows(db).count(), 17)
+        self.assertEqual(first["structure_version"], "12.0.0")
+        self.assertEqual(first["countries"], 6)
+        dupes = (
+            db.query(TimeSeries.metric_id, TimeSeries.country_id, TimeSeries.date, func.count())
+            .group_by(TimeSeries.metric_id, TimeSeries.country_id, TimeSeries.date)
+            .having(func.count() > 1).all()
+        )
+        self.assertEqual(dupes, [])
+        self.assertEqual([l.status for l in imf_logs(db)], ["partial", "partial"])
+
+
+class T12Continuity(unittest.TestCase):
+    def test_a_stale_month_is_updated_in_place(self):
+        db = memory_db()
+        metric = db.query(Metric).filter_by(code=imf.GOLD_METRIC_CODE).one()
+        usa = db.query(Country).filter_by(iso_code="USA").one()
+        db.add(TimeSeries(metric_id=metric.id, country_id=usa.id,
+                          date=datetime(2026, 6, 1), value=Decimal("8000.00")))
+        db.commit()
+        with mock.patch.object(imf.requests, "get", return_value=ok_trimmed()):
+            imf.run_imf_gold_fetch(db, min_countries=1)
+        june = gold_rows(db).filter_by(country_id=usa.id, date=datetime(2026, 6, 1)).all()
+        self.assertEqual(len(june), 1, "a second row for USA 2026-06")
+        self.assertEqual(june[0].value, Decimal("8133.53"))
+        july = gold_rows(db).filter_by(country_id=usa.id, date=datetime(2026, 7, 1)).all()
+        self.assertEqual(len(july), 1)
+
+
+class T13TheRouteSaysUpstream(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        app = FastAPI()
+        app.include_router(router)
+        app.dependency_overrides[get_db] = lambda: None
+        cls.client = TestClient(app, raise_server_exceptions=False)
+
+    def test_an_upstream_error_is_a_502(self):
+        boom = imf.ImfUpstreamError("IMF upstream HTTP 404 at /x: No such dataflow found")
+        with mock.patch.object(imf, "run_imf_gold_fetch", side_effect=boom):
+            r = self.client.post("/api/fetch/gold-reserves-imf")
+        self.assertEqual(r.status_code, 502, r.text)
+        self.assertIn("404", r.json()["detail"])
+
+    def test_a_contract_error_is_a_502(self):
+        with mock.patch.object(imf, "run_imf_gold_fetch",
+                               side_effect=imf.ImfContractError("unexpected INDICATOR")):
+            r = self.client.post("/api/fetch/gold-reserves-imf")
+        self.assertEqual(r.status_code, 502, r.text)
+
+    def test_our_own_bug_is_still_a_500(self):
+        with mock.patch.object(imf, "run_imf_gold_fetch", side_effect=KeyError("oops")):
+            r = self.client.post("/api/fetch/gold-reserves-imf")
+        self.assertEqual(r.status_code, 500, r.text)
+
+
+class T14SchedulerIsolation(unittest.TestCase):
+    def test_a_failing_fetch_does_not_escape_into_apscheduler(self):
+        with mock.patch.object(sched, "get_session", return_value=mock.MagicMock()), \
+             mock.patch.object(sched, "run_imf_gold_fetch",
+                               side_effect=RuntimeError("IMF upstream HTTP 404")), \
+             self.assertLogs("pipelines.scheduler", level="ERROR") as logs:
+            self.assertIsNone(sched.scheduled_imf_gold_fetch())
+        self.assertTrue(any("IMF" in line for line in logs.output))
+
+
+@unittest.skipUnless(os.environ.get("SENTINEL_LIVE_TESTS") == "1",
+                     "live IMF call; set SENTINEL_LIVE_TESTS=1")
+class T15LiveIrfcl(unittest.TestCase):
+    """T15. One real GET to api.imf.org. No database."""
+
+    def test_the_live_feed_meets_the_contract(self):
+        start = (date.today() - timedelta(days=365)).strftime("%Y-%m")
+        xml = imf.fetch_imf_gold(start_period=start)
+        self.assertEqual(imf.validate_irfcl_response(xml), imf.structure_version(xml))
+        obs, rejected, duplicates = parse_imf_gold(xml)
+        countries = {o["iso"] for o in obs}
+        self.assertGreaterEqual(len(countries), imf.IMF_MIN_COUNTRIES)
+        usa = [o for o in obs if o["iso"] == "USA"]
+        self.assertTrue(usa, "USA missing from the live feed")
+        self.assertTrue(all(7000 < o["tonnes"] < 9000 for o in usa))
+        newest = max(o["date"] for o in obs).date()
+        self.assertGreaterEqual(newest, date.today() - timedelta(days=120))
+        self.assertEqual(duplicates, [])
+        print(f"\nT15 live: url={imf.imf_gold_url()} start={start} "
+              f"structure_version={imf.structure_version(xml)} countries={len(countries)} "
+              f"obs={len(obs)} newest={newest} rejected={len(rejected)} "
+              f"usa_latest={usa[-1]['date']:%Y-%m}={usa[-1]['tonnes']}t")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,1 @@
+{"status":404,"code":40400,"message":"No such dataflow found: Dataflow=all:IRFCL(latest)","devMessage":null,"timestamp":"2026-11-10T14:53:48.378100Z","correlationId":"ef7c3c099c59ce1d7c2955dead0aa250","path":"/api/v1/workspaces/default:integration/registry/sdmx/2.1/data/IRFCL/.IRFCLDT1_IRFCL56V_FTO..M","details":{}}

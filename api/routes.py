@@ -690,10 +690,15 @@ def trigger_imf_gold_fetch(db: Session = Depends(get_db)):
     The upstream of the World Gold Council CSV that was being downloaded by
     hand.
     """
-    from pipelines.imf_gold_reserves import run_imf_gold_fetch
+    from pipelines import imf_gold_reserves as imf
 
     try:
-        return run_imf_gold_fetch(db)
+        return imf.run_imf_gold_fetch(db)
+    except (imf.ImfUpstreamError, imf.ImfContractError) as e:
+        # 2026-11-10: IMF's 404 surfaced here as a 500, which reads as "our
+        # code broke". 502 says the upstream did; real bugs stay 500 below.
+        logger.error(f"IMF gold fetch failed upstream: {e}")
+        raise HTTPException(status_code=502, detail=str(e))
     except Exception as e:
         logger.error(f"IMF gold fetch failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
