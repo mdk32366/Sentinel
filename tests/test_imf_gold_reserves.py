@@ -736,6 +736,30 @@ class T14SchedulerIsolation(unittest.TestCase):
         self.assertTrue(any("IMF" in line for line in logs.output))
 
 
+class TestGoldReserveChangesIsManual(unittest.TestCase):
+    """SPEC @0.1 6a. A static workbook with no add_job is not a scheduled feed."""
+
+    def _check(self, key):
+        return next((s for s in CHECKS if s["key"] == key), None)
+
+    def test_it_is_not_declared_as_scheduled(self):
+        self.assertNotIn("Gold_Reserve_Changes", sched.SCHEDULED_PIPELINES)
+
+    def test_it_no_longer_shares_the_imf_gold_verdict(self):
+        self.assertNotIn("Gold_Reserve_Changes", self._check("gold_reserves")["pipelines"])
+
+    def test_it_has_its_own_manual_check_on_its_own_metric(self):
+        src = self._check("gold_reserve_changes")
+        self.assertIsNotNone(src, "no freshness check for GOLD_RESERVE_CHANGES")
+        self.assertEqual(src["patterns"], ["GOLD_RESERVE_CHANGES"])
+        self.assertEqual(src["pipelines"], ["Gold_Reserve_Changes"])
+        self.assertTrue(src.get("manual_upload"))
+        self.assertIn("MANUAL", src["note"])
+        # PROVISIONAL ~200 d: data runs to 2026-06, ~133 d old on 2026-11-10.
+        self.assertGreater(src["max_age_days"], 133)
+        self.assertLessEqual(src["max_age_days"], 240)
+
+
 @unittest.skipUnless(os.environ.get("SENTINEL_LIVE_TESTS") == "1",
                      "live IMF call; set SENTINEL_LIVE_TESTS=1")
 class T15LiveIrfcl(unittest.TestCase):

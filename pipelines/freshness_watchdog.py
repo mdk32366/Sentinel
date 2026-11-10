@@ -171,11 +171,36 @@ CHECKS = [
         # 2026-08-31, 28 days. 65 covers that plus drift; a missed release
         # reaches ~86 and trips it.
         "max_age_days": 65,
-        "pipelines": ["Gold_Reserves", "Gold_Reserve_Changes", "Gold_Reserves_IMF"],
+        # Gold_Reserve_Changes moved to its own check below (2026-11-10), so a
+        # failed manual changes import cannot mark IMF gold stale, nor the
+        # reverse.
+        "pipelines": ["Gold_Reserves", "Gold_Reserves_IMF"],
         "note": (
             "IMF IRFCL line 56, monthly, fine troy ounces converted to tonnes. "
             "The World Gold Council CSV is retained as the backfill for the "
             "~28 countries IRFCL does not carry."
+        ),
+    },
+    # 2026-11-10 (SPEC @0.1 6a). GOLD_RESERVE_CHANGES comes from a static
+    # WGC/IFS workbook in the image (pipelines/gold_reserve_changes.py
+    # XLSX_PATH); new data arrives only when a person drops a new workbook and
+    # rebuilds, so nothing schedules it. The `gold_reserves` pattern never
+    # matched this metric, so its data age was not measured at all before.
+    #
+    # max_age_days 200 is PROVISIONAL: the workbook is a quarterly
+    # re-publication and the current data runs to 2026-06 (~133 days at the
+    # time of writing). It still needs the F-0089 derivation.
+    {
+        "key": "gold_reserve_changes",
+        "period": "month",
+        "label": "Gold reserve changes by country (WGC/IFS, manual)",
+        "patterns": ["GOLD_RESERVE_CHANGES"],
+        "max_age_days": 200,  # PROVISIONAL, see above
+        "pipelines": ["Gold_Reserve_Changes"],
+        "manual_upload": True,   # fed by POST /api/fetch/gold-reserve-changes, never scheduled
+        "note": (
+            "MANUAL: WGC/IFS changes workbook, quarterly re-publication. A "
+            "STALE badge means a new workbook is due, not an outage."
         ),
     },
     {

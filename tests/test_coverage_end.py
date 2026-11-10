@@ -125,6 +125,8 @@ class TestEverySourceDeclaresItsPeriod(unittest.TestCase):
             "us_m2": "week",
             "gold_price": "day", "cds": "day",
             "tic": "month", "gold_reserves": "month",
+            # 2026-11-10: WGC/IFS changes workbook, monthly rows, manual.
+            "gold_reserve_changes": "month",
             "reserves_ex_gold": "month", "sovereign_yields": "month",
             "money_supply": "year",
             "treasury_auctions": "day",
