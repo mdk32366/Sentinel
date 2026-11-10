@@ -8,6 +8,7 @@ on:
   pull_request:
     branches:
       - master
+  workflow_dispatch:
 jobs:
   test:
     name: Lint, test and build
@@ -89,7 +90,7 @@ jobs:
   deploy:
     name: Deploy app
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-latest
     concurrency: deploy-group    # optional: ensure only one action runs at a time
     steps:
