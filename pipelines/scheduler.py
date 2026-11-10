@@ -71,7 +71,9 @@ SCHEDULED_PIPELINES = {
     "FRED",
     "TIC_Holdings",
     "Gold_Reserves",
-    "Gold_Reserve_Changes",
+    # Gold_Reserve_Changes is NOT here (2026-11-10, SPEC @0.1 6a): it re-reads
+    # a static WGC/IFS workbook baked into the image and has no add_job. It is
+    # manual, monitored by the watchdog's own `gold_reserve_changes` check.
     "Gold_Spot_Price",
     "CDS_MultiTenor",
     "TreasuryDirect",

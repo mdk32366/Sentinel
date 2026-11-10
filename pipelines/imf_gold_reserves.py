@@ -30,12 +30,15 @@ standing (`F-0093`).
 
 import logging
 import re
+import time
 from datetime import datetime
 from decimal import Decimal
+from urllib.parse import urlparse
 
 import requests
 from sqlalchemy.orm import Session
 
+from config import settings
 from database.models import Metric, TimeSeries, Country, UpdateLog
 
 logger = logging.getLogger(__name__)
@@ -44,10 +47,37 @@ PIPELINE_NAME = "Gold_Reserves_IMF"
 
 # SDMX 2.1. Key order is COUNTRY.INDICATOR.SECTOR.FREQUENCY; country and sector
 # are left blank to mean "all". The legacy `dataservices.imf.org` SDMX endpoint
-# no longer resolves at all - this is the current host.
-IMF_SDMX_BASE = "https://api.imf.org/external/sdmx/2.1/data"
+# no longer resolves at all - api.imf.org is the current host.
+#
+# 2026-11-10: the flowRef MUST name its agency. `/data/IRFCL/...` used to
+# resolve to IMF.STA; IMF's gateway now defaults a missing agency to `all`,
+# finds no `all:IRFCL(latest)` and returns 404, while `/data/IMF.STA,IRFCL/...`
+# returns the same series. Base and flowRef come from settings
+# (`imf_sdmx_base`, `imf_irfcl_flow_ref`) so the next upstream change is a
+# config change, not a code hunt.
 IMF_GOLD_INDICATOR = "IRFCLDT1_IRFCL56V_FTO"
-IMF_GOLD_URL = f"{IMF_SDMX_BASE}/IRFCL/.{IMF_GOLD_INDICATOR}..M"
+EXPECTED_AGENCY = "IMF.STA"
+EXPECTED_FLOW = "IRFCL"
+EXPECTED_FREQUENCY = "M"
+
+# Coverage floor (2026-11-10). The live feed carries 84 countries; a response
+# parsing to fewer than this is a truncated or partial publication, and is
+# refused before anything is written rather than "succeeding" on a handful.
+IMF_MIN_COUNTRIES = 40
+
+# One retry after this many seconds, on 5xx, 429 and network errors only.
+RETRY_DELAY_SECONDS = 10
+
+
+def imf_gold_url() -> str:
+    """The IRFCL gold URL, built from settings at call time."""
+    base = settings.imf_sdmx_base.rstrip("/")
+    return f"{base}/data/{settings.imf_irfcl_flow_ref}/.{IMF_GOLD_INDICATOR}..M"
+
+
+# The URL as configured at import. Kept as a module constant for the tests and
+# for anything that only needs to read it; the fetch always calls imf_gold_url().
+IMF_GOLD_URL = imf_gold_url()
 
 # 1 tonne = 1,000,000 g / 31.1034768 g per fine troy ounce.
 OZ_PER_TONNE = 32150.7466
@@ -103,22 +133,146 @@ _OBS_RE = re.compile(r'<Obs TIME_PERIOD="([^"]+)" OBS_VALUE="([^"]+)"')
 _PERIOD_RE = re.compile(r"^(\d{4})-M(\d{2})$")
 
 
-def fetch_imf_gold(start_period: str = "2015-01", timeout: int = 90) -> str:
-    """The raw SDMX response. Text, so the parser can be tested without a URL."""
-    r = requests.get(
-        IMF_GOLD_URL, params={"startPeriod": start_period}, timeout=timeout
-    )
-    r.raise_for_status()
-    if "<Series " not in r.text:
+class ImfUpstreamError(RuntimeError):
+    """IMF answered with an HTTP error, or could not be reached.
+
+    Carries the status, IMF's own JSON `message` (truncated) and the URL path
+    without its query. Never the request headers, which may carry a key.
+    """
+
+
+class ImfContractError(ValueError):
+    """IMF answered 200 with something that is not the IRFCL gold series:
+    another dataflow, a renamed indicator, no series, or too few countries."""
+
+
+_STRUCT_REF_RE = re.compile(r'<Ref agencyID="([^"]+)" id="([^"]+)" version="([^"]+)"')
+_INDICATOR_RE = re.compile(r'INDICATOR="([^"]+)"')
+_FREQ_RE = re.compile(r'FREQUENCY="([^"]+)"')
+
+
+def structure_version(xml: str):
+    """The IRFCL version the response says it is, e.g. "12.0.0", or None."""
+    for agency, flow, version in _STRUCT_REF_RE.findall(xml):
+        if agency == EXPECTED_AGENCY and flow == EXPECTED_FLOW:
+            return version
+    return None
+
+
+def validate_irfcl_header(xml: str) -> str:
+    """The response contract, checked before anything is parsed or written.
+
+    Returns the structure version. Raises `ImfContractError` unless the
+    response is IMF.STA:IRFCL, carries at least one series, every series is
+    the gold indicator at monthly frequency, and the reserve-asset sector is
+    present.
+    """
+    version = structure_version(xml)
+    if version is None:
+        found = [f"{a}:{f}({v})" for a, f, v in _STRUCT_REF_RE.findall(xml)]
+        raise ImfContractError(
+            f"IMF response is not {EXPECTED_AGENCY}:{EXPECTED_FLOW}: "
+            f"structure refs {found[:3] or 'none'}"
+        )
+
+    heads = [block.split(">", 1)[0] for block in _SERIES_SPLIT.split(xml)[1:]]
+    if not heads:
         # A 200 carrying only the dataset header. Treated as a failure rather
         # than as "no gold in the world this month": D-0045, a pipeline that
         # cannot tell no-data from no-news reports completion, not success.
-        raise ValueError(
+        raise ImfContractError(
             f"IMF returned no series for {IMF_GOLD_INDICATOR}. "
-            f"{len(r.text)} bytes, no <Series> element - the indicator or the "
+            f"{len(xml)} bytes, no <Series> element - the indicator or the "
             f"key order has changed."
         )
-    return r.text
+
+    bad_indicators, bad_freqs, sectors = set(), set(), set()
+    for head in heads:
+        im = _INDICATOR_RE.search(head)
+        indicator = im.group(1) if im else ""
+        if indicator != IMF_GOLD_INDICATOR:
+            bad_indicators.add(indicator or "<none>")
+        fm = _FREQ_RE.search(head)
+        freq = fm.group(1) if fm else ""
+        if freq != EXPECTED_FREQUENCY:
+            bad_freqs.add(freq or "<none>")
+        sm = _SECTOR_RE.search(head)
+        if sm:
+            sectors.add(sm.group(1))
+
+    if bad_indicators:
+        raise ImfContractError(
+            f"IMF IRFCL {version} returned unexpected INDICATOR "
+            f"{sorted(bad_indicators)[:5]} (expected {IMF_GOLD_INDICATOR}) - "
+            f"schema or key drift."
+        )
+    if bad_freqs:
+        raise ImfContractError(
+            f"IMF IRFCL {version} returned unexpected FREQUENCY "
+            f"{sorted(bad_freqs)[:5]} (expected {EXPECTED_FREQUENCY})."
+        )
+    if RESERVE_ASSET_SECTOR not in sectors:
+        raise ImfContractError(
+            f"IMF IRFCL {version} carries no {RESERVE_ASSET_SECTOR} series "
+            f"(sectors {sorted(sectors)[:5]})."
+        )
+    return version
+
+
+# SPEC §4.2 names it for what it checks; same function.
+validate_irfcl_response = validate_irfcl_header
+
+
+def _describe(r, url: str) -> str:
+    """`IMF upstream HTTP <status> at <path>: <IMF message>`. No headers, no query."""
+    msg = ""
+    try:
+        body = r.json()
+        if isinstance(body, dict):
+            msg = str(body.get("message") or "")[:200]
+    except ValueError:
+        pass
+    return f"IMF upstream HTTP {r.status_code} at {urlparse(url).path}: {msg}".rstrip(": ")
+
+
+def fetch_imf_gold(start_period: str = "2015-01", timeout: int = 90, _sleep=None) -> str:
+    """The raw SDMX response, contract-checked. Text, so the parser can be
+    tested without a URL.
+
+    One retry after RETRY_DELAY_SECONDS on 5xx, 429, connection errors and
+    timeouts. No retry on any other 4xx: a 404 fails at once.
+    """
+    sleep = _sleep or time.sleep
+    url = imf_gold_url()
+    headers = {"Accept": "application/xml"}
+    if settings.imf_api_key:
+        headers["Ocp-Apim-Subscription-Key"] = settings.imf_api_key
+
+    for attempt in (1, 2):
+        try:
+            r = requests.get(
+                url, params={"startPeriod": start_period}, headers=headers,
+                timeout=timeout,
+            )
+        except (requests.ConnectionError, requests.Timeout) as exc:
+            if attempt == 2:
+                raise ImfUpstreamError(
+                    f"IMF upstream unreachable at {urlparse(url).path}: "
+                    f"{type(exc).__name__}"
+                ) from None
+            sleep(RETRY_DELAY_SECONDS)
+            continue
+
+        if r.status_code >= 500 or r.status_code == 429:
+            if attempt == 2:
+                raise ImfUpstreamError(_describe(r, url))
+            sleep(RETRY_DELAY_SECONDS)
+            continue
+        if r.status_code >= 400:
+            raise ImfUpstreamError(_describe(r, url))
+
+        validate_irfcl_header(r.text)
+        return r.text
 
 
 def parse_imf_gold(xml: str) -> tuple[list[dict], list[str], list[str]]:
@@ -185,17 +339,32 @@ def parse_imf_gold(xml: str) -> tuple[list[dict], list[str], list[str]]:
     return out, rejected, duplicates
 
 
-def run_imf_gold_fetch(db: Session, start_period: str = "2015-01") -> dict:
-    """Import monthly gold holdings from IMF IRFCL into `GOLD_RESERVES`."""
+def run_imf_gold_fetch(
+    db: Session, start_period: str = "2015-01", min_countries: int = IMF_MIN_COUNTRIES,
+) -> dict:
+    """Import monthly gold holdings from IMF IRFCL into `GOLD_RESERVES`.
+
+    Everything that can refuse the response - HTTP status, the contract, the
+    coverage floor - runs before the first DB write.
+    """
     started = datetime.utcnow()
     inserted = updated = skipped = 0
 
     try:
         xml = fetch_imf_gold(start_period)
+        version = structure_version(xml)
         observations, rejected, duplicates = parse_imf_gold(xml)
 
         if not observations:
             raise ValueError("IMF response parsed to zero usable observations")
+
+        parsed_countries = len({o["iso"] for o in observations})
+        if parsed_countries < min_countries:
+            raise ImfContractError(
+                f"IMF IRFCL {version} coverage floor: {parsed_countries} "
+                f"countries parsed, expected at least {min_countries} - a "
+                f"truncated or partial publication. Nothing written."
+            )
 
         metric = db.query(Metric).filter_by(code=GOLD_METRIC_CODE).first()
         if not metric:
@@ -280,6 +449,7 @@ def run_imf_gold_fetch(db: Session, start_period: str = "2015-01") -> dict:
             "newest_date": newest.date().isoformat() if newest else None,
             "rejected": rejected,
             "duplicates": duplicates,
+            "structure_version": version,
         }
 
     except Exception as exc:
